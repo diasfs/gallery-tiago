@@ -17,7 +17,11 @@ import type {
   UnnamedPersonCluster,
 } from './types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+// Defaults to same-origin ('') so requests go through the Vite dev-server
+// proxy (see vite.config.ts) and the admin session cookie is sent without
+// requiring CORS. Only set VITE_API_BASE_URL to a cross-origin URL if the
+// API is not reachable through a same-origin proxy.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 export class ApiError extends Error {
   readonly status: number
@@ -39,8 +43,11 @@ async function getJson<T>(path: string): Promise<T> {
 
 /**
  * All admin requests send `credentials: 'include'` so the session cookie set
- * by `POST /api/admin/login` is attached on subsequent requests (and CORS on
- * the API side must allow credentials for the configured frontend origin).
+ * by `POST /api/admin/login` is attached on subsequent requests. This relies
+ * on the frontend and API being same-origin (via the Vite dev-server proxy
+ * in development, or a reverse proxy in production) — cross-origin requests
+ * would additionally require CORS configured on the API to allow credentials
+ * for the frontend's origin.
  */
 async function adminRequest<T>(
   path: string,

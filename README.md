@@ -39,6 +39,16 @@ Replace `email` and `password` with your credentials.
 | API      | http://localhost:8080 |
 | Admin UI | http://localhost:5173/admin/login |
 
+The SPA talks to the API through the **Vite dev-server proxy** (`server.proxy`
+in `apps/web/vite.config.ts`), not by calling `http://localhost:8080`
+directly. Requests to `/api/...` from the browser are same-origin
+(`http://localhost:5173`) and Vite forwards them server-side to the API
+container. This keeps the admin session cookie same-origin so no CORS
+configuration is needed. The API is still directly reachable at
+`http://localhost:8080` (e.g. for `curl`), but the SPA should not be pointed
+at it directly — that would trigger a browser CORS block since credentialed
+cross-origin requests aren't configured.
+
 Postgres is exposed on host port **5433** (mapped to `5432` inside the compose network). Connect from the host with:
 
 ```bash
@@ -54,7 +64,8 @@ Copy `.env.example` to `.env` before starting. Key variables:
 | `DATABASE_URL` | PostgreSQL connection (use host `postgres` inside containers) |
 | `REDIS_URL` | Messenger / face-worker queue |
 | `MEDIA_ROOT` | Shared media volume path |
-| `VITE_API_BASE_URL` | Frontend → API base URL (browser-facing) |
+| `VITE_API_BASE_URL` | Frontend → API base URL (browser-facing); leave empty for same-origin requests through the Vite proxy |
+| `VITE_API_PROXY_TARGET` | Where the Vite dev-server proxy forwards `/api` (and media) requests server-side — `http://api` in docker compose, `http://localhost:8080` when running the frontend outside docker |
 | `FACE_MATCH_THRESHOLD` / `FACE_CLUSTER_THRESHOLD` | InsightFace clustering thresholds |
 | `FACE_EMBEDDING_DIM` | Embedding size (512 for buffalo_l) |
 | `APP_SECRET` | Symfony secret — change in production |
