@@ -22,3 +22,13 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+    App\Service\FaceQueuePublisherInterface: '@App\Service\RedisFaceQueuePublisher'
+
+when@test:
+    services:
+        # Swap the real Redis publisher for an in-memory fake so the test
+        # suite doesn't need a live Redis connection (mirrors the in-memory
+        # transport swap for convert/faces in config/packages/messenger.yaml).
+        App\Tests\Fake\InMemoryFaceQueuePublisher: ~
+        App\Service\FaceQueuePublisherInterface: '@App\Tests\Fake\InMemoryFaceQueuePublisher'

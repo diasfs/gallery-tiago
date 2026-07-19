@@ -33,7 +33,12 @@ services:
 
   worker-convert:
     build: ./apps/api
-    command: php bin/console messenger:consume convert -vv --time-limit=3600
+    # Consumes both `convert` (AVIF/thumbnail conversion) and `faces`
+    # (DetectFacesHandler, which only bridges to the Redis list
+    # `gallery:faces` for apps/worker-faces to BRPOP — see Task 7). Kept in
+    # one PHP consumer process for simplicity; split into its own service if
+    # face-bridge volume ever needs independent scaling/restarts.
+    command: php bin/console messenger:consume convert faces -vv --time-limit=3600
     volumes:
       - ./apps/api:/app
       - media_data:/var/gallery/media
