@@ -23,8 +23,27 @@ class PersonController
     ) {
     }
 
+    #[Route('/{id}', name: 'public_people_show', methods: ['GET'])]
+    public function show(string $id): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+
+        return new JsonResponse(['data' => [
+            'id' => (string) $person->getId(),
+            'name' => $person->getName(),
+        ]]);
+    }
+
     #[Route('/{id}/photos', name: 'public_people_photos', methods: ['GET'])]
     public function photos(string $id): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+        $photos = $this->photos->findVisibleByPersonId($person->getId());
+
+        return new JsonResponse(['data' => array_map($this->normalize(...), $photos)]);
+    }
+
+    private function findPersonOrFail(string $id): \App\Entity\Person
     {
         try {
             $uuid = Uuid::fromString($id);
@@ -37,9 +56,7 @@ class PersonController
             throw new NotFoundHttpException('Person not found.');
         }
 
-        $photos = $this->photos->findVisibleByPersonId($uuid);
-
-        return new JsonResponse(['data' => array_map($this->normalize(...), $photos)]);
+        return $person;
     }
 
     /**

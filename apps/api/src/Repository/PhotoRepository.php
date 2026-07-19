@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Album;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -45,6 +46,52 @@ class PhotoRepository extends ServiceEntityRepository
             ->andWhere('a.visibility IN (:visibilities)')
             ->andWhere('EXISTS (SELECT 1 FROM App\Entity\Face f WHERE f.photo = p AND f.person = :personId)')
             ->setParameter('personId', $personId, 'uuid')
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->orderBy('p.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Caller is responsible for having already verified the album's
+     * visibility (e.g. via `AlbumRepository::findVisibleBySlug`).
+     *
+     * @return Photo[]
+     */
+    public function findByAlbum(Album $album): array
+    {
+        return $this->createQueryBuilder('p')
+            ->andWhere('p.album = :album')
+            ->setParameter('album', $album)
+            ->orderBy('p.takenAt', 'ASC')
+            ->addOrderBy('p.createdAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /** @return Photo[] */
+    public function findVisibleByTagSlug(string $slug): array
+    {
+        return $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->join('p.tags', 't')
+            ->andWhere('t.slug = :slug')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('slug', $slug)
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->orderBy('p.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /** @return Photo[] */
+    public function findVisibleByLocationId(Uuid $locationId): array
+    {
+        return $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('p.location = :locationId')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('locationId', $locationId, 'uuid')
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
             ->orderBy('p.createdAt', 'DESC')
             ->getQuery()

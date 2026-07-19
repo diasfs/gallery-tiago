@@ -46,9 +46,12 @@ class PhotoController
      */
     private function normalize(Photo $photo): array
     {
+        [$prevId, $nextId] = $this->adjacentIds($photo);
+
         return [
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
+            'albumSlug' => $photo->getAlbum()->getSlug(),
             'title' => $photo->getTitle(),
             'takenAt' => $photo->getTakenAt()?->format(\DATE_ATOM),
             'width' => $photo->getWidth(),
@@ -57,7 +60,50 @@ class PhotoController
             'thumbPaths' => $photo->getThumbPaths(),
             'location' => $this->normalizeLocation($photo->getLocation()),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
+            'people' => $this->normalizePeople($photo),
+            'prevId' => $prevId,
+            'nextId' => $nextId,
         ];
+    }
+
+    /** @return array{0: ?string, 1: ?string} */
+    private function adjacentIds(Photo $photo): array
+    {
+        $siblings = $this->photos->findByAlbum($photo->getAlbum());
+        $index = array_search($photo->getId()->toRfc4122(), array_map(
+            static fn (Photo $p): string => $p->getId()->toRfc4122(),
+            $siblings,
+        ), true);
+
+        if (false === $index) {
+            return [null, null];
+        }
+
+        $prev = $index > 0 ? $siblings[$index - 1] : null;
+        $next = $index < \count($siblings) - 1 ? $siblings[$index + 1] : null;
+
+        return [$prev?->getId()->toRfc4122(), $next?->getId()->toRfc4122()];
+    }
+
+    /** @return array<int, array{id: string, name: ?string}> */
+    private function normalizePeople(Photo $photo): array
+    {
+        $seen = [];
+        $people = [];
+        foreach ($photo->getFaces() as $face) {
+            $person = $face->getPerson();
+            if (null === $person) {
+                continue;
+            }
+            $personId = (string) $person->getId();
+            if (isset($seen[$personId])) {
+                continue;
+            }
+            $seen[$personId] = true;
+            $people[] = ['id' => $personId, 'name' => $person->getName()];
+        }
+
+        return $people;
     }
 
     /** @return array<string, mixed>|null */

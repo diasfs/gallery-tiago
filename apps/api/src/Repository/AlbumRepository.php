@@ -42,6 +42,20 @@ class AlbumRepository extends ServiceEntityRepository
     }
 
     /** @return Album[] */
+    public function findVisibleChildren(Album $parent): array
+    {
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.parent = :parent')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('parent', $parent)
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->orderBy('a.sortOrder', 'ASC')
+            ->addOrderBy('a.title', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /** @return Album[] */
     public function findAllOrdered(): array
     {
         return $this->createQueryBuilder('a')
