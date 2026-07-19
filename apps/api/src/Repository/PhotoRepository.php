@@ -29,4 +29,25 @@ class PhotoRepository extends ServiceEntityRepository
             ->getQuery()
             ->getOneOrNullResult();
     }
+
+    /**
+     * Uses an EXISTS subquery (rather than joining `Face`) so photos with
+     * multiple matching faces aren't duplicated — a plain `DISTINCT` isn't
+     * an option here since Postgres can't compare the `thumb_paths` json
+     * column for row equality.
+     *
+     * @return Photo[]
+     */
+    public function findVisibleByPersonId(Uuid $personId): array
+    {
+        return $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->andWhere('EXISTS (SELECT 1 FROM App\Entity\Face f WHERE f.photo = p AND f.person = :personId)')
+            ->setParameter('personId', $personId, 'uuid')
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->orderBy('p.createdAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
 }

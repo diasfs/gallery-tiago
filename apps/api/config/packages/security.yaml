@@ -42,6 +42,7 @@ security:
         - { path: ^/api/admin/photos, roles: ROLE_ADMIN }
         - { path: ^/api/admin/locations, roles: ROLE_ADMIN }
         - { path: ^/api/admin/tags, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/people, roles: ROLE_ADMIN }
 
 when@test:
     security:

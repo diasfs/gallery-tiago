@@ -15,4 +15,14 @@ class PersonRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Person::class);
     }
+
+    /** @return Person[] */
+    public function findUnnamed(): array
+    {
+        return $this->createQueryBuilder('p')
+            ->andWhere('p.isNamed = false')
+            ->orderBy('p.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }

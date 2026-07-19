@@ -5,6 +5,9 @@ namespace App\Controller\Api\Admin;
 use App\Entity\Location;
 use App\Entity\Photo;
 use App\Entity\Tag;
+use App\Enum\ProcessingStatus;
+use App\Message\ConvertMediaMessage;
+use App\Message\DetectFacesMessage;
 use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
@@ -14,6 +17,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
@@ -26,6 +30,7 @@ class PhotoController
         private readonly LocationRepository $locations,
         private readonly TagRepository $tags,
         private readonly EntityManagerInterface $em,
+        private readonly MessageBusInterface $bus,
     ) {
     }
 
@@ -55,6 +60,39 @@ class PhotoController
         }
 
         $this->em->flush();
+
+        return new JsonResponse(['data' => $this->normalize($photo)]);
+    }
+
+    /**
+     * Deletes prior auto-detected faces (`hasEmbedding = true`) only —
+     * manually-added faces are left untouched (spec §9) — then re-enqueues
+     * the pipeline: `detect_faces` directly if an AVIF master already
+     * exists, otherwise `convert_media` first (which enqueues detection
+     * itself on success).
+     */
+    #[Route('/{id}/reprocess', name: 'admin_photos_reprocess', methods: ['POST'])]
+    public function reprocess(string $id): JsonResponse
+    {
+        $photo = $this->findOrFail($id);
+
+        foreach ($photo->getFaces() as $face) {
+            if ($face->hasEmbedding()) {
+                $this->em->remove($face);
+            }
+        }
+
+        $photoId = (string) $photo->getId();
+
+        if (null === $photo->getAvifPath()) {
+            $photo->setProcessingStatus(ProcessingStatus::Pending);
+            $this->em->flush();
+            $this->bus->dispatch(new ConvertMediaMessage($photoId));
+        } else {
+            $photo->setProcessingStatus(ProcessingStatus::Detecting);
+            $this->em->flush();
+            $this->bus->dispatch(new DetectFacesMessage($photoId));
+        }
 
         return new JsonResponse(['data' => $this->normalize($photo)]);
     }
