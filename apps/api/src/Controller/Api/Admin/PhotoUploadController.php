@@ -1,0 +1,97 @@
+<?php
+
+namespace App\Controller\Api\Admin;
+
+use App\Entity\Album;
+use App\Entity\Photo;
+use App\Enum\ProcessingStatus;
+use App\Message\ConvertMediaMessage;
+use App\Repository\AlbumRepository;
+use App\Service\MediaStorage;
+use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Attribute\AsController;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Uid\Uuid;
+
+#[AsController]
+#[Route('/api/admin/albums/{albumId}/photos')]
+class PhotoUploadController
+{
+    private const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+    public function __construct(
+        private readonly AlbumRepository $albums,
+        private readonly EntityManagerInterface $em,
+        private readonly MediaStorage $storage,
+        private readonly MessageBusInterface $bus,
+    ) {
+    }
+
+    #[Route('', name: 'admin_photos_upload', methods: ['POST'])]
+    public function upload(string $albumId, Request $request): JsonResponse
+    {
+        $album = $this->findAlbumOrFail($albumId);
+
+        $file = $request->files->get('file');
+        if (!$file instanceof UploadedFile) {
+            throw new BadRequestHttpException('A "file" upload is required.');
+        }
+        if (!$file->isValid()) {
+            throw new BadRequestHttpException('Upload failed: '.$file->getErrorMessage());
+        }
+        if (!\in_array($file->getMimeType(), self::ALLOWED_MIME_TYPES, true)) {
+            throw new BadRequestHttpException('Unsupported file type; expected JPEG, PNG, or WebP.');
+        }
+
+        // originalPath is finalized after the entity's UUID is assigned (on
+        // first flush) so the file can be stored under its own photo id.
+        $photo = new Photo($album, '');
+        $this->em->persist($photo);
+        $this->em->flush();
+
+        $photoId = (string) $photo->getId();
+        $relativePath = $this->storage->storeOriginal($file, $photoId);
+
+        $photo->setOriginalPath($relativePath);
+        $photo->setProcessingStatus(ProcessingStatus::Pending);
+        $this->em->flush();
+
+        $this->bus->dispatch(new ConvertMediaMessage($photoId));
+
+        return new JsonResponse(['data' => $this->normalize($photo)], Response::HTTP_CREATED);
+    }
+
+    private function findAlbumOrFail(string $id): Album
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        $album = $this->albums->find($uuid);
+        if (null === $album) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        return $album;
+    }
+
+    private function normalize(Photo $photo): array
+    {
+        return [
+            'id' => (string) $photo->getId(),
+            'albumId' => (string) $photo->getAlbum()->getId(),
+            'title' => $photo->getTitle(),
+            'processingStatus' => $photo->getProcessingStatus()->value,
+            'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
+        ];
+    }
+}

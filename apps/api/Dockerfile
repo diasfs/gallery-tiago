@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         supervisor \
         libvips-dev \
         libvips-tools \
+        libheif-plugin-aomenc \
         libpq-dev \
         libzip-dev \
         git \

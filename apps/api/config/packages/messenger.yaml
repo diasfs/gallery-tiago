@@ -9,8 +9,14 @@ framework:
                 retry_strategy:
                     max_retries: 3
                     multiplier: 2
+            convert:
+                dsn: '%env(REDIS_URL)%/convert'
+                retry_strategy:
+                    max_retries: 3
+                    multiplier: 2
+            faces:
+                dsn: '%env(REDIS_URL)%/faces'
             failed: 'doctrine://default?queue_name=failed'
-            # sync: 'sync://'
 
         default_bus: messenger.bus.default
 
@@ -22,5 +28,14 @@ framework:
             Symfony\Component\Notifier\Message\ChatMessage: async
             Symfony\Component\Notifier\Message\SmsMessage: async
 
-            # Route your messages to the transports
-            # 'App\Message\YourMessage': async
+            App\Message\ConvertMediaMessage: convert
+            App\Message\DetectFacesMessage: faces
+
+when@test:
+    framework:
+        messenger:
+            transports:
+                # Keep messages in memory during tests instead of touching Redis;
+                # asserted via messenger.transport.convert / .faces services.
+                convert: 'in-memory://'
+                faces: 'in-memory://'
