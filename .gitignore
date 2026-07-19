@@ -1,0 +1,10 @@
+.env
+vendor/
+node_modules/
+apps/api/var/
+apps/web/dist/
+media/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
