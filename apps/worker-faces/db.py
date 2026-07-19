@@ -9,12 +9,62 @@ apps/api/migrations/Version20260719173837.php.
 from __future__ import annotations
 
 from typing import Optional, Sequence
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import psycopg
 
+# Query params understood by libpq connection URIs (kept when sanitizing).
+_LIBPQ_QUERY_PARAMS = frozenset(
+    {
+        "host",
+        "hostaddr",
+        "port",
+        "dbname",
+        "user",
+        "password",
+        "channel_binding",
+        "connect_timeout",
+        "client_encoding",
+        "options",
+        "application_name",
+        "fallback_application_name",
+        "keepalives",
+        "keepalives_idle",
+        "keepalives_interval",
+        "keepalives_count",
+        "tcp_user_timeout",
+        "replication",
+        "gssencmode",
+        "sslmode",
+        "sslcert",
+        "sslkey",
+        "sslrootcert",
+        "sslcrl",
+        "sslcrldir",
+        "sslpassword",
+        "requiressl",
+        "sslnegotiation",
+        "target_session_attrs",
+    }
+)
+
+
+def sanitize_database_url(database_url: str) -> str:
+    """Return a libpq-compatible URI, dropping Doctrine-only query params."""
+    parsed = urlparse(database_url)
+    if not parsed.query:
+        return database_url
+
+    filtered = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key in _LIBPQ_QUERY_PARAMS
+    ]
+    return urlunparse(parsed._replace(query=urlencode(filtered)))
+
 
 def connect(database_url: str) -> psycopg.Connection:
-    return psycopg.connect(database_url, autocommit=True)
+    return psycopg.connect(sanitize_database_url(database_url), autocommit=True)
 
 
 def _vector_literal(embedding: Sequence[float]) -> str:
