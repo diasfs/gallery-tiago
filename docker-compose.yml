@@ -12,10 +12,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks: [gallery]
 
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+    networks: [gallery]
 
   api:
     build: ./apps/api
@@ -27,6 +29,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
+    networks: [gallery]
 
   worker-convert:
     build: ./apps/api
@@ -36,6 +39,7 @@ services:
       - media_data:/var/gallery/media
     env_file: .env
     depends_on: [api, redis, postgres]
+    networks: [gallery]
 
   worker-faces:
     build: ./apps/worker-faces
@@ -44,6 +48,7 @@ services:
       - media_data:/var/gallery/media
     env_file: .env
     depends_on: [redis, postgres]
+    networks: [gallery]
 
   frontend:
     build: ./apps/web
@@ -51,7 +56,12 @@ services:
     ports: ["5173:5173"]
     env_file: .env
     depends_on: [api]
+    networks: [gallery]
 
 volumes:
   pg_data:
   media_data:
+
+networks:
+  gallery:
+    name: gallery
