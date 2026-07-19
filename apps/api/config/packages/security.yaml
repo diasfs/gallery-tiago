@@ -12,6 +12,18 @@ security:
         dev:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
+        admin:
+            pattern: ^/api/admin
+            lazy: true
+            provider: admin_users
+            stateless: false
+            entry_point: App\Security\AdminAuthenticationEntryPoint
+            json_login:
+                check_path: /api/admin/login
+                username_path: email
+                password_path: password
+            logout:
+                path: /api/admin/logout
         main:
             lazy: true
             provider: admin_users
@@ -25,8 +37,7 @@ security:
     # Easy way to control access for large sections of your site
     # Note: Only the *first* access control that matches will be used
     access_control:
-        # - { path: ^/admin, roles: ROLE_ADMIN }
-        # - { path: ^/profile, roles: ROLE_USER }
+        - { path: ^/api/admin/me, roles: ROLE_ADMIN }
 
 when@test:
     security:
