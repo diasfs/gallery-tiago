@@ -25,4 +25,20 @@ class PersonRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /** @return Person[] */
+    public function searchNamed(?string $query): array
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->andWhere('p.isNamed = true')
+            ->orderBy('p.name', 'ASC')
+            ->setMaxResults(20);
+
+        if (null !== $query && '' !== $query) {
+            $qb->andWhere('LOWER(p.name) LIKE :query')
+                ->setParameter('query', '%'.mb_strtolower($query).'%');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
 }

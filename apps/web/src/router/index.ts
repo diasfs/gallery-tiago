@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { adminApi } from '../api/client'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,11 +40,61 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/admin/login',
+      name: 'admin-login',
+      component: () => import('../views/admin/LoginView.vue'),
+      meta: { adminPublic: true },
+    },
+    {
+      path: '/admin',
+      name: 'admin-albums',
+      component: () => import('../views/admin/AlbumsView.vue'),
+      meta: { admin: true },
+    },
+    {
+      path: '/admin/albums/:albumId/photos',
+      name: 'admin-album-photos',
+      component: () => import('../views/admin/AlbumPhotosView.vue'),
+      props: true,
+      meta: { admin: true },
+    },
+    {
+      path: '/admin/photos/:id',
+      name: 'admin-photo-edit',
+      component: () => import('../views/admin/PhotoEditView.vue'),
+      props: true,
+      meta: { admin: true },
+    },
+    {
+      path: '/admin/people/unnamed',
+      name: 'admin-unnamed-people',
+      component: () => import('../views/admin/UnnamedPeopleView.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('../views/NotFoundView.vue'),
     },
   ],
+})
+
+/**
+ * Every `/admin/*` route except the login page requires a live admin
+ * session; we probe `GET /api/admin/me` (cookie-based) rather than trusting
+ * any client-side flag, since the cookie is the actual source of truth.
+ */
+router.beforeEach(async (to) => {
+  if (!to.meta.admin) {
+    return true
+  }
+
+  try {
+    await adminApi.me()
+    return true
+  } catch {
+    return { name: 'admin-login', query: { redirect: to.fullPath } }
+  }
 })
 
 export default router

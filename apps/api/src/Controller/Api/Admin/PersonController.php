@@ -39,6 +39,16 @@ class PersonController
         return new JsonResponse(['data' => array_map($this->normalizeCluster(...), $people)]);
     }
 
+    /** Named people search, used by the photo-edit "add person" picker. */
+    #[Route('/api/admin/people', name: 'admin_people_search', methods: ['GET'])]
+    public function search(Request $request): JsonResponse
+    {
+        $q = $request->query->get('q');
+        $people = $this->people->searchNamed(\is_string($q) ? $q : null);
+
+        return new JsonResponse(['data' => array_map($this->normalizePerson(...), $people)]);
+    }
+
     #[Route('/api/admin/people/{id}/name', name: 'admin_people_name', methods: ['POST'])]
     public function name(string $id, Request $request): JsonResponse
     {

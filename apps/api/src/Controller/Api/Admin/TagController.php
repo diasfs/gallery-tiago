@@ -27,6 +27,15 @@ class TagController
         $this->slugger = new AsciiSlugger();
     }
 
+    #[Route('', name: 'admin_tags_list', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
+    {
+        $q = $request->query->get('q');
+        $tags = array_map($this->normalize(...), $this->tags->search(\is_string($q) ? $q : null));
+
+        return new JsonResponse(['data' => $tags]);
+    }
+
     #[Route('', name: 'admin_tags_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {

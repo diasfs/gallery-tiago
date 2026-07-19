@@ -15,4 +15,19 @@ class TagRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Tag::class);
     }
+
+    /** @return Tag[] */
+    public function search(?string $query): array
+    {
+        $qb = $this->createQueryBuilder('t')
+            ->orderBy('t.name', 'ASC')
+            ->setMaxResults(50);
+
+        if (null !== $query && '' !== $query) {
+            $qb->andWhere('LOWER(t.name) LIKE :query')
+                ->setParameter('query', '%'.mb_strtolower($query).'%');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
 }

@@ -6,6 +6,7 @@ import { RouterLink, RouterView } from 'vue-router'
   <div class="app">
     <header class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
+      <RouterLink to="/admin" class="app__admin-link">Admin</RouterLink>
     </header>
     <main class="app__main">
       <RouterView />
@@ -22,6 +23,15 @@ import { RouterLink, RouterView } from 'vue-router'
 
 .app__header {
   padding: 1.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app__admin-link {
+  color: var(--muted, #888);
+  text-decoration: none;
+  font-size: 0.85rem;
 }
 
 .app__brand {

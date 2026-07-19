@@ -3,8 +3,10 @@
 namespace App\Controller\Api\Admin;
 
 use App\Entity\Album;
+use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Repository\AlbumRepository;
+use App\Repository\PhotoRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,6 +24,7 @@ class AlbumController
 {
     public function __construct(
         private readonly AlbumRepository $albums,
+        private readonly PhotoRepository $photos,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -147,6 +150,33 @@ class AlbumController
                 $album->setParent($parent);
             }
         }
+
+        if (\array_key_exists('coverPhotoId', $payload)) {
+            $album->setCoverPhoto($this->resolveCoverPhoto($payload['coverPhotoId']));
+        }
+    }
+
+    private function resolveCoverPhoto(mixed $value): ?Photo
+    {
+        if (null === $value) {
+            return null;
+        }
+        if (!\is_string($value)) {
+            throw new BadRequestHttpException('coverPhotoId must be a string or null.');
+        }
+
+        try {
+            $uuid = Uuid::fromString($value);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $photo = $this->photos->find($uuid);
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        return $photo;
     }
 
     /** @return array<string, mixed> */

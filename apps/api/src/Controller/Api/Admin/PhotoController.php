@@ -34,6 +34,12 @@ class PhotoController
     ) {
     }
 
+    #[Route('/{id}', name: 'admin_photos_show', methods: ['GET'])]
+    public function show(string $id): JsonResponse
+    {
+        return new JsonResponse(['data' => $this->normalize($this->findOrFail($id))]);
+    }
+
     #[Route('/{id}', name: 'admin_photos_update', methods: ['PATCH'])]
     public function update(string $id, Request $request): JsonResponse
     {
@@ -212,10 +218,33 @@ class PhotoController
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'processingStatus' => $photo->getProcessingStatus()->value,
+            'processingError' => $photo->getProcessingError(),
             'location' => $this->normalizeLocation($photo->getLocation()),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
+            'people' => $this->normalizePeople($photo),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
+    }
+
+    /** @return array<int, array{id: string, name: ?string}> */
+    private function normalizePeople(Photo $photo): array
+    {
+        $seen = [];
+        $people = [];
+        foreach ($photo->getFaces() as $face) {
+            $person = $face->getPerson();
+            if (null === $person) {
+                continue;
+            }
+            $personId = (string) $person->getId();
+            if (isset($seen[$personId])) {
+                continue;
+            }
+            $seen[$personId] = true;
+            $people[] = ['id' => $personId, 'name' => $person->getName()];
+        }
+
+        return $people;
     }
 
     /** @return array<string, mixed>|null */

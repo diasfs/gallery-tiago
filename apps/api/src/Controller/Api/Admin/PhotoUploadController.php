@@ -7,6 +7,7 @@ use App\Entity\Photo;
 use App\Enum\ProcessingStatus;
 use App\Message\ConvertMediaMessage;
 use App\Repository\AlbumRepository;
+use App\Repository\PhotoRepository;
 use App\Service\MediaStorage;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -28,10 +29,20 @@ class PhotoUploadController
 
     public function __construct(
         private readonly AlbumRepository $albums,
+        private readonly PhotoRepository $photos,
         private readonly EntityManagerInterface $em,
         private readonly MediaStorage $storage,
         private readonly MessageBusInterface $bus,
     ) {
+    }
+
+    #[Route('', name: 'admin_photos_list', methods: ['GET'])]
+    public function list(string $albumId): JsonResponse
+    {
+        $album = $this->findAlbumOrFail($albumId);
+        $photos = array_map($this->normalize(...), $this->photos->findByAlbum($album));
+
+        return new JsonResponse(['data' => $photos]);
     }
 
     #[Route('', name: 'admin_photos_upload', methods: ['POST'])]
@@ -90,7 +101,10 @@ class PhotoUploadController
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
             'title' => $photo->getTitle(),
+            'avifPath' => $photo->getAvifPath(),
+            'thumbPaths' => $photo->getThumbPaths(),
             'processingStatus' => $photo->getProcessingStatus()->value,
+            'processingError' => $photo->getProcessingError(),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
     }
