@@ -37,9 +37,17 @@ class LocationController
             throw new NotFoundHttpException('Location not found.');
         }
 
+        $photos = $this->photos->findVisibleByLocationId($uuid);
+
+        // Location pages are only public when they have at least one publicly
+        // reachable photo (design spec §11) — no existence leak otherwise.
+        if ([] === $photos) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
         return new JsonResponse(['data' => [
             'location' => $this->normalizeLocation($location),
-            'photos' => array_map($this->normalizePhoto(...), $this->photos->findVisibleByLocationId($uuid)),
+            'photos' => array_map($this->normalizePhoto(...), $photos),
         ]]);
     }
 

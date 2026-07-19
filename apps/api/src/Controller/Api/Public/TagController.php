@@ -30,9 +30,17 @@ class TagController
             throw new NotFoundHttpException('Tag not found.');
         }
 
+        $photos = $this->photos->findVisibleByTagSlug($slug);
+
+        // Tag pages are only public when they have at least one publicly
+        // reachable photo (design spec §11) — no existence leak otherwise.
+        if ([] === $photos) {
+            throw new NotFoundHttpException('Tag not found.');
+        }
+
         return new JsonResponse(['data' => [
             'tag' => $this->normalizeTag($tag),
-            'photos' => array_map($this->normalizePhoto(...), $this->photos->findVisibleByTagSlug($slug)),
+            'photos' => array_map($this->normalizePhoto(...), $photos),
         ]]);
     }
 

@@ -28,6 +28,12 @@ class PersonController
     {
         $person = $this->findPersonOrFail($id);
 
+        // Person pages are only public when they have at least one publicly
+        // reachable photo (design spec §11) — no existence leak otherwise.
+        if ([] === $this->photos->findVisibleByPersonId($person->getId())) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
         return new JsonResponse(['data' => [
             'id' => (string) $person->getId(),
             'name' => $person->getName(),

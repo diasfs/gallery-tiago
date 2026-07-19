@@ -4,6 +4,7 @@ namespace App\Controller\Api\Public;
 
 use App\Entity\Album;
 use App\Entity\Photo;
+use App\Enum\AlbumVisibility;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -54,7 +55,8 @@ class AlbumController
             'visibility' => $album->getVisibility()->value,
             'sortOrder' => $album->getSortOrder(),
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
-            'parentSlug' => $album->getParent()?->getSlug(),
+            // Never expose a private parent's slug (same rule as `ancestors()`).
+            'parentSlug' => $this->isVisible($album->getParent()) ? $album->getParent()->getSlug() : null,
         ];
     }
 
@@ -73,12 +75,22 @@ class AlbumController
     {
         $chain = [];
         $current = $album->getParent();
-        while (null !== $current) {
+        while ($this->isVisible($current)) {
             $chain[] = ['slug' => $current->getSlug(), 'title' => $current->getTitle()];
             $current = $current->getParent();
         }
 
         return array_reverse($chain);
+    }
+
+    /**
+     * True unless `$album` is null or `Private` — used to stop walking the
+     * ancestor chain and to omit `parentSlug` once a private ancestor is
+     * hit, so private album titles/slugs never leak into public payloads.
+     */
+    private function isVisible(?Album $album): bool
+    {
+        return null !== $album && AlbumVisibility::Private !== $album->getVisibility();
     }
 
     /** @return array<string, mixed> */
