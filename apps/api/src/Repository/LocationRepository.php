@@ -15,4 +15,19 @@ class LocationRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Location::class);
     }
+
+    /** @return Location[] */
+    public function search(?string $query): array
+    {
+        $qb = $this->createQueryBuilder('l')
+            ->orderBy('l.name', 'ASC')
+            ->setMaxResults(20);
+
+        if (null !== $query && '' !== $query) {
+            $qb->andWhere('LOWER(l.name) LIKE :query OR LOWER(l.city) LIKE :query OR LOWER(l.country) LIKE :query')
+                ->setParameter('query', '%'.mb_strtolower($query).'%');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
 }

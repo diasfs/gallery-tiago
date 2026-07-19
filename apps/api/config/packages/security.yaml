@@ -39,6 +39,9 @@ security:
     access_control:
         - { path: ^/api/admin/me, roles: ROLE_ADMIN }
         - { path: ^/api/admin/albums, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/photos, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/locations, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/tags, roles: ROLE_ADMIN }
 
 when@test:
     security:
