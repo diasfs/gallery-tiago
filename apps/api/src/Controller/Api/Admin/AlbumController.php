@@ -7,13 +7,13 @@ use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Service\AlbumDeleter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
@@ -26,6 +26,7 @@ class AlbumController
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
         private readonly EntityManagerInterface $em,
+        private readonly AlbumDeleter $albumDeleter,
     ) {
     }
 
@@ -93,13 +94,7 @@ class AlbumController
     public function delete(string $id): Response
     {
         $album = $this->findOrFail($id);
-
-        if (!$album->getChildren()->isEmpty() || !$album->getPhotos()->isEmpty()) {
-            throw new ConflictHttpException('Album has child albums or photos and cannot be deleted.');
-        }
-
-        $this->em->remove($album);
-        $this->em->flush();
+        $this->albumDeleter->delete($album);
 
         return new Response(status: Response::HTTP_NO_CONTENT);
     }

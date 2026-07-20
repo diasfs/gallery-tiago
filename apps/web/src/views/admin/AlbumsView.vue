@@ -135,17 +135,18 @@ async function submit() {
 }
 
 async function remove(album: AdminAlbum) {
-  if (!confirm(`Delete "${album.title}"?`)) {
+  if (
+    !confirm(
+      `Delete "${album.title}" and all of its sub-albums and photos? This cannot be undone.`,
+    )
+  ) {
     return
   }
   try {
     await adminApi.deleteAlbum(album.id)
     await load()
-  } catch (err) {
-    error.value =
-      err instanceof ApiError && err.status === 409
-        ? 'Cannot delete an album that still has child albums or photos.'
-        : 'Delete failed.'
+  } catch {
+    error.value = 'Delete failed.'
   }
 }
 </script>

@@ -212,31 +212,43 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->assertResponseStatusCodeSame(404);
     }
 
-    public function testDeleteAlbumWithChildrenReturns409(): void
+    public function testDeleteAlbumWithChildrenCascades(): void
     {
         $this->loginAsAdmin();
         $parent = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
+        $this->assertNotNull($parent);
         $child = new Album('Mountains', 'mountains');
         $child->setParent($parent);
         $this->em->persist($child);
         $this->em->flush();
+        $parentId = (string) $parent->getId();
+        $childId = (string) $child->getId();
 
-        $this->client->request('DELETE', '/api/admin/albums/'.$parent->getId());
+        $this->client->request('DELETE', '/api/admin/albums/'.$parentId);
 
-        $this->assertResponseStatusCodeSame(409);
+        $this->assertResponseStatusCodeSame(204);
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Album::class)->find($parentId));
+        $this->assertNull($this->em->getRepository(Album::class)->find($childId));
     }
 
-    public function testDeleteAlbumWithPhotosReturns409(): void
+    public function testDeleteAlbumWithPhotosCascades(): void
     {
         $this->loginAsAdmin();
         $album = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
+        $this->assertNotNull($album);
         $photo = new Photo($album, '/tmp/original.jpg');
         $this->em->persist($photo);
         $this->em->flush();
+        $albumId = (string) $album->getId();
+        $photoId = (string) $photo->getId();
 
-        $this->client->request('DELETE', '/api/admin/albums/'.$album->getId());
+        $this->client->request('DELETE', '/api/admin/albums/'.$albumId);
 
-        $this->assertResponseStatusCodeSame(409);
+        $this->assertResponseStatusCodeSame(204);
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Album::class)->find($albumId));
+        $this->assertNull($this->em->getRepository(Photo::class)->find($photoId));
     }
 
     public function testDeleteEmptyAlbumSucceeds(): void

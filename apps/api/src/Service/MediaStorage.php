@@ -54,6 +54,18 @@ final class MediaStorage
         $this->ensureDirectory(\dirname($this->absolutePath($relativePath)));
     }
 
+    public function deleteRelative(?string $relativePath): void
+    {
+        if (null === $relativePath || '' === $relativePath) {
+            return;
+        }
+
+        $absolute = $this->absolutePath($relativePath);
+        if (is_file($absolute)) {
+            @unlink($absolute);
+        }
+    }
+
     private function ensureDirectory(string $absoluteDir): void
     {
         if (!is_dir($absoluteDir) && !mkdir($absoluteDir, 0775, true) && !is_dir($absoluteDir)) {
