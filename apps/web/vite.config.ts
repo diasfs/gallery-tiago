@@ -1,6 +1,11 @@
 /// <reference types="vitest/config" />
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -11,7 +16,12 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8081'
 
   return {
-    plugins: [vue()],
+    plugins: [vue(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
+    },
     server: {
       host: true,
       port: 5173,
