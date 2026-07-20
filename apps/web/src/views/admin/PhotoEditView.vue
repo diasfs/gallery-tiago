@@ -25,7 +25,6 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const saving = ref(false)
 const saved = ref(false)
-const reprocessing = ref(false)
 
 const form = reactive<{ title: string; takenAt: string }>({ title: '', takenAt: '' })
 const selectedTags = ref<Tag[]>([])
@@ -68,21 +67,6 @@ async function save() {
     error.value = err instanceof ApiError ? `Save failed: ${err.message}` : 'Save failed.'
   } finally {
     saving.value = false
-  }
-}
-
-async function reprocess() {
-  if (!photo.value) {
-    return
-  }
-  reprocessing.value = true
-  error.value = null
-  try {
-    photo.value = await adminApi.reprocessPhoto(photo.value.id)
-  } catch (err) {
-    error.value = err instanceof ApiError ? `Reprocess failed: ${err.message}` : 'Reprocess failed.'
-  } finally {
-    reprocessing.value = false
   }
 }
 
@@ -406,19 +390,9 @@ function selectPersonResult(value: unknown) {
                 </div>
               </fieldset>
 
-              <div class="flex flex-wrap gap-2">
-                <Button type="submit" :disabled="saving">
-                  {{ saving ? 'Saving…' : 'Save changes' }}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  :disabled="reprocessing"
-                  @click="reprocess"
-                >
-                  {{ reprocessing ? 'Reprocessing…' : 'Reprocess' }}
-                </Button>
-              </div>
+              <Button type="submit" :disabled="saving">
+                {{ saving ? 'Saving…' : 'Save changes' }}
+              </Button>
             </CardContent>
           </Card>
         </form>
