@@ -24,7 +24,10 @@ WORKDIR /app
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/gallery.ini
+COPY docker/entrypoint.sh /usr/local/bin/gallery-entrypoint.sh
+RUN chmod +x /usr/local/bin/gallery-entrypoint.sh
 
 EXPOSE 80
 
+ENTRYPOINT ["/usr/local/bin/gallery-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

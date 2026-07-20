@@ -2,6 +2,8 @@
 vendor/
 node_modules/
 apps/api/var/
+apps/api/supervisord.log
+apps/api/supervisord.pid
 apps/web/dist/
 media/
 __pycache__/
