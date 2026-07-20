@@ -68,9 +68,19 @@ const router = createRouter({
           props: true,
         },
         {
+          path: 'people',
+          name: 'admin-people',
+          component: () => import('../views/admin/PeopleView.vue'),
+        },
+        {
           path: 'people/unnamed',
-          name: 'admin-unnamed-people',
-          component: () => import('../views/admin/UnnamedPeopleView.vue'),
+          redirect: { name: 'admin-people', query: { scope: 'unnamed' } },
+        },
+        {
+          path: 'people/:id',
+          name: 'admin-person-edit',
+          component: () => import('../views/admin/PersonEditView.vue'),
+          props: true,
         },
       ],
     },

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { ExternalLink, Images, LogOut, Users } from '@lucide/vue'
 import { adminApi } from '@/api/client'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,8 +12,19 @@ const title = computed(() => {
   if (name === 'admin-albums') return 'Albums'
   if (name === 'admin-album-photos') return 'Album photos'
   if (name === 'admin-photo-edit') return 'Edit photo'
-  if (name === 'admin-unnamed-people') return 'Unnamed people'
+  if (name === 'admin-people') return 'People'
+  if (name === 'admin-person-edit') return 'Edit person'
   return 'Admin'
+})
+
+const subtitle = computed(() => {
+  const name = route.name
+  if (name === 'admin-albums') return 'Collections, visibility, date, and location'
+  if (name === 'admin-album-photos') return 'Upload and curate your images'
+  if (name === 'admin-photo-edit') return 'Title, tags, and people'
+  if (name === 'admin-people') return 'Named people and unnamed face clusters'
+  if (name === 'admin-person-edit') return 'Name, primary face, merge, or delete'
+  return ''
 })
 
 async function logout() {
@@ -25,39 +35,65 @@ async function logout() {
 
 <template>
   <div class="admin-root flex min-h-screen">
-    <aside class="flex w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)] px-4 py-6">
-      <div class="font-brand text-lg font-semibold tracking-tight">Gallery</div>
-      <Separator class="my-4" />
-      <nav class="flex flex-1 flex-col gap-1 text-sm">
-        <RouterLink
-          to="/admin"
-          class="rounded-md px-3 py-2 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
-          active-class="!bg-[var(--accent)] !text-[var(--primary)]"
-        >
-          Albums
-        </RouterLink>
-        <RouterLink
-          to="/admin/people/unnamed"
-          class="rounded-md px-3 py-2 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
-          active-class="!bg-[var(--accent)] !text-[var(--primary)]"
-        >
-          People
-        </RouterLink>
-      </nav>
-      <Button data-testid="admin-logout" variant="ghost" class="justify-start" @click="logout">
-        Log out
-      </Button>
-    </aside>
+    <aside class="admin-sidebar flex w-[15.5rem] shrink-0 flex-col py-6">
+      <div class="px-5">
+        <div class="flex items-center gap-2.5">
+          <div
+            class="flex size-8 items-center justify-center rounded-lg bg-foreground text-[10px] font-bold tracking-widest text-background"
+            aria-hidden="true"
+          >
+            G
+          </div>
+          <div>
+            <div class="font-brand text-[1.05rem] font-semibold leading-none text-foreground">Gallery</div>
+            <p class="mt-1 text-[11px] tracking-wide text-muted-foreground">Admin</p>
+          </div>
+        </div>
+      </div>
 
-    <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
-        <h1 class="text-lg font-medium">{{ title }}</h1>
-        <RouterLink to="/" class="text-sm text-[var(--muted-foreground)] hover:text-[var(--primary)]">
+      <div class="mt-8 px-5">
+        <p class="admin-nav-section">Library</p>
+        <nav class="mt-2 flex flex-col gap-0.5">
+          <RouterLink to="/admin" class="admin-nav-link">
+            <Images class="size-[1.05rem] shrink-0 opacity-60" />
+            Albums
+          </RouterLink>
+          <RouterLink to="/admin/people" class="admin-nav-link">
+            <Users class="size-[1.05rem] shrink-0 opacity-60" />
+            People
+          </RouterLink>
+        </nav>
+      </div>
+
+      <div class="admin-sidebar-footer space-y-0.5">
+        <RouterLink to="/" class="admin-footer-link">
+          <ExternalLink class="size-3.5 shrink-0 opacity-70" />
           View site
         </RouterLink>
+        <button
+          type="button"
+          data-testid="admin-logout"
+          class="admin-footer-link admin-footer-link--logout"
+          @click="logout"
+        >
+          <LogOut class="size-3.5 shrink-0 opacity-70" />
+          Log out
+        </button>
+      </div>
+    </aside>
+
+    <div class="flex min-w-0 flex-1 flex-col bg-background">
+      <header class="admin-topbar sticky top-0 z-10 px-10 pt-7">
+        <div class="mx-auto max-w-5xl">
+          <h1 class="font-display text-[1.75rem] font-semibold leading-tight text-foreground">{{ title }}</h1>
+          <p v-if="subtitle" class="mt-1.5 text-[0.9375rem] text-muted-foreground">{{ subtitle }}</p>
+        </div>
       </header>
-      <main class="flex-1 px-6 py-6">
-        <RouterView />
+
+      <main class="admin-main flex-1 px-10 pb-12">
+        <div class="mx-auto max-w-5xl">
+          <RouterView />
+        </div>
       </main>
     </div>
   </div>

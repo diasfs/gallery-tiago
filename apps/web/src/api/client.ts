@@ -1,6 +1,7 @@
 import type {
   AdminAlbum,
   AdminPerson,
+  AdminPersonDetail,
   AdminPhotoDetail,
   AdminPhotoSummary,
   AdminUser,
@@ -9,6 +10,7 @@ import type {
   Face,
   Location,
   LocationDetail,
+  PeopleScope,
   PersonSummary,
   PhotoDetail,
   PhotoSummary,
@@ -175,8 +177,19 @@ export const adminApi = {
     ),
 
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
+  listPeople: (scope: PeopleScope = 'all', q?: string) => {
+    const params = new URLSearchParams({ scope })
+    if (q) params.set('q', q)
+    return adminRequest<AdminPerson[]>(`/api/admin/people?${params.toString()}`)
+  },
   searchPeople: (q?: string) =>
     adminRequest<AdminPerson[]>(`/api/admin/people${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  getPerson: (id: string) => adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}`),
+  updatePerson: (id: string, payload: { name?: string | null; avatarFaceId?: string | null }) =>
+    adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: payload,
+    }),
   namePerson: (id: string, name: string) =>
     adminRequest<AdminPerson>(`/api/admin/people/${encodeURIComponent(id)}/name`, { method: 'POST', body: { name } }),
   mergePerson: (id: string, targetPersonId: string) =>

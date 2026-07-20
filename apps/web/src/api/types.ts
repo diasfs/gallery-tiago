@@ -126,7 +126,7 @@ export interface AdminPhotoDetail {
 
 export interface Face {
   id: string
-  photoId: string
+  photoId: string | null
   personId: string | null
   cropPath: string | null
   hasEmbedding: boolean
@@ -136,6 +136,8 @@ export interface UnnamedPersonCluster {
   id: string
   faceCount: number
   faces: Face[]
+  avatarFaceId?: string | null
+  avatarCropPath?: string | null
 }
 
 export interface AdminPerson {
@@ -143,5 +145,12 @@ export interface AdminPerson {
   name: string | null
   isNamed: boolean
   faceCount: number
+  avatarFaceId: string | null
+  avatarCropPath: string | null
 }
 
+export interface AdminPersonDetail extends AdminPerson {
+  faces: Face[]
+}
+
+export type PeopleScope = 'all' | 'named' | 'unnamed'

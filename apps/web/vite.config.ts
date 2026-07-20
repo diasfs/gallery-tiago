@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
           target: apiProxyTarget,
           changeOrigin: true,
         },
-        // Face crops written by worker-faces (faces/<xx>/<photoId>/<faceId>.jpg).
+        // Face crops written by worker-faces (faces/<xx>/<faceId>.jpg).
         '/faces': {
           target: apiProxyTarget,
           changeOrigin: true,
