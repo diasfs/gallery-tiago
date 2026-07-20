@@ -47,29 +47,32 @@ const router = createRouter({
     },
     {
       path: '/admin',
-      name: 'admin-albums',
-      component: () => import('../views/admin/AlbumsView.vue'),
+      component: () => import('../components/admin/AdminLayout.vue'),
       meta: { admin: true },
-    },
-    {
-      path: '/admin/albums/:albumId/photos',
-      name: 'admin-album-photos',
-      component: () => import('../views/admin/AlbumPhotosView.vue'),
-      props: true,
-      meta: { admin: true },
-    },
-    {
-      path: '/admin/photos/:id',
-      name: 'admin-photo-edit',
-      component: () => import('../views/admin/PhotoEditView.vue'),
-      props: true,
-      meta: { admin: true },
-    },
-    {
-      path: '/admin/people/unnamed',
-      name: 'admin-unnamed-people',
-      component: () => import('../views/admin/UnnamedPeopleView.vue'),
-      meta: { admin: true },
+      children: [
+        {
+          path: '',
+          name: 'admin-albums',
+          component: () => import('../views/admin/AlbumsView.vue'),
+        },
+        {
+          path: 'albums/:albumId/photos',
+          name: 'admin-album-photos',
+          component: () => import('../views/admin/AlbumPhotosView.vue'),
+          props: true,
+        },
+        {
+          path: 'photos/:id',
+          name: 'admin-photo-edit',
+          component: () => import('../views/admin/PhotoEditView.vue'),
+          props: true,
+        },
+        {
+          path: 'people/unnamed',
+          name: 'admin-unnamed-people',
+          component: () => import('../views/admin/UnnamedPeopleView.vue'),
+        },
+      ],
     },
     {
       path: '/:pathMatch(.*)*',
@@ -85,7 +88,8 @@ const router = createRouter({
  * any client-side flag, since the cookie is the actual source of truth.
  */
 router.beforeEach(async (to) => {
-  if (!to.meta.admin) {
+  const needsAdmin = to.matched.some((record) => record.meta.admin)
+  if (!needsAdmin) {
     return true
   }
 

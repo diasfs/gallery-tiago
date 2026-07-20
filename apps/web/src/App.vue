@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
+
+const route = useRoute()
+const isAdmin = computed(() => route.path.startsWith('/admin'))
 </script>
 
 <template>
-  <div class="app">
-    <header class="app__header">
+  <div class="app" :class="{ 'app--admin': isAdmin }">
+    <header v-if="!isAdmin" class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
       <RouterLink to="/admin" class="app__admin-link">Admin</RouterLink>
     </header>
-    <main class="app__main">
+    <main class="app__main" :class="{ 'app__main--flush': isAdmin }">
       <RouterView />
     </main>
   </div>
@@ -19,6 +23,12 @@ import { RouterLink, RouterView } from 'vue-router'
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 1.5rem 3rem;
+}
+
+.app--admin {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 .app__header {
@@ -44,5 +54,9 @@ import { RouterLink, RouterView } from 'vue-router'
 
 .app__main {
   min-height: 60vh;
+}
+
+.app__main--flush {
+  min-height: 100vh;
 }
 </style>
