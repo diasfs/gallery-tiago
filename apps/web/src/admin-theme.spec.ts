@@ -1,14 +1,34 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-
-const adminCss = readFileSync(path.resolve(process.cwd(), 'src/admin.css'), 'utf8')
+import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 
 describe('admin theme tokens', () => {
-  it('exposes tokens to admin content portalled under body', () => {
-    expect(adminCss).toMatch(/:root,\s*\.admin-root\s*\{/)
-    expect(adminCss).toMatch(/--background:\s*#0c0c0e/)
-    expect(adminCss).toMatch(/--popover:\s*#16161a/)
-    expect(adminCss).toMatch(/--ring:\s*#7c9cff/)
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('teleports dialog content into the admin portal root', async () => {
+    document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
+
+    const wrapper = mount({
+      components: { Dialog, DialogContent, DialogDescription, DialogTitle },
+      template: `
+        <Dialog :open="true">
+          <DialogContent>
+            <DialogTitle>Portal content</DialogTitle>
+            <DialogDescription>Admin-themed dialog</DialogDescription>
+          </DialogContent>
+        </Dialog>
+      `,
+    })
+    await nextTick()
+
+    const portalRoot = document.querySelector('#admin-portal-root')
+    const content = portalRoot?.querySelector('[data-slot="dialog-content"]')
+    expect(content).not.toBeNull()
+    expect(content?.textContent).toContain('Portal content')
+
+    wrapper.unmount()
   })
 })

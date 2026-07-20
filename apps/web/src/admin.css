@@ -28,8 +28,6 @@
   --color-ring: var(--ring);
 }
 
-/* Root coverage keeps body-portalled shadcn content on the admin palette. */
-:root,
 .admin-root {
   --background: #0c0c0e;
   --foreground: #e8e8ea;
@@ -43,7 +41,7 @@
   --secondary-foreground: #e8e8ea;
   --muted: #16161a;
   --muted-foreground: #9a9aa3;
-  --accent: #1c1c22;
+  --accent: #2a2a30;
   --accent-foreground: #e8e8ea;
   --destructive: #ef4444;
   --destructive-foreground: #e8e8ea;
@@ -58,6 +56,10 @@
   background: var(--background);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   min-height: 100vh;
+}
+
+#admin-portal-root {
+  min-height: 0;
 }
 
 .admin-root .font-brand {

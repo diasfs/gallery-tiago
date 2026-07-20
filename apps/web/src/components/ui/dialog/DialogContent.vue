@@ -27,7 +27,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <DialogPortal>
+  <DialogPortal to="#admin-portal-root">
     <DialogOverlay />
     <DialogContent
       data-slot="dialog-content"
