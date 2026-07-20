@@ -1,6 +1,35 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import { ApiError, adminApi, type AlbumWritePayload } from '../../api/client'
 import type { AdminAlbum } from '../../api/types'
 
@@ -52,6 +81,7 @@ async function load() {
 onMounted(load)
 
 const editingId = ref<string | 'new' | null>(null)
+const deletingAlbum = ref<AdminAlbum | null>(null)
 const formError = ref<string | null>(null)
 const form = reactive<{
   title: string
@@ -104,6 +134,26 @@ function cancelEdit() {
   editingId.value = null
 }
 
+function handleEditDialogOpen(open: boolean) {
+  if (!open) cancelEdit()
+}
+
+function updateVisibility(value: unknown) {
+  if (value === 'public' || value === 'unlisted' || value === 'private') {
+    form.visibility = value
+  }
+}
+
+function updateParentId(value: unknown) {
+  form.parentId = value === '__root__' ? '' : String(value ?? '')
+}
+
+function badgeVariant(visibility: AdminAlbum['visibility']) {
+  if (visibility === 'public') return 'default'
+  if (visibility === 'unlisted') return 'secondary'
+  return 'outline'
+}
+
 async function submit() {
   formError.value = null
   if (!form.title.trim() || !form.slug.trim()) {
@@ -134,16 +184,16 @@ async function submit() {
   }
 }
 
-async function remove(album: AdminAlbum) {
-  if (
-    !confirm(
-      `Delete "${album.title}" and all of its sub-albums and photos? This cannot be undone.`,
-    )
-  ) {
-    return
-  }
+function remove(album: AdminAlbum) {
+  deletingAlbum.value = album
+}
+
+async function confirmDelete() {
+  if (!deletingAlbum.value) return
+
   try {
-    await adminApi.deleteAlbum(album.id)
+    await adminApi.deleteAlbum(deletingAlbum.value.id)
+    deletingAlbum.value = null
     await load()
   } catch {
     error.value = 'Delete failed.'
@@ -152,209 +202,172 @@ async function remove(album: AdminAlbum) {
 </script>
 
 <template>
-  <section class="albums">
-    <header class="albums__header">
-      <h1>Albums</h1>
-      <div class="albums__header-actions">
-        <RouterLink to="/admin/people/unnamed">Unnamed people</RouterLink>
-        <button type="button" @click="startCreate()">New album</button>
-      </div>
-    </header>
+  <section class="space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="max-w-2xl text-sm text-muted-foreground">
+        Organize albums, set their visibility, and manage nested collections.
+      </p>
+      <Button type="button" @click="startCreate()">New album</Button>
+    </div>
 
-    <p v-if="loading">Loading albums…</p>
-    <p v-else-if="error" class="albums__error">{{ error }}</p>
+    <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+      Loading albums…
+    </div>
 
-    <table v-else class="albums__table">
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Visibility</th>
-          <th>Order</th>
-          <th>Photos</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="{ album, depth } in flatAlbums" :key="album.id">
-          <td :style="{ paddingLeft: `${depth * 1.5}rem` }">{{ album.title }}</td>
-          <td><span class="badge" :class="`badge--${album.visibility}`">{{ album.visibility }}</span></td>
-          <td>{{ album.sortOrder }}</td>
-          <td>{{ album.photoCount }}</td>
-          <td class="albums__row-actions">
-            <RouterLink :to="{ name: 'admin-album-photos', params: { albumId: album.id } }">Photos</RouterLink>
-            <button type="button" @click="startCreate(album.id)">+ Sub-album</button>
-            <button type="button" @click="startEdit(album)">Edit</button>
-            <button type="button" class="danger" @click="remove(album)">Delete</button>
-          </td>
-        </tr>
-        <tr v-if="flatAlbums.length === 0">
-          <td colspan="5">No albums yet.</td>
-        </tr>
-      </tbody>
-    </table>
+    <Alert v-else-if="error" variant="destructive">
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
 
-    <form v-if="editingId !== null" class="album-form" @submit.prevent="submit">
-      <h2>{{ editingId === 'new' ? 'New album' : 'Edit album' }}</h2>
+    <div v-else class="overflow-hidden rounded-lg border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Title</TableHead>
+            <TableHead>Visibility</TableHead>
+            <TableHead class="w-20 text-right">Order</TableHead>
+            <TableHead class="w-20 text-right">Photos</TableHead>
+            <TableHead class="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow v-for="{ album, depth } in flatAlbums" :key="album.id">
+            <TableCell class="font-medium">
+              <span class="inline-flex items-center" :style="{ paddingLeft: `${depth * 1.5}rem` }">
+                <span v-if="depth > 0" class="mr-2 text-muted-foreground" aria-hidden="true">↳</span>
+                {{ album.title }}
+              </span>
+            </TableCell>
+            <TableCell>
+              <Badge :variant="badgeVariant(album.visibility)" class="capitalize">
+                {{ album.visibility }}
+              </Badge>
+            </TableCell>
+            <TableCell class="text-right tabular-nums">{{ album.sortOrder }}</TableCell>
+            <TableCell class="text-right tabular-nums">{{ album.photoCount }}</TableCell>
+            <TableCell>
+              <div class="flex flex-wrap justify-end gap-1">
+                <Button as-child variant="ghost" size="sm">
+                  <RouterLink :to="{ name: 'admin-album-photos', params: { albumId: album.id } }">
+                    Photos
+                  </RouterLink>
+                </Button>
+                <Button type="button" variant="ghost" size="sm" @click="startCreate(album.id)">
+                  Add sub-album
+                </Button>
+                <Button type="button" variant="ghost" size="sm" @click="startEdit(album)">
+                  Edit
+                </Button>
+                <Button type="button" variant="ghost" size="sm" class="text-destructive" @click="remove(album)">
+                  Delete
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+          <TableRow v-if="flatAlbums.length === 0">
+            <TableCell colspan="5" class="h-28 text-center text-muted-foreground">
+              No albums yet. Create one to start organizing photos.
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
 
-      <label>
-        <span>Title</span>
-        <input v-model="form.title" required />
-      </label>
-      <label>
-        <span>Slug</span>
-        <input v-model="form.slug" required />
-      </label>
-      <label>
-        <span>Description</span>
-        <textarea v-model="form.description" rows="2"></textarea>
-      </label>
-      <label>
-        <span>Visibility</span>
-        <select v-model="form.visibility">
-          <option value="public">Public</option>
-          <option value="unlisted">Unlisted</option>
-          <option value="private">Private</option>
-        </select>
-      </label>
-      <label>
-        <span>Sort order</span>
-        <input v-model.number="form.sortOrder" type="number" />
-      </label>
-      <label>
-        <span>Parent album</span>
-        <select v-model="form.parentId">
-          <option value="">(root)</option>
-          <option v-for="album in albums" :key="album.id" :value="album.id" :disabled="album.id === editingId">
-            {{ album.title }}
-          </option>
-        </select>
-      </label>
-      <label>
-        <span>Cover photo id</span>
-        <input v-model="form.coverPhotoId" placeholder="optional photo UUID" />
-      </label>
+    <Dialog :open="editingId !== null" @update:open="handleEditDialogOpen">
+      <DialogContent class="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{{ editingId === 'new' ? 'New album' : 'Edit album' }}</DialogTitle>
+          <DialogDescription>
+            {{ editingId === 'new' ? 'Create a collection for your photos.' : 'Update this album’s details and placement.' }}
+          </DialogDescription>
+        </DialogHeader>
 
-      <p v-if="formError" class="albums__error">{{ formError }}</p>
+        <form class="grid gap-4" @submit.prevent="submit">
+          <div class="grid gap-2">
+            <Label for="album-title">Title</Label>
+            <Input id="album-title" v-model="form.title" required />
+          </div>
 
-      <div class="album-form__actions">
-        <button type="submit">Save</button>
-        <button type="button" @click="cancelEdit">Cancel</button>
-      </div>
-    </form>
+          <div class="grid gap-2">
+            <Label for="album-slug">Slug</Label>
+            <Input id="album-slug" v-model="form.slug" required />
+          </div>
+
+          <div class="grid gap-2">
+            <Label for="album-description">Description</Label>
+            <Textarea id="album-description" v-model="form.description" rows="3" />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="grid gap-2">
+              <Label for="album-visibility">Visibility</Label>
+              <Select :model-value="form.visibility" @update:model-value="updateVisibility">
+                <SelectTrigger id="album-visibility" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Public</SelectItem>
+                  <SelectItem value="unlisted">Unlisted</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="grid gap-2">
+              <Label for="album-sort-order">Sort order</Label>
+              <Input id="album-sort-order" v-model.number="form.sortOrder" type="number" />
+            </div>
+          </div>
+
+          <div class="grid gap-2">
+            <Label for="album-parent">Parent album</Label>
+            <Select :model-value="form.parentId || '__root__'" @update:model-value="updateParentId">
+              <SelectTrigger id="album-parent" class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__root__">(root)</SelectItem>
+                <SelectItem
+                  v-for="album in albums"
+                  :key="album.id"
+                  :value="album.id"
+                  :disabled="album.id === editingId"
+                >
+                  {{ album.title }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="grid gap-2">
+            <Label for="album-cover-photo">Cover photo ID</Label>
+            <Input id="album-cover-photo" v-model="form.coverPhotoId" placeholder="Optional photo UUID" />
+          </div>
+
+          <Alert v-if="formError" variant="destructive">
+            <AlertDescription>{{ formError }}</AlertDescription>
+          </Alert>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="cancelEdit">Cancel</Button>
+            <Button type="submit">Save changes</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="deletingAlbum !== null" @update:open="(open) => { if (!open) deletingAlbum = null }">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete album?</DialogTitle>
+          <DialogDescription>
+            Delete “{{ deletingAlbum?.title }}” and all of its sub-albums and photos? This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" @click="deletingAlbum = null">Cancel</Button>
+          <Button type="button" variant="destructive" @click="confirmDelete">Delete album</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </section>
 </template>
-
-<style scoped>
-.albums__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.albums__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.albums__error {
-  color: #f87171;
-}
-
-.albums__table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1.5rem;
-}
-
-.albums__table th,
-.albums__table td {
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #262626;
-  font-size: 0.9rem;
-}
-
-.albums__row-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  background: #1a1a1a;
-}
-
-.badge--public {
-  color: #4ade80;
-}
-
-.badge--unlisted {
-  color: #facc15;
-}
-
-.badge--private {
-  color: #f87171;
-}
-
-.album-form {
-  margin-top: 2rem;
-  padding: 1.5rem;
-  border: 1px solid #262626;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  max-width: 480px;
-}
-
-.album-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-}
-
-.album-form input,
-.album-form select,
-.album-form textarea {
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid #333;
-  background: #111;
-  color: inherit;
-  font: inherit;
-}
-
-.album-form__actions {
-  display: flex;
-  gap: 0.6rem;
-}
-
-button {
-  padding: 0.4rem 0.8rem;
-  border-radius: 6px;
-  border: 1px solid #333;
-  background: #1a1a1a;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-button.danger {
-  color: #f87171;
-  border-color: #7f1d1d;
-}
-
-button[type='submit'] {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-  font-weight: 600;
-}
-</style>
