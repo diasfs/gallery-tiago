@@ -26,13 +26,27 @@ class PersonRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /** @return Person[] */
-    public function searchNamed(?string $query): array
+    /**
+     * @param 'all'|'named'|'unnamed' $scope
+     *
+     * @return Person[]
+     */
+    public function search(string $scope = 'named', ?string $query = null, int $limit = 100): array
     {
         $qb = $this->createQueryBuilder('p')
-            ->andWhere('p.isNamed = true')
-            ->orderBy('p.name', 'ASC')
-            ->setMaxResults(20);
+            ->leftJoin('p.avatarFace', 'af')
+            ->addSelect('af')
+            ->setMaxResults($limit);
+
+        if ('named' === $scope) {
+            $qb->andWhere('p.isNamed = true')->orderBy('p.name', 'ASC');
+        } elseif ('unnamed' === $scope) {
+            $qb->andWhere('p.isNamed = false')->orderBy('p.id', 'ASC');
+        } else {
+            $qb->orderBy('p.isNamed', 'DESC')
+                ->addOrderBy('p.name', 'ASC')
+                ->addOrderBy('p.id', 'ASC');
+        }
 
         if (null !== $query && '' !== $query) {
             $qb->andWhere('LOWER(p.name) LIKE :query')
@@ -40,5 +54,11 @@ class PersonRepository extends ServiceEntityRepository
         }
 
         return $qb->getQuery()->getResult();
+    }
+
+    /** @return Person[] */
+    public function searchNamed(?string $query): array
+    {
+        return $this->search('named', $query, 20);
     }
 }

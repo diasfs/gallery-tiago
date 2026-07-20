@@ -74,8 +74,9 @@ def resolve_image_path(media_root: Path, avif_path: Optional[str], original_path
     raise RuntimeError("photo has neither original_path nor avif_path")
 
 
-def crop_path_for(photo_id: str, face_id: str) -> str:
-    return f"faces/{photo_id[:2]}/{photo_id}/{face_id}.jpg"
+def crop_path_for(face_id: str) -> str:
+    """Store crops by face id so they outlive the source photo."""
+    return f"faces/{face_id[:2]}/{face_id}.jpg"
 
 
 def process_photo(conn, cfg: Config, photo_id: str) -> int:
@@ -92,7 +93,7 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
     # Safe to call unconditionally: re-detects are idempotent because prior
     # auto-detected faces are cleared first (manual, no-embedding faces are
     # untouched -- see db.delete_auto_detected_faces).
-    db.delete_auto_detected_faces(conn, photo_id)
+    db.delete_auto_detected_faces(conn, photo_id, media_root=str(cfg.media_root))
 
     detected = get_face_app().get(image)
 
@@ -108,7 +109,7 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
             person_id = db.create_person(conn)
 
         face_id = str(uuid.uuid4())
-        crop_relative = crop_path_for(photo_id, face_id)
+        crop_relative = crop_path_for(face_id)
         crop_absolute = cfg.media_root / crop_relative
 
         ix1, iy1, ix2, iy2 = max(0, int(x1)), max(0, int(y1)), max(0, int(x2)), max(0, int(y2))

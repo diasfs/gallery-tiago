@@ -17,9 +17,13 @@ class Face
     #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     private Uuid $id;
 
+    /**
+     * Nullable so face crops survive source-photo deletion (photo_id SET NULL).
+     * New faces always start attached to a photo via the constructor.
+     */
     #[ORM\ManyToOne(targetEntity: Photo::class, inversedBy: 'faces')]
-    #[ORM\JoinColumn(name: 'photo_id', nullable: false, onDelete: 'CASCADE')]
-    private Photo $photo;
+    #[ORM\JoinColumn(name: 'photo_id', nullable: true, onDelete: 'SET NULL')]
+    private ?Photo $photo;
 
     #[ORM\ManyToOne(targetEntity: Person::class, inversedBy: 'faces')]
     #[ORM\JoinColumn(name: 'person_id', nullable: true, onDelete: 'SET NULL')]
@@ -69,9 +73,16 @@ class Face
         return $this->id;
     }
 
-    public function getPhoto(): Photo
+    public function getPhoto(): ?Photo
     {
         return $this->photo;
+    }
+
+    public function setPhoto(?Photo $photo): static
+    {
+        $this->photo = $photo;
+
+        return $this;
     }
 
     public function getPerson(): ?Person

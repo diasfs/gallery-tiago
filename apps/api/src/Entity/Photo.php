@@ -55,7 +55,7 @@ class Photo
     private Collection $tags;
 
     /** @var Collection<int, Face> */
-    #[ORM\OneToMany(mappedBy: 'photo', targetEntity: Face::class, orphanRemoval: true)]
+    #[ORM\OneToMany(mappedBy: 'photo', targetEntity: Face::class)]
     private Collection $faces;
 
     #[ORM\Column]

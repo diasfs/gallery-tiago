@@ -143,14 +143,30 @@ def insert_face(
         )
 
 
-def delete_auto_detected_faces(conn: psycopg.Connection, photo_id: str) -> None:
+def delete_auto_detected_faces(conn: psycopg.Connection, photo_id: str, media_root: Optional[str] = None) -> None:
     """Drop previously auto-detected faces (has_embedding = true) for a photo.
 
     Called before (re)running detection so re-delivered/reprocessed messages
     stay idempotent. Manually added faces (has_embedding = false) are left
     untouched, per design spec §9.
+
+    When media_root is provided, on-disk crop files for the deleted faces are
+    removed as well.
     """
+    from pathlib import Path
+
     with conn.cursor() as cur:
+        if media_root:
+            cur.execute(
+                "SELECT crop_path FROM face WHERE photo_id = %s AND has_embedding = true",
+                (photo_id,),
+            )
+            for (crop_path,) in cur.fetchall():
+                if crop_path:
+                    path = Path(media_root) / crop_path
+                    if path.is_file():
+                        path.unlink(missing_ok=True)
+
         cur.execute("DELETE FROM face WHERE photo_id = %s AND has_embedding = true", (photo_id,))
 
 

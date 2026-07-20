@@ -9,9 +9,11 @@ use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
+use App\Service\PhotoDeleter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -28,13 +30,44 @@ class PhotoController
         private readonly TagRepository $tags,
         private readonly EntityManagerInterface $em,
         private readonly MessageBusInterface $bus,
+        private readonly PhotoDeleter $photoDeleter,
     ) {
+    }
+
+    #[Route('/bulk-delete', name: 'admin_photos_bulk_delete', methods: ['POST'])]
+    public function bulkDelete(Request $request): Response
+    {
+        $payload = $this->decode($request);
+        $ids = $payload['ids'] ?? null;
+        if (!\is_array($ids) || [] === $ids) {
+            throw new BadRequestHttpException('ids must be a non-empty array of photo ids.');
+        }
+
+        $photos = [];
+        foreach ($ids as $id) {
+            if (!\is_string($id)) {
+                throw new BadRequestHttpException('ids must contain string ids.');
+            }
+            $photos[] = $this->findOrFail($id);
+        }
+
+        $this->photoDeleter->deleteMany($photos);
+
+        return new Response(status: Response::HTTP_NO_CONTENT);
     }
 
     #[Route('/{id}', name: 'admin_photos_show', methods: ['GET'])]
     public function show(string $id): JsonResponse
     {
         return new JsonResponse(['data' => $this->normalize($this->findOrFail($id))]);
+    }
+
+    #[Route('/{id}', name: 'admin_photos_delete', methods: ['DELETE'])]
+    public function delete(string $id): Response
+    {
+        $this->photoDeleter->delete($this->findOrFail($id));
+
+        return new Response(status: Response::HTTP_NO_CONTENT);
     }
 
     #[Route('/{id}', name: 'admin_photos_update', methods: ['PATCH'])]
@@ -49,7 +82,6 @@ class PhotoController
             }
             $photo->setTitle($payload['title']);
         }
-
 
         if (\array_key_exists('tagIds', $payload)) {
             $this->applyTags($photo, $payload['tagIds']);
@@ -92,8 +124,6 @@ class PhotoController
 
         return new JsonResponse(['data' => $this->normalize($photo)]);
     }
-
-
 
     private function applyTags(Photo $photo, mixed $tagIds): void
     {
@@ -198,7 +228,6 @@ class PhotoController
 
         return $people;
     }
-
 
     /** @return array<string, mixed> */
     private function normalizeTag(Tag $tag): array

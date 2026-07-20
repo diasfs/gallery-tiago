@@ -333,19 +333,144 @@ final class PersonMergeTest extends WebTestCase
         $this->assertNull($this->em->getRepository(Face::class)->find($faceId));
     }
 
-    public function testDiscardingNamedPersonReturns409(): void
+    public function testAdminCanDeleteNamedPerson(): void
     {
         $person = new Person();
         $person->setName('Ana');
         $person->setIsNamed(true);
         $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $personId = (string) $person->getId();
+        $faceId = (string) $face->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('DELETE', '/api/admin/people/'.$personId);
+
+        $this->assertResponseStatusCodeSame(204);
+
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Person::class)->find($personId));
+        $this->assertNull($this->em->getRepository(Face::class)->find($faceId));
+    }
+
+    // --- List / detail / avatar --------------------------------------------
+
+    public function testAdminCanListAllPeople(): void
+    {
+        $unnamed = new Person();
+        $this->em->persist($unnamed);
+        $named = new Person();
+        $named->setName('Ana');
+        $named->setIsNamed(true);
+        $this->em->persist($named);
+        $face = $this->detectedFace($this->publicPhoto, $named);
+        $named->setAvatarFace($face);
         $this->em->flush();
 
         $this->loginAsAdmin();
 
-        $this->client->request('DELETE', '/api/admin/people/'.$person->getId());
+        $this->client->request('GET', '/api/admin/people?scope=all');
 
-        $this->assertResponseStatusCodeSame(409);
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $ids = array_column($data, 'id');
+        $this->assertContains((string) $unnamed->getId(), $ids);
+        $this->assertContains((string) $named->getId(), $ids);
+
+        $namedRow = null;
+        foreach ($data as $row) {
+            if ($row['id'] === (string) $named->getId()) {
+                $namedRow = $row;
+                break;
+            }
+        }
+        $this->assertNotNull($namedRow);
+        $this->assertSame((string) $face->getId(), $namedRow['avatarFaceId']);
+        $this->assertSame($face->getCropPath(), $namedRow['avatarCropPath']);
+    }
+
+    public function testAdminCanShowPersonDetailAndSetAvatar(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $faceA = $this->detectedFace($this->publicPhoto, $person);
+        $faceB = $this->detectedFace($this->privatePhoto, $person);
+
+        $other = new Person();
+        $this->em->persist($other);
+        $otherFace = $this->detectedFace($this->publicPhoto, $other);
+        $this->em->flush();
+
+        // Keep ids — HTTP requests may clear the shared entity manager.
+        $personId = (string) $person->getId();
+        $faceBId = (string) $faceB->getId();
+        $faceBCrop = $faceB->getCropPath();
+        $otherFaceId = (string) $otherFace->getId();
+        $this->assertNotNull($faceA->getId());
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/people/'.$personId);
+        $this->assertResponseIsSuccessful();
+        $detail = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('Ana', $detail['name']);
+        $this->assertCount(2, $detail['faces']);
+        $this->assertNull($detail['avatarFaceId']);
+
+        $this->client->jsonRequest('PATCH', '/api/admin/people/'.$personId, [
+            'avatarFaceId' => $faceBId,
+            'name' => 'Ana Silva',
+        ]);
+        $this->assertResponseIsSuccessful();
+        $updated = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('Ana Silva', $updated['name']);
+        $this->assertSame($faceBId, $updated['avatarFaceId']);
+        $this->assertSame($faceBCrop, $updated['avatarCropPath']);
+
+        $this->client->jsonRequest('PATCH', '/api/admin/people/'.$personId, [
+            'avatarFaceId' => $otherFaceId,
+        ]);
+        $this->assertResponseStatusCodeSame(400);
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Person::class)->find($personId);
+        $this->assertSame($faceBId, (string) $reloaded->getAvatarFace()->getId());
+        $this->assertSame('Ana Silva', $reloaded->getName());
+    }
+
+    public function testDeletingPhotoKeepsFaceRowsAndCropPaths(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $person->setAvatarFace($face);
+        $this->em->flush();
+        $faceId = (string) $face->getId();
+        $cropPath = $face->getCropPath();
+        $photoId = (string) $this->publicPhoto->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('DELETE', '/api/admin/photos/'.$photoId);
+        $this->assertResponseStatusCodeSame(204);
+
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Photo::class)->find($photoId));
+
+        $surviving = $this->em->getRepository(Face::class)->find($faceId);
+        $this->assertNotNull($surviving);
+        $this->assertNull($surviving->getPhoto());
+        $this->assertSame($cropPath, $surviving->getCropPath());
+
+        $reloadedPerson = $this->em->getRepository(Person::class)->find($person->getId());
+        $this->assertNotNull($reloadedPerson->getAvatarFace());
+        $this->assertSame($faceId, (string) $reloadedPerson->getAvatarFace()->getId());
     }
 
     public function testDiscardUnknownPersonReturns404(): void

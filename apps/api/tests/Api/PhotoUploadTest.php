@@ -152,7 +152,39 @@ final class PhotoUploadTest extends WebTestCase
         unlink($textFile);
     }
 
+    public function testAdminCanDeletePhoto(): void
+    {
+        $this->loginAsAdmin();
+        $photo = new Photo($this->album, 'originals/ab/photo.jpg');
+        $photo->setTitle('to-delete');
+        $this->em->persist($photo);
+        $this->em->flush();
+        $photoId = (string) $photo->getId();
 
+        $this->client->request('DELETE', '/api/admin/photos/'.$photoId);
+
+        $this->assertResponseStatusCodeSame(204);
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Photo::class)->find($photoId));
+    }
+
+    public function testAdminCanBulkDeletePhotos(): void
+    {
+        $this->loginAsAdmin();
+        $a = new Photo($this->album, 'originals/ab/a.jpg');
+        $b = new Photo($this->album, 'originals/ab/b.jpg');
+        $this->em->persist($a);
+        $this->em->persist($b);
+        $this->em->flush();
+        $ids = [(string) $a->getId(), (string) $b->getId()];
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/bulk-delete', ['ids' => $ids]);
+
+        $this->assertResponseStatusCodeSame(204);
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Photo::class)->find($ids[0]));
+        $this->assertNull($this->em->getRepository(Photo::class)->find($ids[1]));
+    }
 
     public function testUploadToUnknownAlbumReturns404(): void
     {
