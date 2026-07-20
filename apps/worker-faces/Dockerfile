@@ -24,5 +24,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY docker-entrypoint.sh /usr/local/bin/gallery-faces-entrypoint.sh
+RUN chmod +x /usr/local/bin/gallery-faces-entrypoint.sh
 
+ENTRYPOINT ["/usr/local/bin/gallery-faces-entrypoint.sh"]
 CMD ["python", "main.py"]

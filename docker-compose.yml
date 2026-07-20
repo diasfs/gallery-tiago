@@ -39,7 +39,10 @@ services:
     # `gallery:faces` for apps/worker-faces to BRPOP — see Task 7). Kept in
     # one PHP consumer process for simplicity; split into its own service if
     # face-bridge volume ever needs independent scaling/restarts.
-    command: php bin/console messenger:consume convert faces -vv --time-limit=3600
+    # Run as www-data so converted files share ownership with php-fpm uploads.
+    command: >-
+      su -s /bin/sh www-data -c
+      'php bin/console messenger:consume convert faces -vv --time-limit=3600'
     volumes:
       - ./apps/api:/app
       - media_data:/var/gallery/media
