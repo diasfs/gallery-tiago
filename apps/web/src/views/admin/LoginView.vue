@@ -32,27 +32,43 @@ async function submit() {
 </script>
 
 <template>
-  <div class="admin-root flex min-h-screen items-center justify-center px-4">
-    <Card class="w-full max-w-sm border-[var(--border)] bg-[var(--card)]">
-      <CardHeader>
-        <CardTitle class="font-brand text-2xl">Gallery</CardTitle>
-        <CardDescription>Admin sign in</CardDescription>
+  <div class="admin-root relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+    <div class="admin-login-bg pointer-events-none absolute inset-0" aria-hidden="true" />
+
+    <Card class="admin-panel relative w-full max-w-[22rem] rounded-2xl border shadow-none">
+      <CardHeader class="space-y-4 pb-0 text-center">
+        <div
+          class="mx-auto flex size-11 items-center justify-center rounded-xl bg-foreground text-xs font-bold tracking-[0.2em] text-background"
+          aria-hidden="true"
+        >
+          G
+        </div>
+        <div>
+          <CardTitle class="font-display text-2xl font-semibold tracking-tight">Gallery</CardTitle>
+          <CardDescription class="mt-2 text-sm">Sign in to your admin workspace</CardDescription>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent class="pt-6">
         <form class="flex flex-col gap-4" @submit.prevent="submit">
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="email">Email</Label>
             <Input id="email" v-model="email" type="email" required autocomplete="username" />
           </div>
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <Label for="password">Password</Label>
-            <Input id="password" v-model="password" type="password" required autocomplete="current-password" />
+            <Input
+              id="password"
+              v-model="password"
+              type="password"
+              required
+              autocomplete="current-password"
+            />
           </div>
           <Alert v-if="error" variant="destructive">
             <AlertDescription>{{ error }}</AlertDescription>
           </Alert>
-          <Button type="submit" :disabled="submitting">
-            {{ submitting ? 'Signing in…' : 'Sign in' }}
+          <Button type="submit" class="mt-1 h-10 w-full font-medium" :disabled="submitting">
+            {{ submitting ? 'Signing in…' : 'Continue' }}
           </Button>
         </form>
       </CardContent>

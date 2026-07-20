@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { RefreshCw } from '@lucide/vue'
 import {
   Dialog,
   DialogContent,
@@ -224,40 +225,38 @@ function badgeVariant(status: ProcessingStatus) {
 
 <template>
   <section class="space-y-6">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">Photos</h1>
-        <p class="mt-1 text-sm text-muted-foreground">Upload photos and monitor media processing.</p>
-      </div>
-      <Button as-child variant="outline" size="sm">
-        <RouterLink to="/admin">Back to albums</RouterLink>
-      </Button>
-    </header>
+    <div>
+      <RouterLink to="/admin" class="admin-back-link">← Albums</RouterLink>
+    </div>
 
-    <Card>
-      <CardHeader>
-        <CardTitle>Upload photos</CardTitle>
-        <CardDescription>Choose JPEG, PNG, or WebP files to add to this album.</CardDescription>
+    <Card class="admin-panel rounded-2xl border shadow-none">
+      <CardHeader class="pb-3">
+        <CardTitle class="text-base font-semibold">Upload</CardTitle>
+        <CardDescription class="text-sm">JPEG, PNG, or WebP — multiple files supported.</CardDescription>
       </CardHeader>
-      <CardContent class="space-y-3">
-        <input
-          ref="fileInput"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          class="block w-full cursor-pointer rounded-md border border-input bg-background text-sm text-muted-foreground file:mr-4 file:border-0 file:bg-muted file:px-4 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-muted/80"
-          @change="onFilesSelected"
-        />
-        <p v-if="uploadingCount > 0" class="text-sm text-muted-foreground">
+      <CardContent>
+        <label class="admin-upload-zone flex cursor-pointer flex-col items-center gap-2 rounded-xl px-6 py-12 text-center">
+          <span class="text-sm font-medium text-foreground">Choose files or drag here</span>
+          <span class="text-xs text-muted-foreground">Converted to AVIF automatically</span>
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            class="sr-only"
+            @change="onFilesSelected"
+          />
+        </label>
+        <p v-if="uploadingCount > 0" class="mt-3 text-center text-sm text-muted-foreground">
           Uploading {{ uploadingCount }} file(s)…
         </p>
-        <Alert v-if="uploadError" variant="destructive">
+        <Alert v-if="uploadError" class="mt-3" variant="destructive">
           <AlertDescription>{{ uploadError }}</AlertDescription>
         </Alert>
       </CardContent>
     </Card>
 
-    <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+    <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
       Loading photos…
     </div>
 
@@ -266,8 +265,8 @@ function badgeVariant(status: ProcessingStatus) {
     </Alert>
 
     <template v-else>
-      <div class="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
-        <label class="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+      <div class="admin-panel flex flex-col gap-3 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between">
+        <label class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
           <Checkbox
             :model-value="allSelected"
             :disabled="photos.length === 0 || deleting"
@@ -275,6 +274,7 @@ function badgeVariant(status: ProcessingStatus) {
             @update:model-value="toggleSelectAll($event === true)"
           />
           Select all
+          <span v-if="selectedCount > 0" class="text-muted-foreground">({{ selectedCount }})</span>
         </label>
         <Button
           type="button"
@@ -283,81 +283,90 @@ function badgeVariant(status: ProcessingStatus) {
           :disabled="selectedCount === 0 || deleting"
           @click="requestDeleteSelected"
         >
-          {{ deleting ? 'Deleting…' : `Delete selected (${selectedCount})` }}
+          {{ deleting ? 'Deleting…' : selectedCount > 0 ? `Delete selected (${selectedCount})` : 'Delete selected' }}
         </Button>
       </div>
 
-      <div class="space-y-3">
-        <Card
+      <div
+        v-if="photos.length === 0"
+        class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
+      >
+        No photos in this album yet. Upload some above.
+      </div>
+
+      <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <article
           v-for="photo in photos"
           :key="photo.id"
           data-testid="photo-row"
-          class="overflow-hidden"
+          class="admin-photo-tile group overflow-hidden rounded-2xl"
+          :class="{ 'admin-photo-tile--selected': selectedIds.has(photo.id) }"
         >
-          <CardContent class="grid gap-4 p-4 sm:grid-cols-[auto_5rem_minmax(0,1fr)_auto] sm:items-center">
-            <Checkbox
-              :model-value="selectedIds.has(photo.id)"
-              :disabled="deleting"
-              :aria-label="`Select ${photo.title ?? 'photo'}`"
-              @update:model-value="toggleSelect(photo.id, $event === true)"
-            />
-
+          <div class="relative aspect-square bg-muted">
             <img
               v-if="thumbSrc(photo)"
               :src="thumbSrc(photo)!"
               :alt="photo.title ?? 'Photo'"
-              class="size-20 rounded-md bg-muted object-cover"
+              class="size-full object-cover transition duration-300 group-hover:scale-[1.03]"
             />
             <div
               v-else
-              class="flex size-20 items-center justify-center rounded-md bg-muted px-2 text-center text-xs text-muted-foreground"
+              class="flex size-full items-center justify-center px-3 text-center text-xs text-muted-foreground"
             >
               No preview
             </div>
 
-            <div class="min-w-0 space-y-2">
-              <p class="truncate font-medium">{{ photo.title ?? '(untitled)' }}</p>
-              <Badge :variant="badgeVariant(photo.processingStatus)">
+            <div class="absolute left-2 top-2 z-10">
+              <Checkbox
+                :model-value="selectedIds.has(photo.id)"
+                :disabled="deleting"
+              class="admin-photo-check"
+                :aria-label="`Select ${photo.title ?? 'photo'}`"
+                @update:model-value="toggleSelect(photo.id, $event === true)"
+              />
+            </div>
+          </div>
+
+          <div class="space-y-2 p-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium">{{ photo.title ?? '(untitled)' }}</p>
+              <Badge :variant="badgeVariant(photo.processingStatus)" class="mt-1.5 text-[10px]">
                 {{ STATUS_LABEL[photo.processingStatus] }}
               </Badge>
-              <p
-                v-if="photo.processingStatus === 'failed' && photo.processingError"
-                class="text-sm text-destructive"
-              >
-                {{ photo.processingError }}
-              </p>
             </div>
-
-            <div class="flex flex-wrap gap-2 sm:justify-end">
-              <Button as-child variant="ghost" size="sm">
+            <p
+              v-if="photo.processingStatus === 'failed' && photo.processingError"
+              class="line-clamp-2 text-xs text-destructive"
+            >
+              {{ photo.processingError }}
+            </p>
+            <div class="admin-photo-actions">
+              <Button as-child size="xs" variant="outline">
                 <RouterLink :to="{ name: 'admin-photo-edit', params: { id: photo.id } }">Edit</RouterLink>
               </Button>
               <Button
                 type="button"
+                size="xs"
                 variant="outline"
-                size="sm"
+                class="admin-btn-retry"
                 :disabled="reprocessing.has(photo.id) || deleting"
                 @click="reprocess(photo)"
               >
-                {{ reprocessing.has(photo.id) ? 'Reprocessing…' : 'Reprocess' }}
+                <RefreshCw class="size-3 shrink-0" :class="{ 'animate-spin': reprocessing.has(photo.id) }" />
+                {{ reprocessing.has(photo.id) ? 'Retrying' : 'Retry' }}
               </Button>
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
-                class="text-destructive"
+                size="xs"
+                variant="destructive"
                 :disabled="deleting"
                 @click="requestDeleteOne(photo)"
               >
                 Delete
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <div v-if="photos.length === 0" class="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No photos uploaded yet.
-        </div>
+          </div>
+        </article>
       </div>
     </template>
 
@@ -372,9 +381,9 @@ function badgeVariant(status: ProcessingStatus) {
             Delete “{{ deleteTarget?.title ?? deleteTarget?.id }}”? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter class="gap-2 sm:gap-2">
           <Button type="button" variant="outline" :disabled="deleting" @click="closeDeleteDialog">Cancel</Button>
-          <Button type="button" variant="destructive" :disabled="deleting" @click="confirmDelete">
+          <Button type="button" variant="destructive" class="admin-btn-danger-solid" :disabled="deleting" @click="confirmDelete">
             {{ deleting ? 'Deleting…' : deleteTarget === 'selected' ? 'Delete photos' : 'Delete photo' }}
           </Button>
         </DialogFooter>
