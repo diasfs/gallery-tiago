@@ -1,9 +1,9 @@
 """Face worker entrypoint.
 
-BRPOP `gallery:faces` -> InsightFace CPU detection on the photo's AVIF
-(falling back to the original) -> pgvector nearest-neighbor match via
-matcher.assign_person -> persist Face/Person rows -> set the photo's
-processing_status to done/failed.
+BRPOP `gallery:faces` -> InsightFace CPU detection on the photo's **original**
+file (OpenCV does not reliably decode AVIF) -> pgvector nearest-neighbor
+match via matcher.assign_person -> persist Face/Person rows -> set the
+photo's processing_status to done/failed.
 
 InsightFace/onnxruntime/cv2 are imported lazily inside get_face_app() /
 process_photo() so this module -- and matcher.py in particular -- can be
@@ -61,7 +61,17 @@ def get_face_app():
 
 
 def resolve_image_path(media_root: Path, avif_path: Optional[str], original_path: str) -> Path:
-    return media_root / (avif_path or original_path)
+    """Prefer the archived original for detection.
+
+    Converted masters are AVIF; OpenCV's imread typically cannot decode them,
+    while originals are JPEG/PNG/etc. Fall back to AVIF only if the original
+    path is missing.
+    """
+    if original_path:
+        return media_root / original_path
+    if avif_path:
+        return media_root / avif_path
+    raise RuntimeError("photo has neither original_path nor avif_path")
 
 
 def crop_path_for(photo_id: str, face_id: str) -> str:
