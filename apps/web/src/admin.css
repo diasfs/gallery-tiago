@@ -28,7 +28,8 @@
   --color-ring: var(--ring);
 }
 
-/* Admin theme tokens — used by shadcn components when wrapped in .admin-root */
+/* Root coverage keeps body-portalled shadcn content on the admin palette. */
+:root,
 .admin-root {
   --background: #0c0c0e;
   --foreground: #e8e8ea;
@@ -50,7 +51,9 @@
   --input: #2a2a30;
   --ring: #7c9cff;
   --radius: 0.5rem;
+}
 
+.admin-root {
   color: var(--foreground);
   background: var(--background);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
