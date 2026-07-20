@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   // Inside docker-compose the frontend container reaches the API via the
   // `api` service name; outside docker (`bun run dev`), it's the host's
   // published port. Override with VITE_API_PROXY_TARGET if needed.
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8080'
+  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8081'
 
   return {
     plugins: [vue()],

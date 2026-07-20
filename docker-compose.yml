@@ -25,7 +25,8 @@ services:
       - ./apps/api:/app
       - media_data:/var/gallery/media
     env_file: .env
-    ports: ["8080:80"]
+    # Host 8080 is often taken (e.g. phpMyAdmin); use 8081 for the gallery API.
+    ports: ["8081:80"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
