@@ -1,6 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { Select } from '@/components/ui/select'
 import UnnamedPeopleView from './UnnamedPeopleView.vue'
 import { ApiError, adminApi } from '../../api/client'
 import type { AdminPerson, UnnamedPersonCluster } from '../../api/types'
@@ -27,11 +28,6 @@ const mockedApi = adminApi as unknown as {
   discardPerson: ReturnType<typeof vi.fn>
 }
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [{ path: '/admin', component: { template: '<div />' } }],
-})
-
 function makeCluster(overrides: Partial<UnnamedPersonCluster> = {}): UnnamedPersonCluster {
   return {
     id: 'cluster-1',
@@ -49,9 +45,29 @@ function makeNamedPerson(overrides: Partial<AdminPerson> = {}): AdminPerson {
 }
 
 async function mountView() {
-  const wrapper = mount(UnnamedPeopleView, { global: { plugins: [router] } })
+  document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: UnnamedPeopleView },
+      { path: '/admin', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/')
+  await router.isReady()
+
+  const wrapper = mount(UnnamedPeopleView, {
+    attachTo: document.body,
+    global: { plugins: [router] },
+  })
   await flushPromises()
   return wrapper
+}
+
+function testId(id: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+  if (!element) throw new Error(`Missing element with data-testid="${id}"`)
+  return element
 }
 
 describe('UnnamedPeopleView', () => {
@@ -61,12 +77,16 @@ describe('UnnamedPeopleView', () => {
     mockedApi.searchPeople.mockResolvedValue([makeNamedPerson()])
   })
 
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
   it('renders a card with face crops for each unnamed cluster', async () => {
     const wrapper = await mountView()
 
     const cards = wrapper.findAll('[data-testid="cluster-card"]')
     expect(cards).toHaveLength(1)
-    expect(wrapper.findAll('.cluster-card__face')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="cluster-face"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('2 face(s)')
   })
 
@@ -99,7 +119,8 @@ describe('UnnamedPeopleView', () => {
     mockedApi.mergePerson.mockResolvedValue({ id: 'person-1', name: 'Ada Lovelace', isNamed: true, faceCount: 7 })
     const wrapper = await mountView()
 
-    await wrapper.find('select').setValue('person-1')
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'person-1')
+    await flushPromises()
     const mergeButton = wrapper.findAll('button').find((b) => b.text() === 'Merge')
     await mergeButton!.trigger('click')
     await flushPromises()
@@ -109,24 +130,24 @@ describe('UnnamedPeopleView', () => {
   })
 
   it('discards a cluster after confirmation', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => true))
     mockedApi.discardPerson.mockResolvedValue(undefined)
     const wrapper = await mountView()
 
-    const discardButton = wrapper.findAll('button').find((b) => b.text() === 'Discard')
-    await discardButton!.trigger('click')
+    testId('discard-open').click()
+    await flushPromises()
+    testId('discard-confirm').click()
     await flushPromises()
 
     expect(mockedApi.discardPerson).toHaveBeenCalledWith('cluster-1')
     expect(wrapper.findAll('[data-testid="cluster-card"]')).toHaveLength(0)
   })
 
-  it('does not discard when the confirmation is declined', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => false))
+  it('does not discard when the confirmation is cancelled', async () => {
     const wrapper = await mountView()
 
-    const discardButton = wrapper.findAll('button').find((b) => b.text() === 'Discard')
-    await discardButton!.trigger('click')
+    testId('discard-open').click()
+    await flushPromises()
+    testId('discard-cancel').click()
     await flushPromises()
 
     expect(mockedApi.discardPerson).not.toHaveBeenCalled()
