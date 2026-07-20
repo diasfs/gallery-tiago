@@ -159,6 +159,10 @@ export const adminApi = {
     adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload }),
   reprocessPhoto: (id: string) =>
     adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}/reprocess`, { method: 'POST' }),
+  deletePhoto: (id: string) =>
+    adminRequest<void>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  bulkDeletePhotos: (ids: string[]) =>
+    adminRequest<void>('/api/admin/photos/bulk-delete', { method: 'POST', body: { ids } }),
   addPersonToPhoto: (photoId: string, personId: string) =>
     adminRequest<Face>(`/api/admin/photos/${encodeURIComponent(photoId)}/people`, {
       method: 'POST',
