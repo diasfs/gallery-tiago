@@ -2,6 +2,11 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError, adminApi } from '../../api/client'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,69 +32,30 @@ async function submit() {
 </script>
 
 <template>
-  <section class="login">
-    <h1>Admin login</h1>
-    <form class="login__form" @submit.prevent="submit">
-      <label class="login__field">
-        <span>Email</span>
-        <input v-model="email" type="email" required autocomplete="username" />
-      </label>
-      <label class="login__field">
-        <span>Password</span>
-        <input v-model="password" type="password" required autocomplete="current-password" />
-      </label>
-      <p v-if="error" class="login__error">{{ error }}</p>
-      <button type="submit" :disabled="submitting">{{ submitting ? 'Signing in…' : 'Sign in' }}</button>
-    </form>
-  </section>
+  <div class="admin-root flex min-h-screen items-center justify-center px-4">
+    <Card class="w-full max-w-sm border-[var(--border)] bg-[var(--card)]">
+      <CardHeader>
+        <CardTitle class="font-brand text-2xl">Gallery</CardTitle>
+        <CardDescription>Admin sign in</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form class="flex flex-col gap-4" @submit.prevent="submit">
+          <div class="space-y-2">
+            <Label for="email">Email</Label>
+            <Input id="email" v-model="email" type="email" required autocomplete="username" />
+          </div>
+          <div class="space-y-2">
+            <Label for="password">Password</Label>
+            <Input id="password" v-model="password" type="password" required autocomplete="current-password" />
+          </div>
+          <Alert v-if="error" variant="destructive">
+            <AlertDescription>{{ error }}</AlertDescription>
+          </Alert>
+          <Button type="submit" :disabled="submitting">
+            {{ submitting ? 'Signing in…' : 'Sign in' }}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  </div>
 </template>
-
-<style scoped>
-.login {
-  max-width: 360px;
-  margin: 3rem auto;
-}
-
-.login__form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-top: 1.5rem;
-}
-
-.login__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.9rem;
-}
-
-.login__field input {
-  padding: 0.5rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid #333;
-  background: #111;
-  color: inherit;
-}
-
-.login__error {
-  color: #f87171;
-  margin: 0;
-  font-size: 0.85rem;
-}
-
-button {
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
-  border: none;
-  background: #2563eb;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>
