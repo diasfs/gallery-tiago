@@ -3,9 +3,11 @@
 namespace App\Controller\Api\Admin;
 
 use App\Entity\Album;
+use App\Entity\Location;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Repository\AlbumRepository;
+use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
 use App\Service\AlbumDeleter;
 use Doctrine\ORM\EntityManagerInterface;
@@ -25,6 +27,7 @@ class AlbumController
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
+        private readonly LocationRepository $locations,
         private readonly EntityManagerInterface $em,
         private readonly AlbumDeleter $albumDeleter,
     ) {
@@ -149,6 +152,52 @@ class AlbumController
         if (\array_key_exists('coverPhotoId', $payload)) {
             $album->setCoverPhoto($this->resolveCoverPhoto($payload['coverPhotoId']));
         }
+
+        if (\array_key_exists('takenAt', $payload)) {
+            $album->setTakenAt($this->parseTakenAt($payload['takenAt']));
+        }
+
+        if (\array_key_exists('locationId', $payload)) {
+            $album->setLocation($this->resolveLocation($payload['locationId']));
+        }
+    }
+
+    private function parseTakenAt(mixed $value): ?\DateTimeImmutable
+    {
+        if (null === $value) {
+            return null;
+        }
+        if (!\is_string($value)) {
+            throw new BadRequestHttpException('takenAt must be an ISO-8601 date string or null.');
+        }
+        try {
+            return new \DateTimeImmutable($value);
+        } catch (\Exception) {
+            throw new BadRequestHttpException('takenAt must be a valid date string.');
+        }
+    }
+
+    private function resolveLocation(mixed $value): ?Location
+    {
+        if (null === $value) {
+            return null;
+        }
+        if (!\is_string($value)) {
+            throw new BadRequestHttpException('locationId must be a string or null.');
+        }
+
+        try {
+            $uuid = Uuid::fromString($value);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
+        $location = $this->locations->find($uuid);
+        if (null === $location) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
+        return $location;
     }
 
     private function resolveCoverPhoto(mixed $value): ?Photo
@@ -174,6 +223,23 @@ class AlbumController
         return $photo;
     }
 
+    /** @return array<string, mixed>|null */
+    private function normalizeLocation(?Location $location): ?array
+    {
+        if (null === $location) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $location->getId(),
+            'name' => $location->getName(),
+            'city' => $location->getCity(),
+            'country' => $location->getCountry(),
+            'latitude' => $location->getLatitude(),
+            'longitude' => $location->getLongitude(),
+        ];
+    }
+
     /** @return array<string, mixed> */
     private function decode(Request $request): array
     {
@@ -197,6 +263,8 @@ class AlbumController
             'parentId' => $album->getParent()?->getId()->toRfc4122(),
             'childCount' => $album->getChildren()->count(),
             'photoCount' => $album->getPhotos()->count(),
+            'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
+            'location' => $this->normalizeLocation($album->getLocation()),
             'createdAt' => $album->getCreatedAt()->format(\DATE_ATOM),
             'updatedAt' => $album->getUpdatedAt()->format(\DATE_ATOM),
         ];

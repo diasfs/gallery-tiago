@@ -2,13 +2,11 @@
 
 namespace App\Controller\Api\Admin;
 
-use App\Entity\Location;
 use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Enum\ProcessingStatus;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
-use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -27,7 +25,6 @@ class PhotoController
 {
     public function __construct(
         private readonly PhotoRepository $photos,
-        private readonly LocationRepository $locations,
         private readonly TagRepository $tags,
         private readonly EntityManagerInterface $em,
         private readonly MessageBusInterface $bus,
@@ -53,13 +50,6 @@ class PhotoController
             $photo->setTitle($payload['title']);
         }
 
-        if (\array_key_exists('takenAt', $payload)) {
-            $photo->setTakenAt($this->parseTakenAt($payload['takenAt']));
-        }
-
-        if (\array_key_exists('locationId', $payload)) {
-            $photo->setLocation($this->resolveLocation($payload['locationId']));
-        }
 
         if (\array_key_exists('tagIds', $payload)) {
             $this->applyTags($photo, $payload['tagIds']);
@@ -103,43 +93,7 @@ class PhotoController
         return new JsonResponse(['data' => $this->normalize($photo)]);
     }
 
-    private function parseTakenAt(mixed $value): ?\DateTimeImmutable
-    {
-        if (null === $value) {
-            return null;
-        }
-        if (!\is_string($value)) {
-            throw new BadRequestHttpException('takenAt must be an ISO-8601 date string or null.');
-        }
-        try {
-            return new \DateTimeImmutable($value);
-        } catch (\Exception) {
-            throw new BadRequestHttpException('takenAt must be a valid date string.');
-        }
-    }
 
-    private function resolveLocation(mixed $value): ?Location
-    {
-        if (null === $value) {
-            return null;
-        }
-        if (!\is_string($value)) {
-            throw new BadRequestHttpException('locationId must be a string or null.');
-        }
-
-        try {
-            $uuid = Uuid::fromString($value);
-        } catch (\InvalidArgumentException) {
-            throw new NotFoundHttpException('Location not found.');
-        }
-
-        $location = $this->locations->find($uuid);
-        if (null === $location) {
-            throw new NotFoundHttpException('Location not found.');
-        }
-
-        return $location;
-    }
 
     private function applyTags(Photo $photo, mixed $tagIds): void
     {
@@ -212,14 +166,12 @@ class PhotoController
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
             'title' => $photo->getTitle(),
-            'takenAt' => $photo->getTakenAt()?->format(\DATE_ATOM),
             'width' => $photo->getWidth(),
             'height' => $photo->getHeight(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'processingStatus' => $photo->getProcessingStatus()->value,
             'processingError' => $photo->getProcessingError(),
-            'location' => $this->normalizeLocation($photo->getLocation()),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
@@ -247,22 +199,6 @@ class PhotoController
         return $people;
     }
 
-    /** @return array<string, mixed>|null */
-    private function normalizeLocation(?Location $location): ?array
-    {
-        if (null === $location) {
-            return null;
-        }
-
-        return [
-            'id' => (string) $location->getId(),
-            'name' => $location->getName(),
-            'city' => $location->getCity(),
-            'country' => $location->getCountry(),
-            'latitude' => $location->getLatitude(),
-            'longitude' => $location->getLongitude(),
-        ];
-    }
 
     /** @return array<string, mixed> */
     private function normalizeTag(Tag $tag): array

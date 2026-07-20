@@ -28,13 +28,6 @@ class Photo
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $title = null;
 
-    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
-    private ?\DateTimeImmutable $takenAt = null;
-
-    #[ORM\ManyToOne(targetEntity: Location::class)]
-    #[ORM\JoinColumn(name: 'location_id', nullable: true, onDelete: 'SET NULL')]
-    private ?Location $location = null;
-
     #[ORM\Column(nullable: true)]
     private ?int $width = null;
 
@@ -102,30 +95,6 @@ class Photo
     public function setTitle(?string $title): static
     {
         $this->title = $title;
-
-        return $this;
-    }
-
-    public function getTakenAt(): ?\DateTimeImmutable
-    {
-        return $this->takenAt;
-    }
-
-    public function setTakenAt(?\DateTimeImmutable $takenAt): static
-    {
-        $this->takenAt = $takenAt;
-
-        return $this;
-    }
-
-    public function getLocation(): ?Location
-    {
-        return $this->location;
-    }
-
-    public function setLocation(?Location $location): static
-    {
-        $this->location = $location;
 
         return $this;
     }

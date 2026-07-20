@@ -63,8 +63,7 @@ class PhotoRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('p')
             ->andWhere('p.album = :album')
             ->setParameter('album', $album)
-            ->orderBy('p.takenAt', 'ASC')
-            ->addOrderBy('p.createdAt', 'ASC')
+            ->orderBy('p.createdAt', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -89,7 +88,7 @@ class PhotoRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('p')
             ->join('p.album', 'a')
-            ->andWhere('p.location = :locationId')
+            ->andWhere('a.location = :locationId')
             ->andWhere('a.visibility IN (:visibilities)')
             ->setParameter('locationId', $locationId, 'uuid')
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])

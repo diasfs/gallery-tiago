@@ -52,6 +52,13 @@ class Album
     #[ORM\JoinColumn(name: 'cover_photo_id', nullable: true, onDelete: 'SET NULL')]
     private ?Photo $coverPhoto = null;
 
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $takenAt = null;
+
+    #[ORM\ManyToOne(targetEntity: Location::class)]
+    #[ORM\JoinColumn(name: 'location_id', nullable: true, onDelete: 'SET NULL')]
+    private ?Location $location = null;
+
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
@@ -165,6 +172,30 @@ class Album
     public function setCoverPhoto(?Photo $coverPhoto): static
     {
         $this->coverPhoto = $coverPhoto;
+
+        return $this;
+    }
+
+    public function getTakenAt(): ?\DateTimeImmutable
+    {
+        return $this->takenAt;
+    }
+
+    public function setTakenAt(?\DateTimeImmutable $takenAt): static
+    {
+        $this->takenAt = $takenAt;
+
+        return $this;
+    }
+
+    public function getLocation(): ?Location
+    {
+        return $this->location;
+    }
+
+    public function setLocation(?Location $location): static
+    {
+        $this->location = $location;
 
         return $this;
     }

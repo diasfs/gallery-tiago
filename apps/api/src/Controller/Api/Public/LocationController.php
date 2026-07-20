@@ -75,7 +75,6 @@ class LocationController
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
             'title' => $photo->getTitle(),
-            'takenAt' => $photo->getTakenAt()?->format(\DATE_ATOM),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),

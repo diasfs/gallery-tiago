@@ -197,7 +197,7 @@ final class PublicVisibilityGateTest extends WebTestCase
     {
         $location = new Location('Paris');
         $this->em->persist($location);
-        $this->privatePhoto->setLocation($location);
+        $this->privateAlbum->setLocation($location);
         $this->em->flush();
 
         $this->client->request('GET', '/api/locations/'.$location->getId());
@@ -209,7 +209,7 @@ final class PublicVisibilityGateTest extends WebTestCase
     {
         $location = new Location('Paris');
         $this->em->persist($location);
-        $this->publicPhoto->setLocation($location);
+        $this->publicAlbum->setLocation($location);
         $this->em->flush();
 
         $this->client->request('GET', '/api/locations/'.$location->getId());

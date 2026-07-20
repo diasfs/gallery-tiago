@@ -3,6 +3,7 @@
 namespace App\Controller\Api\Public;
 
 use App\Entity\Album;
+use App\Entity\Location;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Repository\AlbumRepository;
@@ -57,6 +58,8 @@ class AlbumController
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
             // Never expose a private parent's slug (same rule as `ancestors()`).
             'parentSlug' => $this->isVisible($album->getParent()) ? $album->getParent()->getSlug() : null,
+            'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
+            'location' => $this->normalizeLocation($album->getLocation()),
         ];
     }
 
@@ -99,9 +102,25 @@ class AlbumController
         return [
             'id' => (string) $photo->getId(),
             'title' => $photo->getTitle(),
-            'takenAt' => $photo->getTakenAt()?->format(\DATE_ATOM),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function normalizeLocation(?Location $location): ?array
+    {
+        if (null === $location) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $location->getId(),
+            'name' => $location->getName(),
+            'city' => $location->getCity(),
+            'country' => $location->getCountry(),
+            'latitude' => $location->getLatitude(),
+            'longitude' => $location->getLongitude(),
         ];
     }
 }

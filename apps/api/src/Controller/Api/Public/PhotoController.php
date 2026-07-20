@@ -2,7 +2,6 @@
 
 namespace App\Controller\Api\Public;
 
-use App\Entity\Location;
 use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Repository\PhotoRepository;
@@ -53,12 +52,10 @@ class PhotoController
             'albumId' => (string) $photo->getAlbum()->getId(),
             'albumSlug' => $photo->getAlbum()->getSlug(),
             'title' => $photo->getTitle(),
-            'takenAt' => $photo->getTakenAt()?->format(\DATE_ATOM),
             'width' => $photo->getWidth(),
             'height' => $photo->getHeight(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
-            'location' => $this->normalizeLocation($photo->getLocation()),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
             'prevId' => $prevId,
@@ -104,23 +101,6 @@ class PhotoController
         }
 
         return $people;
-    }
-
-    /** @return array<string, mixed>|null */
-    private function normalizeLocation(?Location $location): ?array
-    {
-        if (null === $location) {
-            return null;
-        }
-
-        return [
-            'id' => (string) $location->getId(),
-            'name' => $location->getName(),
-            'city' => $location->getCity(),
-            'country' => $location->getCountry(),
-            'latitude' => $location->getLatitude(),
-            'longitude' => $location->getLongitude(),
-        ];
     }
 
     /** @return array<string, mixed> */

@@ -112,17 +112,19 @@ final class PhotoUploadTest extends WebTestCase
         $this->loginAsAdmin();
 
         $this->client->request('POST', \sprintf('/api/admin/albums/%s/photos', $this->album->getId()), [], [
-            'file' => $this->fixtureUpload(),
+            'file' => $this->fixtureUpload('holiday-sunset.jpg'),
         ]);
 
         $this->assertResponseStatusCodeSame(201);
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame('pending', $data['processingStatus']);
         $this->assertSame((string) $this->album->getId(), $data['albumId']);
+        $this->assertSame('holiday-sunset', $data['title']);
 
         $photo = $this->em->getRepository(Photo::class)->find($data['id']);
         $this->assertNotNull($photo);
         $this->assertSame('pending', $photo->getProcessingStatus()->value);
+        $this->assertSame('holiday-sunset', $photo->getTitle());
         $this->assertNotSame('', $photo->getOriginalPath());
 
         $sent = $this->convertTransport()->getSent();
@@ -149,6 +151,8 @@ final class PhotoUploadTest extends WebTestCase
 
         unlink($textFile);
     }
+
+
 
     public function testUploadToUnknownAlbumReturns404(): void
     {

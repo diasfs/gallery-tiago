@@ -107,59 +107,72 @@ final class PhotoMetadataTest extends WebTestCase
         $this->assertResponseStatusCodeSame(401);
     }
 
-    public function testAdminCanPatchTitleAndTakenAt(): void
+    public function testAdminCanPatchTitle(): void
     {
         $this->loginAsAdmin();
 
         $this->client->jsonRequest('PATCH', '/api/admin/photos/'.$this->publicPhoto->getId(), [
             'title' => 'Sunset over the bay',
-            'takenAt' => '2025-06-01T10:00:00+00:00',
         ]);
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame('Sunset over the bay', $data['title']);
-        $this->assertSame('2025-06-01T10:00:00+00:00', $data['takenAt']);
 
         $photo = $this->em->getRepository(Photo::class)->find($this->publicPhoto->getId());
         $this->assertSame('Sunset over the bay', $photo->getTitle());
-        $this->assertNotNull($photo->getTakenAt());
     }
 
-    public function testAdminCanAssignLocationAndTags(): void
+    public function testAdminCanPatchAlbumTakenAtAndLocation(): void
     {
         $this->loginAsAdmin();
 
         $location = new Location('Golden Gate Bridge');
         $location->setCity('San Francisco');
         $this->em->persist($location);
+        $this->em->flush();
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->publicAlbum->getId(), [
+            'takenAt' => '2025-06-01T10:00:00+00:00',
+            'locationId' => (string) $location->getId(),
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('2025-06-01T10:00:00+00:00', $data['takenAt']);
+        $this->assertSame((string) $location->getId(), $data['location']['id']);
+
+        $album = $this->em->getRepository(Album::class)->find($this->publicAlbum->getId());
+        $this->assertNotNull($album->getTakenAt());
+        $this->assertSame('Golden Gate Bridge', $album->getLocation()->getName());
+    }
+
+    public function testAdminCanAssignTagsToPhoto(): void
+    {
+        $this->loginAsAdmin();
 
         $tag = new Tag('Sunset', 'sunset');
         $this->em->persist($tag);
         $this->em->flush();
 
         $this->client->jsonRequest('PATCH', '/api/admin/photos/'.$this->publicPhoto->getId(), [
-            'locationId' => (string) $location->getId(),
             'tagIds' => [(string) $tag->getId()],
         ]);
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
-        $this->assertSame((string) $location->getId(), $data['location']['id']);
-        $this->assertSame('Golden Gate Bridge', $data['location']['name']);
         $this->assertCount(1, $data['tags']);
         $this->assertSame('sunset', $data['tags'][0]['slug']);
 
         $photo = $this->em->getRepository(Photo::class)->find($this->publicPhoto->getId());
-        $this->assertSame('Golden Gate Bridge', $photo->getLocation()->getName());
         $this->assertCount(1, $photo->getTags());
     }
 
-    public function testPatchWithUnknownLocationReturns404(): void
+    public function testPatchAlbumWithUnknownLocationReturns404(): void
     {
         $this->loginAsAdmin();
 
-        $this->client->jsonRequest('PATCH', '/api/admin/photos/'.$this->publicPhoto->getId(), [
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->publicAlbum->getId(), [
             'locationId' => '00000000-0000-0000-0000-000000000000',
         ]);
 
@@ -188,26 +201,39 @@ final class PhotoMetadataTest extends WebTestCase
         $this->assertResponseStatusCodeSame(404);
     }
 
-    public function testPatchCanClearLocationAndTags(): void
+    public function testPatchCanClearAlbumLocation(): void
     {
         $this->loginAsAdmin();
 
         $location = new Location('Somewhere');
         $this->em->persist($location);
-        $tag = new Tag('Old', 'old');
-        $this->em->persist($tag);
-        $this->publicPhoto->setLocation($location);
-        $this->publicPhoto->addTag($tag);
+        $this->publicAlbum->setLocation($location);
         $this->em->flush();
 
-        $this->client->jsonRequest('PATCH', '/api/admin/photos/'.$this->publicPhoto->getId(), [
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->publicAlbum->getId(), [
             'locationId' => null,
-            'tagIds' => [],
         ]);
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertNull($data['location']);
+    }
+
+    public function testPatchCanClearPhotoTags(): void
+    {
+        $this->loginAsAdmin();
+
+        $tag = new Tag('Old', 'old');
+        $this->em->persist($tag);
+        $this->publicPhoto->addTag($tag);
+        $this->em->flush();
+
+        $this->client->jsonRequest('PATCH', '/api/admin/photos/'.$this->publicPhoto->getId(), [
+            'tagIds' => [],
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame([], $data['tags']);
     }
 
@@ -316,14 +342,11 @@ final class PhotoMetadataTest extends WebTestCase
         $this->assertStringNotContainsString('aaaa.jpg', $body);
     }
 
-    public function testPublicPhotoDetailIncludesTagsAndLocation(): void
+    public function testPublicPhotoDetailIncludesTags(): void
     {
         $this->loginAsAdmin();
-        $location = new Location('Golden Gate Bridge');
-        $this->em->persist($location);
         $tag = new Tag('Sunset', 'sunset');
         $this->em->persist($tag);
-        $this->publicPhoto->setLocation($location);
         $this->publicPhoto->addTag($tag);
         $this->em->flush();
 
@@ -331,9 +354,24 @@ final class PhotoMetadataTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
-        $this->assertSame('Golden Gate Bridge', $data['location']['name']);
         $this->assertCount(1, $data['tags']);
         $this->assertSame('sunset', $data['tags'][0]['slug']);
+    }
+
+    public function testPublicAlbumDetailIncludesLocationAndTakenAt(): void
+    {
+        $location = new Location('Golden Gate Bridge');
+        $this->em->persist($location);
+        $this->publicAlbum->setLocation($location);
+        $this->publicAlbum->setTakenAt(new \DateTimeImmutable('2025-06-01T10:00:00+00:00'));
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/albums/'.$this->publicAlbum->getSlug());
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('Golden Gate Bridge', $data['location']['name']);
+        $this->assertSame('2025-06-01T10:00:00+00:00', $data['takenAt']);
     }
 
     public function testPublicPhotoDetailReturns404ForPrivateAlbum(): void

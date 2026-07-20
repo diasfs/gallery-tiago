@@ -61,9 +61,11 @@ class PhotoUploadController
             throw new BadRequestHttpException('Unsupported file type; expected JPEG, PNG, or WebP.');
         }
 
-        // originalPath is finalized after the entity's UUID is assigned (on
-        // first flush) so the file can be stored under its own photo id.
         $photo = new Photo($album, '');
+        $title = pathinfo($file->getClientOriginalName(), \PATHINFO_FILENAME);
+        if (\is_string($title) && '' !== $title) {
+            $photo->setTitle($title);
+        }
         $this->em->persist($photo);
         $this->em->flush();
 
