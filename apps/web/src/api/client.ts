@@ -112,12 +112,12 @@ export interface AlbumWritePayload {
   sortOrder?: number
   parentId?: string | null
   coverPhotoId?: string | null
+  takenAt?: string | null
+  locationId?: string | null
 }
 
 export interface PhotoWritePayload {
   title?: string | null
-  takenAt?: string | null
-  locationId?: string | null
   tagIds?: string[]
 }
 

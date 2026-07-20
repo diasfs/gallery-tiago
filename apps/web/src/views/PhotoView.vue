@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api, mediaUrl } from '../api/client'
 import type { PhotoDetail } from '../api/types'
-import LocationMap from '../components/LocationMap.vue'
 
 const props = defineProps<{ id: string }>()
 
@@ -28,18 +27,6 @@ onMounted(() => load(props.id))
 watch(() => props.id, load)
 
 const fullSrc = computed(() => mediaUrl(photo.value?.avifPath))
-const takenAtLabel = computed(() => {
-  if (!photo.value?.takenAt) {
-    return null
-  }
-  return new Date(photo.value.takenAt).toLocaleString(undefined, {
-    dateStyle: 'long',
-    timeStyle: 'short',
-  })
-})
-const hasCoordinates = computed(
-  () => photo.value?.location?.latitude != null && photo.value?.location?.longitude != null,
-)
 </script>
 
 <template>
@@ -54,20 +41,6 @@ const hasCoordinates = computed(
         </figure>
 
         <aside class="photo-detail__meta">
-          <p v-if="takenAtLabel" class="photo-detail__date">{{ takenAtLabel }}</p>
-
-          <div v-if="photo.location" class="photo-detail__location">
-            <p>
-              📍 {{ [photo.location.name, photo.location.city, photo.location.country].filter(Boolean).join(', ') }}
-            </p>
-            <LocationMap
-              v-if="hasCoordinates"
-              :latitude="photo.location.latitude!"
-              :longitude="photo.location.longitude!"
-              :label="photo.location.name"
-            />
-          </div>
-
           <div v-if="photo.tags.length > 0" class="photo-detail__tags">
             <RouterLink
               v-for="tag in photo.tags"
@@ -131,11 +104,6 @@ const hasCoordinates = computed(
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-}
-
-.photo-detail__date {
-  color: var(--muted, #888);
-  margin: 0;
 }
 
 .photo-detail__tags {

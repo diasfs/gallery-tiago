@@ -27,16 +27,16 @@ export interface AlbumSummary {
   sortOrder: number
   coverPhotoId: string | null
   parentSlug: string | null
+  takenAt: string | null
+  location: Location | null
 }
 
 export interface PhotoSummary {
   id: string
   albumId?: string
   title: string | null
-  takenAt: string | null
   avifPath: string | null
   thumbPaths: Record<string, string>
-  location?: Location | null
   tags?: Tag[]
 }
 
@@ -51,12 +51,10 @@ export interface PhotoDetail {
   albumId: string
   albumSlug: string
   title: string | null
-  takenAt: string | null
   width: number | null
   height: number | null
   avifPath: string | null
   thumbPaths: Record<string, string>
-  location: Location | null
   tags: Tag[]
   people: PersonSummary[]
   prevId: string | null
@@ -94,6 +92,8 @@ export interface AdminAlbum {
   parentId: string | null
   childCount: number
   photoCount: number
+  takenAt: string | null
+  location: Location | null
   createdAt: string
   updatedAt: string
 }
@@ -113,14 +113,12 @@ export interface AdminPhotoDetail {
   id: string
   albumId: string
   title: string | null
-  takenAt: string | null
   width: number | null
   height: number | null
   avifPath: string | null
   thumbPaths: Record<string, string>
   processingStatus: ProcessingStatus
   processingError: string | null
-  location: Location | null
   tags: Tag[]
   people: PersonSummary[]
   createdAt: string
@@ -146,3 +144,4 @@ export interface AdminPerson {
   isNamed: boolean
   faceCount: number
 }
+

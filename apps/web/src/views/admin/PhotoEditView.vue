@@ -15,8 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPerson, AdminPhotoDetail, Location, Tag } from '../../api/types'
-import LocationMap from '../../components/LocationMap.vue'
+import type { AdminPerson, AdminPhotoDetail, Tag } from '../../api/types'
 
 const props = defineProps<{ id: string }>()
 
@@ -26,9 +25,8 @@ const error = ref<string | null>(null)
 const saving = ref(false)
 const saved = ref(false)
 
-const form = reactive<{ title: string; takenAt: string }>({ title: '', takenAt: '' })
+const form = reactive<{ title: string }>({ title: '' })
 const selectedTags = ref<Tag[]>([])
-const selectedLocation = ref<Location | null>(null)
 
 async function load() {
   loading.value = true
@@ -36,9 +34,7 @@ async function load() {
   try {
     photo.value = await adminApi.getPhoto(props.id)
     form.title = photo.value.title ?? ''
-    form.takenAt = photo.value.takenAt ? photo.value.takenAt.slice(0, 16) : ''
     selectedTags.value = [...photo.value.tags]
-    selectedLocation.value = photo.value.location
   } catch {
     error.value = 'Failed to load this photo.'
   } finally {
@@ -58,9 +54,7 @@ async function save() {
   try {
     photo.value = await adminApi.updatePhoto(props.id, {
       title: form.title.trim() === '' ? null : form.title.trim(),
-      takenAt: form.takenAt === '' ? null : new Date(form.takenAt).toISOString(),
       tagIds: selectedTags.value.map((t) => t.id),
-      locationId: selectedLocation.value?.id ?? null,
     })
     saved.value = true
   } catch (err) {
@@ -108,62 +102,6 @@ function selectTagResult(value: unknown) {
   const tag = tagResults.value.find((result) => result.id === value)
   if (tag) {
     addTag(tag)
-  }
-}
-
-// --- Location ------------------------------------------------------------
-
-const locationQuery = ref('')
-const locationResults = ref<Location[]>([])
-const hasCoordinates = computed(
-  () => selectedLocation.value?.latitude != null && selectedLocation.value?.longitude != null,
-)
-
-async function searchLocations() {
-  locationResults.value = await adminApi.searchLocations(locationQuery.value || undefined)
-}
-
-function chooseLocation(location: Location) {
-  selectedLocation.value = location
-  locationQuery.value = ''
-  locationResults.value = []
-}
-
-function clearLocation() {
-  selectedLocation.value = null
-}
-
-function selectLocationResult(value: unknown) {
-  const location = locationResults.value.find((result) => result.id === value)
-  if (location) {
-    chooseLocation(location)
-  }
-}
-
-const newLocation = reactive({ name: '', city: '', country: '', latitude: '', longitude: '' })
-const showNewLocationForm = ref(false)
-
-async function createLocation() {
-  if (newLocation.name.trim() === '') {
-    return
-  }
-  try {
-    const location = await adminApi.createLocation({
-      name: newLocation.name.trim(),
-      city: newLocation.city.trim() === '' ? null : newLocation.city.trim(),
-      country: newLocation.country.trim() === '' ? null : newLocation.country.trim(),
-      latitude: newLocation.latitude === '' ? null : Number(newLocation.latitude),
-      longitude: newLocation.longitude === '' ? null : Number(newLocation.longitude),
-    })
-    chooseLocation(location)
-    showNewLocationForm.value = false
-    newLocation.name = ''
-    newLocation.city = ''
-    newLocation.country = ''
-    newLocation.latitude = ''
-    newLocation.longitude = ''
-  } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to create location: ${err.message}` : 'Failed to create location.'
   }
 }
 
@@ -222,12 +160,14 @@ function selectPersonResult(value: unknown) {
 <template>
   <section class="space-y-6">
     <div class="flex flex-wrap items-center gap-3">
-      <Button v-if="photo" as-child variant="ghost" size="sm">
-        <RouterLink :to="{ name: 'admin-album-photos', params: { albumId: photo.albumId } }">
-          ← Back to album photos
-        </RouterLink>
-      </Button>
-      <Badge v-if="photo" variant="outline" class="capitalize">{{ photo.processingStatus }}</Badge>
+      <RouterLink
+        v-if="photo"
+        :to="{ name: 'admin-album-photos', params: { albumId: photo.albumId } }"
+        class="admin-back-link"
+      >
+        ← Album photos
+      </RouterLink>
+      <Badge v-if="photo" variant="secondary" class="admin-status-badge">{{ photo.processingStatus }}</Badge>
     </div>
 
     <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
@@ -265,17 +205,12 @@ function selectPersonResult(value: unknown) {
           <Card>
             <CardHeader>
               <CardTitle>Edit photo</CardTitle>
-              <CardDescription>Update the photo details and processing state.</CardDescription>
+              <CardDescription>Update the title and tags for this photo.</CardDescription>
             </CardHeader>
             <CardContent class="space-y-6">
               <div class="grid gap-2">
                 <Label for="photo-title">Title</Label>
                 <Input id="photo-title" v-model="form.title" />
-              </div>
-
-              <div class="grid gap-2">
-                <Label for="photo-taken-at">Taken at</Label>
-                <Input id="photo-taken-at" v-model="form.takenAt" type="datetime-local" />
               </div>
 
               <fieldset class="space-y-3 rounded-lg border p-4">
@@ -317,80 +252,7 @@ function selectPersonResult(value: unknown) {
                 </Select>
               </fieldset>
 
-              <fieldset class="space-y-3 rounded-lg border p-4">
-                <Label as="legend">Location</Label>
-                <div v-if="selectedLocation" class="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span>
-                    {{ [selectedLocation.name, selectedLocation.city, selectedLocation.country].filter(Boolean).join(', ') }}
-                  </span>
-                  <Button type="button" variant="ghost" size="sm" @click="clearLocation">Clear</Button>
-                </div>
-                <div class="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    v-model="locationQuery"
-                    placeholder="Search locations…"
-                    class="flex-1"
-                    @input="searchLocations"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    @click="showNewLocationForm = !showNewLocationForm"
-                  >
-                    New location
-                  </Button>
-                </div>
-                <Select v-if="locationResults.length > 0" @update:model-value="selectLocationResult">
-                  <SelectTrigger class="w-full">
-                    <SelectValue placeholder="Choose a matching location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="location in locationResults"
-                      :key="location.id"
-                      :value="location.id"
-                    >
-                      {{ [location.name, location.city].filter(Boolean).join(', ') }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div v-if="showNewLocationForm" class="grid gap-3 rounded-md bg-muted/40 p-3 sm:grid-cols-2">
-                  <div class="grid gap-2 sm:col-span-2">
-                    <Label for="location-name">Name</Label>
-                    <Input id="location-name" v-model="newLocation.name" />
-                  </div>
-                  <div class="grid gap-2">
-                    <Label for="location-city">City</Label>
-                    <Input id="location-city" v-model="newLocation.city" />
-                  </div>
-                  <div class="grid gap-2">
-                    <Label for="location-country">Country</Label>
-                    <Input id="location-country" v-model="newLocation.country" />
-                  </div>
-                  <div class="grid gap-2">
-                    <Label for="location-latitude">Latitude</Label>
-                    <Input id="location-latitude" v-model="newLocation.latitude" inputmode="decimal" />
-                  </div>
-                  <div class="grid gap-2">
-                    <Label for="location-longitude">Longitude</Label>
-                    <Input id="location-longitude" v-model="newLocation.longitude" inputmode="decimal" />
-                  </div>
-                  <Button type="button" class="sm:col-span-2 sm:justify-self-start" @click="createLocation">
-                    Save location
-                  </Button>
-                </div>
-
-                <div v-if="hasCoordinates" class="overflow-hidden rounded-md border">
-                  <LocationMap
-                    :latitude="selectedLocation!.latitude!"
-                    :longitude="selectedLocation!.longitude!"
-                    :label="selectedLocation!.name"
-                  />
-                </div>
-              </fieldset>
-
-              <Button type="submit" :disabled="saving">
+              <Button type="submit" size="sm" class="mt-2 px-5" :disabled="saving">
                 {{ saving ? 'Saving…' : 'Save changes' }}
               </Button>
             </CardContent>
@@ -404,28 +266,26 @@ function selectPersonResult(value: unknown) {
           <CardDescription>Manage the named people tagged in this photo.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
-          <ul v-if="photo.people.length > 0" class="divide-y rounded-lg border">
-            <li
-              v-for="person in photo.people"
-              :key="person.id"
-              class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-            >
-              <span>{{ person.name ?? 'Unnamed' }}</span>
-              <Button
+          <ul v-if="photo.people.length > 0" class="admin-people-list">
+            <li v-for="person in photo.people" :key="person.id">
+              <span class="font-medium">{{ person.name ?? 'Unnamed' }}</span>
+              <button
                 type="button"
-                variant="ghost"
-                size="sm"
+                class="admin-action-link admin-action-link--danger"
                 :disabled="peopleBusy"
                 @click="removePerson(person.id)"
               >
                 Remove
-              </Button>
+              </button>
             </li>
           </ul>
           <p v-else class="text-sm text-muted-foreground">No people tagged.</p>
 
-          <div class="grid gap-2">
-            <Label for="people-search">Add a person</Label>
+          <div
+            class="grid gap-2"
+            :class="photo.people.length > 0 ? 'border-t border-border pt-4' : undefined"
+          >
+            <Label for="people-search" class="admin-label-sentence">Add a person</Label>
             <Input
               id="people-search"
               v-model="peopleQuery"

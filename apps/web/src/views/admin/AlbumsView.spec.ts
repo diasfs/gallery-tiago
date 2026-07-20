@@ -36,6 +36,8 @@ const album: AdminAlbum = {
   parentId: null,
   childCount: 0,
   photoCount: 12,
+  takenAt: '2026-07-15T00:00:00Z',
+  location: null,
   createdAt: '2026-07-20T00:00:00Z',
   updatedAt: '2026-07-20T00:00:00Z',
 }

@@ -31,7 +31,9 @@ import {
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError, adminApi, type AlbumWritePayload } from '../../api/client'
-import type { AdminAlbum } from '../../api/types'
+import type { AdminAlbum, Location } from '../../api/types'
+import LocationMap from '../../components/LocationMap.vue'
+import { toDateInputValue } from '@/lib/utils'
 
 const albums = ref<AdminAlbum[]>([])
 const loading = ref(true)
@@ -91,6 +93,7 @@ const form = reactive<{
   sortOrder: number
   parentId: string
   coverPhotoId: string
+  takenAt: string
 }>({
   title: '',
   slug: '',
@@ -99,7 +102,17 @@ const form = reactive<{
   sortOrder: 0,
   parentId: '',
   coverPhotoId: '',
+  takenAt: '',
 })
+
+const selectedLocation = ref<Location | null>(null)
+const locationQuery = ref('')
+const locationResults = ref<Location[]>([])
+const showNewLocationForm = ref(false)
+const newLocation = reactive({ name: '', city: '', country: '', latitude: '', longitude: '' })
+const hasCoordinates = computed(
+  () => selectedLocation.value?.latitude != null && selectedLocation.value?.longitude != null,
+)
 
 function resetForm() {
   form.title = ''
@@ -109,6 +122,11 @@ function resetForm() {
   form.sortOrder = 0
   form.parentId = ''
   form.coverPhotoId = ''
+  form.takenAt = ''
+  selectedLocation.value = null
+  locationQuery.value = ''
+  locationResults.value = []
+  showNewLocationForm.value = false
   formError.value = null
 }
 
@@ -127,6 +145,8 @@ function startEdit(album: AdminAlbum) {
   form.sortOrder = album.sortOrder
   form.parentId = album.parentId ?? ''
   form.coverPhotoId = album.coverPhotoId ?? ''
+  form.takenAt = album.takenAt ? toDateInputValue(album.takenAt) : ''
+  selectedLocation.value = album.location
   editingId.value = album.id
 }
 
@@ -146,6 +166,51 @@ function updateVisibility(value: unknown) {
 
 function updateParentId(value: unknown) {
   form.parentId = value === '__root__' ? '' : String(value ?? '')
+}
+
+async function searchLocations() {
+  locationResults.value = await adminApi.searchLocations(locationQuery.value || undefined)
+}
+
+function chooseLocation(location: Location) {
+  selectedLocation.value = location
+  locationQuery.value = ''
+  locationResults.value = []
+}
+
+function clearLocation() {
+  selectedLocation.value = null
+}
+
+function selectLocationResult(value: unknown) {
+  const location = locationResults.value.find((result) => result.id === value)
+  if (location) {
+    chooseLocation(location)
+  }
+}
+
+async function createLocation() {
+  if (newLocation.name.trim() === '') {
+    return
+  }
+  try {
+    const location = await adminApi.createLocation({
+      name: newLocation.name.trim(),
+      city: newLocation.city.trim() === '' ? null : newLocation.city.trim(),
+      country: newLocation.country.trim() === '' ? null : newLocation.country.trim(),
+      latitude: newLocation.latitude === '' ? null : Number(newLocation.latitude),
+      longitude: newLocation.longitude === '' ? null : Number(newLocation.longitude),
+    })
+    chooseLocation(location)
+    showNewLocationForm.value = false
+    newLocation.name = ''
+    newLocation.city = ''
+    newLocation.country = ''
+    newLocation.latitude = ''
+    newLocation.longitude = ''
+  } catch (err) {
+    formError.value = err instanceof ApiError ? `Failed to create location: ${err.message}` : 'Failed to create location.'
+  }
 }
 
 function badgeVariant(visibility: AdminAlbum['visibility']) {
@@ -169,6 +234,8 @@ async function submit() {
     sortOrder: form.sortOrder,
     parentId: form.parentId === '' ? null : form.parentId,
     coverPhotoId: form.coverPhotoId.trim() === '' ? null : form.coverPhotoId.trim(),
+    takenAt: form.takenAt === '' ? null : new Date(`${form.takenAt}T00:00:00.000Z`).toISOString(),
+    locationId: selectedLocation.value?.id ?? null,
   }
 
   try {
@@ -202,15 +269,15 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p class="max-w-2xl text-sm text-muted-foreground">
-        Organize albums, set their visibility, and manage nested collections.
+  <section class="space-y-5">
+    <div class="admin-toolbar">
+      <p class="text-sm text-muted-foreground">
+        {{ flatAlbums.length === 1 ? '1 album' : `${flatAlbums.length} albums` }}
       </p>
-      <Button type="button" @click="startCreate()">New album</Button>
+      <Button type="button" size="sm" class="h-9 px-4" @click="startCreate()">New album</Button>
     </div>
 
-    <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+    <div v-if="loading" class="admin-panel rounded-2xl p-16 text-center text-sm text-muted-foreground">
       Loading albums…
     </div>
 
@@ -218,54 +285,55 @@ async function confirmDelete() {
       <AlertDescription>{{ error }}</AlertDescription>
     </Alert>
 
-    <div v-else class="overflow-hidden rounded-lg border bg-card">
+    <div v-else class="admin-panel overflow-hidden rounded-2xl">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Title</TableHead>
-            <TableHead>Visibility</TableHead>
-            <TableHead class="w-20 text-right">Order</TableHead>
-            <TableHead class="w-20 text-right">Photos</TableHead>
-            <TableHead class="text-right">Actions</TableHead>
+          <TableRow class="hover:bg-transparent">
+            <TableHead class="admin-table-head">Title</TableHead>
+            <TableHead class="admin-table-head">Visibility</TableHead>
+            <TableHead class="admin-table-head w-20 text-right">Order</TableHead>
+            <TableHead class="admin-table-head w-20 text-right">Photos</TableHead>
+            <TableHead class="admin-table-head text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="{ album, depth } in flatAlbums" :key="album.id">
-            <TableCell class="font-medium">
-              <span class="inline-flex items-center" :style="{ paddingLeft: `${depth * 1.5}rem` }">
-                <span v-if="depth > 0" class="mr-2 text-muted-foreground" aria-hidden="true">↳</span>
+          <TableRow v-for="{ album, depth } in flatAlbums" :key="album.id" class="border-border/60 hover:bg-muted/50">
+            <TableCell class="py-4 font-medium text-foreground">
+              <span class="inline-flex items-center" :style="{ paddingLeft: `${depth * 1.25}rem` }">
+                <span v-if="depth > 0" class="mr-2 text-muted-foreground/70" aria-hidden="true">↳</span>
                 {{ album.title }}
               </span>
             </TableCell>
-            <TableCell>
-              <Badge :variant="badgeVariant(album.visibility)" class="capitalize">
+            <TableCell class="py-4">
+              <Badge :variant="badgeVariant(album.visibility)" class="rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize">
                 {{ album.visibility }}
               </Badge>
             </TableCell>
-            <TableCell class="text-right tabular-nums">{{ album.sortOrder }}</TableCell>
-            <TableCell class="text-right tabular-nums">{{ album.photoCount }}</TableCell>
-            <TableCell>
-              <div class="flex flex-wrap justify-end gap-1">
-                <Button as-child variant="ghost" size="sm">
-                  <RouterLink :to="{ name: 'admin-album-photos', params: { albumId: album.id } }">
-                    Photos
-                  </RouterLink>
-                </Button>
-                <Button type="button" variant="ghost" size="sm" @click="startCreate(album.id)">
-                  Add sub-album
-                </Button>
-                <Button type="button" variant="ghost" size="sm" @click="startEdit(album)">
-                  Edit
-                </Button>
-                <Button type="button" variant="ghost" size="sm" class="text-destructive" @click="remove(album)">
+            <TableCell class="py-4 text-right tabular-nums text-muted-foreground">{{ album.sortOrder }}</TableCell>
+            <TableCell class="py-4 text-right tabular-nums text-muted-foreground">{{ album.photoCount }}</TableCell>
+            <TableCell class="py-4">
+              <div class="admin-row-actions">
+                <RouterLink
+                  :to="{ name: 'admin-album-photos', params: { albumId: album.id } }"
+                  class="admin-action-link admin-action-link--primary"
+                >
+                  Photos
+                </RouterLink>
+                <span class="admin-action-sep" aria-hidden="true">·</span>
+                <button type="button" class="admin-action-link" @click="startCreate(album.id)">Sub-album</button>
+                <span class="admin-action-sep" aria-hidden="true">·</span>
+                <button type="button" class="admin-action-link" @click="startEdit(album)">Edit</button>
+                <span class="admin-action-sep" aria-hidden="true">·</span>
+                <button type="button" class="admin-action-link admin-action-link--danger" @click="remove(album)">
                   Delete
-                </Button>
+                </button>
               </div>
             </TableCell>
           </TableRow>
           <TableRow v-if="flatAlbums.length === 0">
-            <TableCell colspan="5" class="h-28 text-center text-muted-foreground">
-              No albums yet. Create one to start organizing photos.
+            <TableCell colspan="5" class="h-32 text-center">
+              <p class="text-muted-foreground">No albums yet.</p>
+              <Button type="button" variant="link" class="mt-2" @click="startCreate()">Create your first album</Button>
             </TableCell>
           </TableRow>
         </TableBody>
@@ -296,6 +364,74 @@ async function confirmDelete() {
             <Label for="album-description">Description</Label>
             <Textarea id="album-description" v-model="form.description" rows="3" />
           </div>
+
+          <div class="grid gap-2">
+            <Label for="album-taken-at">Date</Label>
+            <Input id="album-taken-at" v-model="form.takenAt" type="date" />
+          </div>
+
+          <fieldset class="space-y-3 rounded-lg border p-4">
+            <Label as="legend">Location</Label>
+            <div v-if="selectedLocation" class="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span>
+                {{ [selectedLocation.name, selectedLocation.city, selectedLocation.country].filter(Boolean).join(', ') }}
+              </span>
+              <Button type="button" variant="ghost" size="sm" @click="clearLocation">Clear</Button>
+            </div>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <Input
+                v-model="locationQuery"
+                placeholder="Search locations…"
+                class="flex-1"
+                @input="searchLocations"
+              />
+              <Button type="button" variant="secondary" @click="showNewLocationForm = !showNewLocationForm">
+                New location
+              </Button>
+            </div>
+            <Select v-if="locationResults.length > 0" @update:model-value="selectLocationResult">
+              <SelectTrigger class="w-full">
+                <SelectValue placeholder="Choose a matching location" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="location in locationResults" :key="location.id" :value="location.id">
+                  {{ [location.name, location.city].filter(Boolean).join(', ') }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <div v-if="showNewLocationForm" class="grid gap-3 rounded-md bg-muted/40 p-3 sm:grid-cols-2">
+              <div class="grid gap-2 sm:col-span-2">
+                <Label for="album-location-name">Name</Label>
+                <Input id="album-location-name" v-model="newLocation.name" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="album-location-city">City</Label>
+                <Input id="album-location-city" v-model="newLocation.city" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="album-location-country">Country</Label>
+                <Input id="album-location-country" v-model="newLocation.country" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="album-location-latitude">Latitude</Label>
+                <Input id="album-location-latitude" v-model="newLocation.latitude" inputmode="decimal" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="album-location-longitude">Longitude</Label>
+                <Input id="album-location-longitude" v-model="newLocation.longitude" inputmode="decimal" />
+              </div>
+              <Button type="button" variant="outline" size="sm" class="sm:col-span-2 sm:justify-self-start" @click="createLocation">
+                Save location
+              </Button>
+            </div>
+            <div v-if="hasCoordinates" class="overflow-hidden rounded-md border">
+              <LocationMap
+                :latitude="selectedLocation!.latitude!"
+                :longitude="selectedLocation!.longitude!"
+                :label="selectedLocation!.name"
+              />
+            </div>
+          </fieldset>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="grid gap-2">
@@ -347,7 +483,7 @@ async function confirmDelete() {
             <AlertDescription>{{ formError }}</AlertDescription>
           </Alert>
 
-          <DialogFooter>
+          <DialogFooter class="gap-2 sm:gap-2">
             <Button type="button" variant="outline" @click="cancelEdit">Cancel</Button>
             <Button type="submit">Save changes</Button>
           </DialogFooter>
@@ -363,9 +499,11 @@ async function confirmDelete() {
             Delete “{{ deletingAlbum?.title }}” and all of its sub-albums and photos? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter class="gap-2 sm:gap-2">
           <Button type="button" variant="outline" @click="deletingAlbum = null">Cancel</Button>
-          <Button type="button" variant="destructive" @click="confirmDelete">Delete album</Button>
+          <Button type="button" variant="destructive" class="admin-btn-danger-solid" @click="confirmDelete">
+            Delete album
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

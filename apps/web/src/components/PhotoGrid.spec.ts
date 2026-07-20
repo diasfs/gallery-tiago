@@ -16,7 +16,6 @@ function makePhoto(overrides: Partial<PhotoSummary> = {}): PhotoSummary {
   return {
     id: 'photo-1',
     title: 'Sunset over the bay',
-    takenAt: '2026-05-01T10:00:00+00:00',
     avifPath: '/media/photos/photo-1.avif',
     thumbPaths: { medium: '/media/thumbs/photo-1-medium.avif' },
     ...overrides,

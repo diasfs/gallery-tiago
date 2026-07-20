@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '../api/client'
 import type { AlbumDetail } from '../api/types'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import Breadcrumb from '../components/Breadcrumb.vue'
+import LocationMap from '../components/LocationMap.vue'
+import { formatDateLabel } from '../lib/utils'
 
 const props = defineProps<{ slug: string }>()
 
@@ -27,6 +29,17 @@ async function load(slug: string) {
 
 onMounted(() => load(props.slug))
 watch(() => props.slug, load)
+
+const takenAtLabel = computed(() => {
+  if (!album.value?.takenAt) {
+    return null
+  }
+  return formatDateLabel(album.value.takenAt)
+})
+
+const hasCoordinates = computed(
+  () => album.value?.location?.latitude != null && album.value?.location?.longitude != null,
+)
 </script>
 
 <template>
@@ -37,6 +50,19 @@ watch(() => props.slug, load)
       <Breadcrumb :ancestors="album.ancestors" :current="album.title" />
       <h1>{{ album.title }}</h1>
       <p v-if="album.description" class="album-description">{{ album.description }}</p>
+      <p v-if="takenAtLabel" class="album-date">{{ takenAtLabel }}</p>
+
+      <div v-if="album.location" class="album-location">
+        <p>
+          📍 {{ [album.location.name, album.location.city, album.location.country].filter(Boolean).join(', ') }}
+        </p>
+        <LocationMap
+          v-if="hasCoordinates"
+          :latitude="album.location.latitude!"
+          :longitude="album.location.longitude!"
+          :label="album.location.name"
+        />
+      </div>
 
       <div v-if="album.children.length > 0" class="sub-albums">
         <RouterLink
@@ -57,7 +83,24 @@ watch(() => props.slug, load)
 <style scoped>
 .album-description {
   color: var(--muted, #888);
+  margin-bottom: 0.75rem;
+}
+
+.album-date {
+  color: var(--muted, #888);
+  margin: 0 0 1.25rem;
+}
+
+.album-location {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
+}
+
+.album-location p {
+  margin: 0;
+  color: var(--muted, #888);
 }
 
 .sub-albums {
