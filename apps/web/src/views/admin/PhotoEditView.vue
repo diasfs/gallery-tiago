@@ -1,6 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
 import type { AdminPerson, AdminPhotoDetail, Location, Tag } from '../../api/types'
 import LocationMap from '../../components/LocationMap.vue'
@@ -12,6 +25,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const saving = ref(false)
 const saved = ref(false)
+const reprocessing = ref(false)
 
 const form = reactive<{ title: string; takenAt: string }>({ title: '', takenAt: '' })
 const selectedTags = ref<Tag[]>([])
@@ -57,6 +71,21 @@ async function save() {
   }
 }
 
+async function reprocess() {
+  if (!photo.value) {
+    return
+  }
+  reprocessing.value = true
+  error.value = null
+  try {
+    photo.value = await adminApi.reprocessPhoto(photo.value.id)
+  } catch (err) {
+    error.value = err instanceof ApiError ? `Reprocess failed: ${err.message}` : 'Reprocess failed.'
+  } finally {
+    reprocessing.value = false
+  }
+}
+
 // --- Tags --------------------------------------------------------------
 
 const tagQuery = ref('')
@@ -91,6 +120,13 @@ function removeTag(tag: Tag) {
   selectedTags.value = selectedTags.value.filter((t) => t.id !== tag.id)
 }
 
+function selectTagResult(value: unknown) {
+  const tag = tagResults.value.find((result) => result.id === value)
+  if (tag) {
+    addTag(tag)
+  }
+}
+
 // --- Location ------------------------------------------------------------
 
 const locationQuery = ref('')
@@ -111,6 +147,13 @@ function chooseLocation(location: Location) {
 
 function clearLocation() {
   selectedLocation.value = null
+}
+
+function selectLocationResult(value: unknown) {
+  const location = locationResults.value.find((result) => result.id === value)
+  if (location) {
+    chooseLocation(location)
+  }
 }
 
 const newLocation = reactive({ name: '', city: '', country: '', latitude: '', longitude: '' })
@@ -183,284 +226,255 @@ async function removePerson(personId: string) {
     peopleBusy.value = false
   }
 }
+
+function selectPersonResult(value: unknown) {
+  const person = peopleResults.value.find((result) => result.id === value)
+  if (person) {
+    void addPerson(person)
+  }
+}
 </script>
 
 <template>
-  <section class="photo-edit">
-    <header class="photo-edit__header">
-      <h1>Edit photo</h1>
-      <RouterLink v-if="photo" :to="{ name: 'admin-album-photos', params: { albumId: photo.albumId } }">
-        ← Back to album photos
-      </RouterLink>
-    </header>
+  <section class="space-y-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <Button v-if="photo" as-child variant="ghost" size="sm">
+        <RouterLink :to="{ name: 'admin-album-photos', params: { albumId: photo.albumId } }">
+          ← Back to album photos
+        </RouterLink>
+      </Button>
+      <Badge v-if="photo" variant="outline" class="capitalize">{{ photo.processingStatus }}</Badge>
+    </div>
 
-    <p v-if="loading">Loading photo…</p>
-    <p v-else-if="!photo" class="photo-edit__error">Photo not found.</p>
+    <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+      Loading photo…
+    </div>
+
+    <Alert v-else-if="!photo" variant="destructive">
+      <AlertDescription>Photo not found.</AlertDescription>
+    </Alert>
 
     <template v-else>
-      <p v-if="error" class="photo-edit__error">{{ error }}</p>
-      <p v-if="saved" class="photo-edit__saved">Saved.</p>
+      <Alert v-if="error" variant="destructive">
+        <AlertDescription>{{ error }}</AlertDescription>
+      </Alert>
+      <Alert v-if="saved">
+        <AlertDescription>Saved.</AlertDescription>
+      </Alert>
 
-      <div class="photo-edit__layout">
-        <figure class="photo-edit__preview">
-          <img v-if="fullSrc" :src="fullSrc" :alt="photo.title ?? 'Photo'" />
-        </figure>
-
-        <form class="photo-edit__form" @submit.prevent="save">
-          <label>
-            <span>Title</span>
-            <input v-model="form.title" />
-          </label>
-          <label>
-            <span>Taken at</span>
-            <input v-model="form.takenAt" type="datetime-local" />
-          </label>
-
-          <fieldset>
-            <legend>Tags</legend>
-            <div class="chip-list">
-              <span v-for="tag in selectedTags" :key="tag.id" class="chip">
-                #{{ tag.name }}
-                <button type="button" class="chip__remove" @click="removeTag(tag)">×</button>
-              </span>
-              <span v-if="selectedTags.length === 0" class="photo-edit__muted">No tags yet.</span>
-            </div>
-            <div class="search-row">
-              <input v-model="tagQuery" placeholder="Search or create a tag…" @input="searchTags" />
-              <button type="button" @click="createAndAddTag">Add / create</button>
-            </div>
-            <ul v-if="tagResults.length > 0" class="search-results">
-              <li v-for="tag in tagResults" :key="tag.id">
-                <button type="button" @click="addTag(tag)">#{{ tag.name }}</button>
-              </li>
-            </ul>
-          </fieldset>
-
-          <fieldset>
-            <legend>Location</legend>
-            <p v-if="selectedLocation" class="location-current">
-              📍 {{ [selectedLocation.name, selectedLocation.city, selectedLocation.country].filter(Boolean).join(', ') }}
-              <button type="button" @click="clearLocation">Clear</button>
-            </p>
-            <div class="search-row">
-              <input v-model="locationQuery" placeholder="Search locations…" @input="searchLocations" />
-              <button type="button" @click="showNewLocationForm = !showNewLocationForm">New location</button>
-            </div>
-            <ul v-if="locationResults.length > 0" class="search-results">
-              <li v-for="location in locationResults" :key="location.id">
-                <button type="button" @click="chooseLocation(location)">
-                  {{ [location.name, location.city].filter(Boolean).join(', ') }}
-                </button>
-              </li>
-            </ul>
-
-            <div v-if="showNewLocationForm" class="new-location">
-              <input v-model="newLocation.name" placeholder="Name" />
-              <input v-model="newLocation.city" placeholder="City" />
-              <input v-model="newLocation.country" placeholder="Country" />
-              <input v-model="newLocation.latitude" placeholder="Latitude" />
-              <input v-model="newLocation.longitude" placeholder="Longitude" />
-              <button type="button" @click="createLocation">Save location</button>
-            </div>
-
-            <LocationMap
-              v-if="hasCoordinates"
-              :latitude="selectedLocation!.latitude!"
-              :longitude="selectedLocation!.longitude!"
-              :label="selectedLocation!.name"
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] lg:items-start">
+        <Card class="overflow-hidden">
+          <CardContent class="p-0">
+            <img
+              v-if="fullSrc"
+              :src="fullSrc"
+              :alt="photo.title ?? 'Photo'"
+              class="block aspect-[4/3] w-full bg-muted object-contain"
             />
-          </fieldset>
+            <div v-else class="flex aspect-[4/3] items-center justify-center text-sm text-muted-foreground">
+              No preview available
+            </div>
+          </CardContent>
+        </Card>
 
-          <button type="submit" :disabled="saving">{{ saving ? 'Saving…' : 'Save' }}</button>
+        <form @submit.prevent="save">
+          <Card>
+            <CardHeader>
+              <CardTitle>Edit photo</CardTitle>
+              <CardDescription>Update the photo details and processing state.</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-6">
+              <div class="grid gap-2">
+                <Label for="photo-title">Title</Label>
+                <Input id="photo-title" v-model="form.title" />
+              </div>
+
+              <div class="grid gap-2">
+                <Label for="photo-taken-at">Taken at</Label>
+                <Input id="photo-taken-at" v-model="form.takenAt" type="datetime-local" />
+              </div>
+
+              <fieldset class="space-y-3 rounded-lg border p-4">
+                <Label as="legend">Tags</Label>
+                <div class="flex flex-wrap gap-2">
+                  <Badge v-for="tag in selectedTags" :key="tag.id" variant="secondary" class="gap-1 pl-2">
+                    #{{ tag.name }}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      class="size-5 rounded-full"
+                      :aria-label="`Remove ${tag.name} tag`"
+                      @click="removeTag(tag)"
+                    >
+                      ×
+                    </Button>
+                  </Badge>
+                  <span v-if="selectedTags.length === 0" class="text-sm text-muted-foreground">No tags yet.</span>
+                </div>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    v-model="tagQuery"
+                    placeholder="Search or create a tag…"
+                    class="flex-1"
+                    @input="searchTags"
+                  />
+                  <Button type="button" variant="secondary" @click="createAndAddTag">Add / create</Button>
+                </div>
+                <Select v-if="tagResults.length > 0" @update:model-value="selectTagResult">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="Choose a matching tag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="tag in tagResults" :key="tag.id" :value="tag.id">
+                      #{{ tag.name }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </fieldset>
+
+              <fieldset class="space-y-3 rounded-lg border p-4">
+                <Label as="legend">Location</Label>
+                <div v-if="selectedLocation" class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span>
+                    {{ [selectedLocation.name, selectedLocation.city, selectedLocation.country].filter(Boolean).join(', ') }}
+                  </span>
+                  <Button type="button" variant="ghost" size="sm" @click="clearLocation">Clear</Button>
+                </div>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    v-model="locationQuery"
+                    placeholder="Search locations…"
+                    class="flex-1"
+                    @input="searchLocations"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    @click="showNewLocationForm = !showNewLocationForm"
+                  >
+                    New location
+                  </Button>
+                </div>
+                <Select v-if="locationResults.length > 0" @update:model-value="selectLocationResult">
+                  <SelectTrigger class="w-full">
+                    <SelectValue placeholder="Choose a matching location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="location in locationResults"
+                      :key="location.id"
+                      :value="location.id"
+                    >
+                      {{ [location.name, location.city].filter(Boolean).join(', ') }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div v-if="showNewLocationForm" class="grid gap-3 rounded-md bg-muted/40 p-3 sm:grid-cols-2">
+                  <div class="grid gap-2 sm:col-span-2">
+                    <Label for="location-name">Name</Label>
+                    <Input id="location-name" v-model="newLocation.name" />
+                  </div>
+                  <div class="grid gap-2">
+                    <Label for="location-city">City</Label>
+                    <Input id="location-city" v-model="newLocation.city" />
+                  </div>
+                  <div class="grid gap-2">
+                    <Label for="location-country">Country</Label>
+                    <Input id="location-country" v-model="newLocation.country" />
+                  </div>
+                  <div class="grid gap-2">
+                    <Label for="location-latitude">Latitude</Label>
+                    <Input id="location-latitude" v-model="newLocation.latitude" inputmode="decimal" />
+                  </div>
+                  <div class="grid gap-2">
+                    <Label for="location-longitude">Longitude</Label>
+                    <Input id="location-longitude" v-model="newLocation.longitude" inputmode="decimal" />
+                  </div>
+                  <Button type="button" class="sm:col-span-2 sm:justify-self-start" @click="createLocation">
+                    Save location
+                  </Button>
+                </div>
+
+                <div v-if="hasCoordinates" class="overflow-hidden rounded-md border">
+                  <LocationMap
+                    :latitude="selectedLocation!.latitude!"
+                    :longitude="selectedLocation!.longitude!"
+                    :label="selectedLocation!.name"
+                  />
+                </div>
+              </fieldset>
+
+              <div class="flex flex-wrap gap-2">
+                <Button type="submit" :disabled="saving">
+                  {{ saving ? 'Saving…' : 'Save changes' }}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  :disabled="reprocessing"
+                  @click="reprocess"
+                >
+                  {{ reprocessing ? 'Reprocessing…' : 'Reprocess' }}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </form>
       </div>
 
-      <fieldset class="people-section">
-        <legend>People</legend>
-        <ul class="people-list">
-          <li v-for="person in photo.people" :key="person.id">
-            {{ person.name ?? 'Unnamed' }}
-            <button type="button" :disabled="peopleBusy" @click="removePerson(person.id)">Remove</button>
-          </li>
-          <li v-if="photo.people.length === 0" class="photo-edit__muted">No people tagged.</li>
-        </ul>
-        <div class="search-row">
-          <input v-model="peopleQuery" placeholder="Search named people…" @input="searchPeople" />
-        </div>
-        <ul v-if="peopleResults.length > 0" class="search-results">
-          <li v-for="person in peopleResults" :key="person.id">
-            <button type="button" :disabled="peopleBusy" @click="addPerson(person)">{{ person.name }}</button>
-          </li>
-        </ul>
-      </fieldset>
+      <Card>
+        <CardHeader>
+          <CardTitle>People</CardTitle>
+          <CardDescription>Manage the named people tagged in this photo.</CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <ul v-if="photo.people.length > 0" class="divide-y rounded-lg border">
+            <li
+              v-for="person in photo.people"
+              :key="person.id"
+              class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+            >
+              <span>{{ person.name ?? 'Unnamed' }}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                :disabled="peopleBusy"
+                @click="removePerson(person.id)"
+              >
+                Remove
+              </Button>
+            </li>
+          </ul>
+          <p v-else class="text-sm text-muted-foreground">No people tagged.</p>
+
+          <div class="grid gap-2">
+            <Label for="people-search">Add a person</Label>
+            <Input
+              id="people-search"
+              v-model="peopleQuery"
+              placeholder="Search named people…"
+              @input="searchPeople"
+            />
+          </div>
+          <Select
+            v-if="peopleResults.length > 0"
+            :disabled="peopleBusy"
+            @update:model-value="selectPersonResult"
+          >
+            <SelectTrigger class="w-full">
+              <SelectValue placeholder="Choose a matching person" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="person in peopleResults" :key="person.id" :value="person.id">
+                {{ person.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
     </template>
   </section>
 </template>
-
-<style scoped>
-.photo-edit__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.photo-edit__error {
-  color: #f87171;
-}
-
-.photo-edit__saved {
-  color: #4ade80;
-}
-
-.photo-edit__muted {
-  color: var(--muted, #888);
-  font-size: 0.85rem;
-}
-
-.photo-edit__layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr);
-  gap: 2rem;
-  margin-top: 1rem;
-}
-
-.photo-edit__preview img {
-  width: 100%;
-  border-radius: 8px;
-  display: block;
-}
-
-.photo-edit__form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.photo-edit__form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-}
-
-.photo-edit__form input,
-fieldset input {
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid #333;
-  background: #111;
-  color: inherit;
-  font: inherit;
-}
-
-fieldset {
-  border: 1px solid #262626;
-  border-radius: 8px;
-  padding: 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: #1a1a1a;
-  font-size: 0.8rem;
-}
-
-.chip__remove {
-  border: none;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-.search-row {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.search-row input {
-  flex: 1;
-}
-
-.search-results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.location-current {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-.new-location {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.4rem;
-}
-
-.people-section {
-  margin-top: 2rem;
-  max-width: 480px;
-}
-
-.people-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.people-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.9rem;
-}
-
-button {
-  padding: 0.35rem 0.7rem;
-  border-radius: 6px;
-  border: 1px solid #333;
-  background: #1a1a1a;
-  color: inherit;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-button[type='submit'] {
-  align-self: flex-start;
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-  font-weight: 600;
-}
-</style>
