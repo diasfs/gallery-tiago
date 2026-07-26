@@ -9,7 +9,7 @@ final class ProcessingErrorBag
     public static function set(?string $current, string $stage, string $message): string
     {
         self::assertStage($stage);
-        $message = trim($message);
+        $message = self::normalizeMessage($message);
         $lines = self::lines($current);
         $lines[$stage] = $stage.': '.$message;
 
@@ -67,6 +67,13 @@ final class ProcessingErrorBag
         }
 
         return implode("\n", $ordered);
+    }
+
+    private static function normalizeMessage(string $message): string
+    {
+        $message = preg_replace('/\r\n|\n|\r/', ' ', $message);
+
+        return trim(preg_replace('/\s+/u', ' ', $message ?? ''));
     }
 
     private static function assertStage(string $stage): void

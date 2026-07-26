@@ -40,4 +40,12 @@ final class ProcessingErrorBagTest extends TestCase
             ProcessingErrorBag::set(null, 'tags', "  timeout\n"),
         );
     }
+
+    public function testSetCollapsesInternalNewlinesToSingleLine(): void
+    {
+        $this->assertSame(
+            'media: line one line two',
+            ProcessingErrorBag::set(null, 'media', "line one\nline two"),
+        );
+    }
 }
