@@ -330,6 +330,73 @@ final class PhotoMetadataTest extends WebTestCase
         $this->assertResponseStatusCodeSame(409);
     }
 
+    public function testAdminCanListTagsWithPhotoCount(): void
+    {
+        $this->loginAsAdmin();
+
+        $tag = new Tag('dog', 'dog');
+        $this->em->persist($tag);
+        $this->publicPhoto->addTag($tag);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/admin/tags');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNotEmpty($data);
+        $dog = null;
+        foreach ($data as $row) {
+            if ('dog' === $row['slug']) {
+                $dog = $row;
+                break;
+            }
+        }
+        $this->assertNotNull($dog);
+        $this->assertSame('dog', $dog['name']);
+        $this->assertSame(1, $dog['photoCount']);
+    }
+
+    public function testAdminCanTranslateTagWithoutChangingSlug(): void
+    {
+        $this->loginAsAdmin();
+
+        $tag = new Tag('dog', 'dog');
+        $this->em->persist($tag);
+        $this->em->flush();
+        $tagId = (string) $tag->getId();
+
+        $this->client->jsonRequest('PATCH', '/api/admin/tags/'.$tagId, ['name' => 'cachorro']);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('cachorro', $data['name']);
+        $this->assertSame('dog', $data['slug']);
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Tag::class)->find($tag->getId());
+        $this->assertNotNull($reloaded);
+        $this->assertSame('cachorro', $reloaded->getName());
+        $this->assertSame('dog', $reloaded->getSlug());
+    }
+
+    public function testAdminCanDeleteTag(): void
+    {
+        $this->loginAsAdmin();
+
+        $tag = new Tag('dog', 'dog');
+        $this->em->persist($tag);
+        $this->publicPhoto->addTag($tag);
+        $this->em->flush();
+        $tagId = (string) $tag->getId();
+
+        $this->client->jsonRequest('DELETE', '/api/admin/tags/'.$tagId);
+
+        $this->assertResponseStatusCodeSame(204);
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Tag::class)->find($tagId));
+        $this->assertCount(0, $this->em->getRepository(Photo::class)->find($this->publicPhoto->getId())->getTags());
+    }
+
     // --- Public photo detail -----------------------------------------------
 
     public function testPublicPhotoDetailNeverExposesOriginalPath(): void

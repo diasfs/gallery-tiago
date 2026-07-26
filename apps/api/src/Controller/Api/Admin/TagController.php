@@ -11,8 +11,10 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\String\Slugger\AsciiSlugger;
+use Symfony\Component\Uid\Uuid;
 
 #[AsController]
 #[Route('/api/admin/tags')]
@@ -31,9 +33,13 @@ class TagController
     public function list(Request $request): JsonResponse
     {
         $q = $request->query->get('q');
-        $tags = array_map($this->normalize(...), $this->tags->search(\is_string($q) ? $q : null));
+        $rows = $this->tags->searchWithPhotoCount(\is_string($q) ? $q : null);
+        $data = array_map(
+            fn (array $row): array => $this->normalize($row['tag'], $row['photoCount']),
+            $rows,
+        );
 
-        return new JsonResponse(['data' => $tags]);
+        return new JsonResponse(['data' => $data]);
     }
 
     #[Route('', name: 'admin_tags_create', methods: ['POST'])]
@@ -55,7 +61,61 @@ class TagController
         $this->em->persist($tag);
         $this->em->flush();
 
-        return new JsonResponse(['data' => $this->normalize($tag)], Response::HTTP_CREATED);
+        return new JsonResponse(['data' => $this->normalize($tag, 0)], Response::HTTP_CREATED);
+    }
+
+    #[Route('/{id}', name: 'admin_tags_update', methods: ['PATCH'])]
+    public function update(string $id, Request $request): JsonResponse
+    {
+        $tag = $this->findOrFail($id);
+        $payload = $this->decode($request);
+
+        if (!\array_key_exists('name', $payload)) {
+            throw new BadRequestHttpException('name is required.');
+        }
+
+        $name = $payload['name'];
+        if (!\is_string($name) || '' === trim($name)) {
+            throw new BadRequestHttpException('name must be a non-empty string.');
+        }
+
+        // Translate / rename display name only — slug stays stable for the
+        // auto-tag worker get-or-create and public URLs.
+        $tag->setName(trim($name));
+        $this->em->flush();
+
+        return new JsonResponse(['data' => $this->normalize($tag, $tag->getPhotos()->count())]);
+    }
+
+    #[Route('/{id}', name: 'admin_tags_delete', methods: ['DELETE'])]
+    public function delete(string $id): JsonResponse
+    {
+        $tag = $this->findOrFail($id);
+
+        foreach ($tag->getPhotos()->toArray() as $photo) {
+            $photo->removeTag($tag);
+        }
+
+        $this->em->remove($tag);
+        $this->em->flush();
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    private function findOrFail(string $id): Tag
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Tag not found.');
+        }
+
+        $tag = $this->tags->find($uuid);
+        if (null === $tag) {
+            throw new NotFoundHttpException('Tag not found.');
+        }
+
+        return $tag;
     }
 
     /** @return array<string, mixed> */
@@ -69,12 +129,13 @@ class TagController
     }
 
     /** @return array<string, mixed> */
-    private function normalize(Tag $tag): array
+    private function normalize(Tag $tag, int $photoCount): array
     {
         return [
             'id' => (string) $tag->getId(),
             'name' => $tag->getName(),
             'slug' => $tag->getSlug(),
+            'photoCount' => $photoCount,
         ];
     }
 }
