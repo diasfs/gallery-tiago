@@ -644,6 +644,11 @@ button.admin-action-link {
   box-shadow: 0 0 0 1px var(--foreground);
 }
 
+.admin-photo-tile--cover:not(.admin-photo-tile--selected) {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+
 .admin-photo-check {
   border-color: rgb(255 255 255 / 0.95) !important;
   background: rgb(255 255 255 / 0.95) !important;

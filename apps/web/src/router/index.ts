@@ -82,6 +82,11 @@ const router = createRouter({
           component: () => import('../views/admin/PersonEditView.vue'),
           props: true,
         },
+        {
+          path: 'tags',
+          name: 'admin-tags',
+          component: () => import('../views/admin/TagsView.vue'),
+        },
       ],
     },
     {

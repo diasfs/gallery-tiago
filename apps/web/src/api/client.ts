@@ -4,6 +4,7 @@ import type {
   AdminPersonDetail,
   AdminPhotoDetail,
   AdminPhotoSummary,
+  AdminTag,
   AdminUser,
   AlbumDetail,
   AlbumSummary,
@@ -14,7 +15,7 @@ import type {
   PersonSummary,
   PhotoDetail,
   PhotoSummary,
-  Tag,
+  ReprocessScope,
   TagDetail,
   UnnamedPersonCluster,
 } from './types'
@@ -138,6 +139,7 @@ export const adminApi = {
   me: () => adminRequest<AdminUser>('/api/admin/me'),
 
   listAlbums: () => adminRequest<AdminAlbum[]>('/api/admin/albums'),
+  getAlbum: (id: string) => adminRequest<AdminAlbum>(`/api/admin/albums/${encodeURIComponent(id)}`),
   createAlbum: (payload: AlbumWritePayload) =>
     adminRequest<AdminAlbum>('/api/admin/albums', { method: 'POST', body: payload }),
   updateAlbum: (id: string, payload: AlbumWritePayload) =>
@@ -159,8 +161,16 @@ export const adminApi = {
   getPhoto: (id: string) => adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}`),
   updatePhoto: (id: string, payload: PhotoWritePayload) =>
     adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload }),
-  reprocessPhoto: (id: string) =>
-    adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}/reprocess`, { method: 'POST' }),
+  reprocessPhoto: (id: string, scope: ReprocessScope = 'all') =>
+    adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}/reprocess`, {
+      method: 'POST',
+      body: { scope },
+    }),
+  reprocessAlbum: (albumId: string, scope: ReprocessScope = 'all') =>
+    adminRequest<AdminPhotoSummary[]>(`/api/admin/albums/${encodeURIComponent(albumId)}/photos/reprocess`, {
+      method: 'POST',
+      body: { scope },
+    }),
   deletePhoto: (id: string) =>
     adminRequest<void>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   bulkDeletePhotos: (ids: string[]) =>
@@ -203,6 +213,11 @@ export const adminApi = {
     adminRequest<Location[]>(`/api/admin/locations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   createLocation: (payload: LocationWritePayload) =>
     adminRequest<Location>('/api/admin/locations', { method: 'POST', body: payload }),
-  searchTags: (q?: string) => adminRequest<Tag[]>(`/api/admin/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),
-  createTag: (name: string) => adminRequest<Tag>('/api/admin/tags', { method: 'POST', body: { name } }),
+  searchTags: (q?: string) =>
+    adminRequest<AdminTag[]>(`/api/admin/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  createTag: (name: string) => adminRequest<AdminTag>('/api/admin/tags', { method: 'POST', body: { name } }),
+  updateTag: (id: string, name: string) =>
+    adminRequest<AdminTag>(`/api/admin/tags/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } }),
+  deleteTag: (id: string) =>
+    adminRequest<void>(`/api/admin/tags/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }

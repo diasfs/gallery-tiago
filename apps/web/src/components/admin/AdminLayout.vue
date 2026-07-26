@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { ExternalLink, Images, LogOut, Users } from '@lucide/vue'
+import { ExternalLink, Images, LogOut, Tags, Users } from '@lucide/vue'
 import { adminApi } from '@/api/client'
 
 const route = useRoute()
@@ -14,6 +14,7 @@ const title = computed(() => {
   if (name === 'admin-photo-edit') return 'Edit photo'
   if (name === 'admin-people') return 'People'
   if (name === 'admin-person-edit') return 'Edit person'
+  if (name === 'admin-tags') return 'Tags'
   return 'Admin'
 })
 
@@ -24,6 +25,7 @@ const subtitle = computed(() => {
   if (name === 'admin-photo-edit') return 'Title, tags, and people'
   if (name === 'admin-people') return 'Named people and unnamed face clusters'
   if (name === 'admin-person-edit') return 'Name, primary face, merge, or delete'
+  if (name === 'admin-tags') return 'Translate auto-suggested tags for visitors'
   return ''
 })
 
@@ -61,6 +63,10 @@ async function logout() {
           <RouterLink to="/admin/people" class="admin-nav-link">
             <Users class="size-[1.05rem] shrink-0 opacity-60" />
             People
+          </RouterLink>
+          <RouterLink to="/admin/tags" class="admin-nav-link">
+            <Tags class="size-[1.05rem] shrink-0 opacity-60" />
+            Tags
           </RouterLink>
         </nav>
       </div>
