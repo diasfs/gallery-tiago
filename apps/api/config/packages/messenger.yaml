@@ -16,6 +16,8 @@ framework:
                     multiplier: 2
             faces:
                 dsn: '%env(REDIS_URL)%/faces'
+            tags:
+                dsn: '%env(REDIS_URL)%/tags'
             failed: 'doctrine://default?queue_name=failed'
 
         default_bus: messenger.bus.default
@@ -30,12 +32,14 @@ framework:
 
             App\Message\ConvertMediaMessage: convert
             App\Message\DetectFacesMessage: faces
+            App\Message\SuggestTagsMessage: tags
 
 when@test:
     framework:
         messenger:
             transports:
                 # Keep messages in memory during tests instead of touching Redis;
-                # asserted via messenger.transport.convert / .faces services.
+                # asserted via messenger.transport.convert / .faces / .tags services.
                 convert: 'in-memory://'
                 faces: 'in-memory://'
+                tags: 'in-memory://'

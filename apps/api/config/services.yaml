@@ -24,11 +24,14 @@ services:
     # please note that last definitions always *replace* previous ones
 
     App\Service\FaceQueuePublisherInterface: '@App\Service\RedisFaceQueuePublisher'
+    App\Service\TagQueuePublisherInterface: '@App\Service\RedisTagQueuePublisher'
 
 when@test:
     services:
         # Swap the real Redis publisher for an in-memory fake so the test
         # suite doesn't need a live Redis connection (mirrors the in-memory
-        # transport swap for convert/faces in config/packages/messenger.yaml).
+        # transport swap for convert/faces/tags in config/packages/messenger.yaml).
         App\Tests\Fake\InMemoryFaceQueuePublisher: ~
         App\Service\FaceQueuePublisherInterface: '@App\Tests\Fake\InMemoryFaceQueuePublisher'
+        App\Tests\Fake\InMemoryTagQueuePublisher: ~
+        App\Service\TagQueuePublisherInterface: '@App\Tests\Fake\InMemoryTagQueuePublisher'

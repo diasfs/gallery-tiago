@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gallery}
       POSTGRES_DB: ${POSTGRES_DB:-gallery}
     ports: ["5433:5432"]
-    volumes: [pg_data:/var/lib/postgresql/data]
+    volumes:
+      - ./volumes/pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gallery"]
       interval: 5s
@@ -23,7 +24,7 @@ services:
     build: ./apps/api
     volumes:
       - ./apps/api:/app
-      - media_data:/var/gallery/media
+      - ./volumes/media_data:/var/gallery/media
     env_file: .env
     # Host 8080 is often taken (e.g. phpMyAdmin); use 8081 for the gallery API.
     ports: ["8081:80"]
@@ -34,18 +35,15 @@ services:
 
   worker-convert:
     build: ./apps/api
-    # Consumes both `convert` (AVIF/thumbnail conversion) and `faces`
-    # (DetectFacesHandler, which only bridges to the Redis list
-    # `gallery:faces` for apps/worker-faces to BRPOP — see Task 7). Kept in
-    # one PHP consumer process for simplicity; split into its own service if
-    # face-bridge volume ever needs independent scaling/restarts.
+    # Consumes `convert` (AVIF/thumbnail), `faces` (DetectFacesHandler bridge
+    # to gallery:faces), and `tags` (SuggestTagsHandler bridge to gallery:tags).
     # Run as www-data so converted files share ownership with php-fpm uploads.
     command: >-
       su -s /bin/sh www-data -c
-      'php bin/console messenger:consume convert faces -vv --time-limit=3600'
+      'php bin/console messenger:consume convert faces tags -vv --time-limit=3600'
     volumes:
       - ./apps/api:/app
-      - media_data:/var/gallery/media
+      - ./volumes/media_data:/var/gallery/media
     env_file: .env
     depends_on: [api, redis, postgres]
     networks: [gallery]
@@ -54,7 +52,17 @@ services:
     build: ./apps/worker-faces
     volumes:
       - ./apps/worker-faces:/app
-      - media_data:/var/gallery/media
+      - ./volumes/media_data:/var/gallery/media
+    env_file: .env
+    depends_on: [redis, postgres]
+    networks: [gallery]
+
+  worker-tags:
+    build: ./apps/worker-tags
+    volumes:
+      - ./apps/worker-tags:/app
+      - ./volumes/media_data:/var/gallery/media
+      - tags_model_cache:/root/.cache
     env_file: .env
     depends_on: [redis, postgres]
     networks: [gallery]
@@ -67,10 +75,9 @@ services:
     depends_on: [api]
     networks: [gallery]
 
-volumes:
-  pg_data:
-  media_data:
-
 networks:
   gallery:
     name: gallery
+
+volumes:
+  tags_model_cache:
