@@ -2,7 +2,9 @@
 
 namespace App\Entity;
 
-use App\Enum\ProcessingStatus;
+use App\Enum\FacesStatus;
+use App\Enum\MediaStatus;
+use App\Enum\TagsStatus;
 use App\Repository\PhotoRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -43,8 +45,14 @@ class Photo
     #[ORM\Column(type: Types::JSON)]
     private array $thumbPaths = [];
 
-    #[ORM\Column(length: 20, enumType: ProcessingStatus::class)]
-    private ProcessingStatus $processingStatus = ProcessingStatus::Pending;
+    #[ORM\Column(length: 20, enumType: MediaStatus::class)]
+    private MediaStatus $mediaStatus = MediaStatus::Pending;
+
+    #[ORM\Column(length: 20, enumType: FacesStatus::class)]
+    private FacesStatus $facesStatus = FacesStatus::Pending;
+
+    #[ORM\Column(length: 20, enumType: TagsStatus::class)]
+    private TagsStatus $tagsStatus = TagsStatus::Pending;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $processingError = null;
@@ -159,14 +167,38 @@ class Photo
         return $this;
     }
 
-    public function getProcessingStatus(): ProcessingStatus
+    public function getMediaStatus(): MediaStatus
     {
-        return $this->processingStatus;
+        return $this->mediaStatus;
     }
 
-    public function setProcessingStatus(ProcessingStatus $processingStatus): static
+    public function setMediaStatus(MediaStatus $mediaStatus): static
     {
-        $this->processingStatus = $processingStatus;
+        $this->mediaStatus = $mediaStatus;
+
+        return $this;
+    }
+
+    public function getFacesStatus(): FacesStatus
+    {
+        return $this->facesStatus;
+    }
+
+    public function setFacesStatus(FacesStatus $facesStatus): static
+    {
+        $this->facesStatus = $facesStatus;
+
+        return $this;
+    }
+
+    public function getTagsStatus(): TagsStatus
+    {
+        return $this->tagsStatus;
+    }
+
+    public function setTagsStatus(TagsStatus $tagsStatus): static
+    {
+        $this->tagsStatus = $tagsStatus;
 
         return $this;
     }
