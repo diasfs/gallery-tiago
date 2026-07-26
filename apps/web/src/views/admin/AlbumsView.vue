@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,25 +30,104 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { ApiError, adminApi, type AlbumWritePayload } from '../../api/client'
-import type { AdminAlbum, Location } from '../../api/types'
+import { ApiError, adminApi, mediaUrl, type AlbumWritePayload } from '../../api/client'
+import type { AdminAlbum, AdminPhotoSummary, Location } from '../../api/types'
 import LocationMap from '../../components/LocationMap.vue'
 import { toDateInputValue } from '@/lib/utils'
+
+type AlbumVisibilityFilter = 'all' | AdminAlbum['visibility']
+
+const route = useRoute()
+const router = useRouter()
 
 const albums = ref<AdminAlbum[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+const search = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
+const locationFilter = ref('')
+
+const visibilityFilter = computed<AlbumVisibilityFilter>(() => {
+  const value = route.query.visibility
+  if (value === 'public' || value === 'unlisted' || value === 'private') return value
+  return 'all'
+})
+
+const searchQuery = computed(() => {
+  const q = route.query.q
+  return typeof q === 'string' ? q.trim().toLowerCase() : ''
+})
+
+const fromQuery = computed(() => {
+  const value = route.query.from
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
+})
+
+const toQuery = computed(() => {
+  const value = route.query.to
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
+})
+
+const locationQueryFilter = computed(() => {
+  const value = route.query.location
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+})
+
+const filtersActive = computed(
+  () =>
+    visibilityFilter.value !== 'all' ||
+    searchQuery.value !== '' ||
+    fromQuery.value !== '' ||
+    toQuery.value !== '' ||
+    locationQueryFilter.value !== '',
+)
 
 interface FlatAlbum {
   album: AdminAlbum
   depth: number
 }
 
+function albumMatchesLocation(album: AdminAlbum, needle: string): boolean {
+  if (!album.location) return false
+  const haystack = [album.location.name, album.location.city, album.location.country]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(needle)
+}
+
+const filteredAlbums = computed(() => {
+  const visibility = visibilityFilter.value
+  const q = searchQuery.value
+  const from = fromQuery.value
+  const to = toQuery.value
+  const locationNeedle = locationQueryFilter.value
+  return albums.value.filter((album) => {
+    if (visibility !== 'all' && album.visibility !== visibility) return false
+    if (q && !album.title.toLowerCase().includes(q) && !album.slug.toLowerCase().includes(q)) {
+      return false
+    }
+    if (from || to) {
+      if (!album.takenAt) return false
+      const taken = toDateInputValue(album.takenAt)
+      if (from && taken < from) return false
+      if (to && taken > to) return false
+    }
+    if (locationNeedle && !albumMatchesLocation(album, locationNeedle)) return false
+    return true
+  })
+})
+
 /** Depth-first flattening (root-first, ordered by sortOrder/title) so the tree renders as an indented list without a recursive component. */
 const flatAlbums = computed<FlatAlbum[]>(() => {
+  const filtered = filteredAlbums.value
+  const ids = new Set(filtered.map((album) => album.id))
   const byParent = new Map<string | null, AdminAlbum[]>()
-  for (const album of albums.value) {
-    const key = album.parentId
+
+  for (const album of filtered) {
+    // When filters hide a parent, promote the matching child to a root so it still appears.
+    const key = album.parentId && ids.has(album.parentId) ? album.parentId : null
     const siblings = byParent.get(key) ?? []
     siblings.push(album)
     byParent.set(key, siblings)
@@ -82,6 +161,57 @@ async function load() {
 
 onMounted(load)
 
+watch(
+  () => route.query,
+  (query) => {
+    search.value = typeof query.q === 'string' ? query.q : ''
+    dateFrom.value = typeof query.from === 'string' ? query.from : ''
+    dateTo.value = typeof query.to === 'string' ? query.to : ''
+    locationFilter.value = typeof query.location === 'string' ? query.location : ''
+  },
+  { immediate: true },
+)
+
+function albumFilterQuery(overrides: {
+  visibility?: AlbumVisibilityFilter
+  q?: string
+  from?: string
+  to?: string
+  location?: string
+} = {}) {
+  const nextVisibility = overrides.visibility ?? visibilityFilter.value
+  const nextSearch = overrides.q ?? search.value
+  const nextFrom = overrides.from ?? dateFrom.value
+  const nextTo = overrides.to ?? dateTo.value
+  const nextLocation = overrides.location ?? locationFilter.value
+  return {
+    ...(nextVisibility !== 'all' ? { visibility: nextVisibility } : {}),
+    ...(nextSearch.trim() ? { q: nextSearch.trim() } : {}),
+    ...(nextFrom.trim() ? { from: nextFrom.trim() } : {}),
+    ...(nextTo.trim() ? { to: nextTo.trim() } : {}),
+    ...(nextLocation.trim() ? { location: nextLocation.trim() } : {}),
+  }
+}
+
+function setVisibilityFilter(next: AlbumVisibilityFilter) {
+  router.push({
+    name: 'admin-albums',
+    query: albumFilterQuery({ visibility: next }),
+  })
+}
+
+function submitSearch() {
+  router.push({
+    name: 'admin-albums',
+    query: albumFilterQuery({
+      q: search.value,
+      from: dateFrom.value,
+      to: dateTo.value,
+      location: locationFilter.value,
+    }),
+  })
+}
+
 const editingId = ref<string | 'new' | null>(null)
 const deletingAlbum = ref<AdminAlbum | null>(null)
 const formError = ref<string | null>(null)
@@ -114,6 +244,40 @@ const hasCoordinates = computed(
   () => selectedLocation.value?.latitude != null && selectedLocation.value?.longitude != null,
 )
 
+const coverPhotos = ref<AdminPhotoSummary[]>([])
+const coverPhotosLoading = ref(false)
+const coverPhotosError = ref<string | null>(null)
+
+const selectedCoverPhoto = computed(
+  () => coverPhotos.value.find((photo) => photo.id === form.coverPhotoId) ?? null,
+)
+
+function coverThumbSrc(photo: AdminPhotoSummary): string | null {
+  const thumb = Object.values(photo.thumbPaths ?? {})[0]
+  return mediaUrl(thumb ?? photo.avifPath)
+}
+
+async function loadCoverPhotos(albumId: string) {
+  coverPhotosLoading.value = true
+  coverPhotosError.value = null
+  try {
+    coverPhotos.value = await adminApi.listAlbumPhotos(albumId)
+  } catch {
+    coverPhotos.value = []
+    coverPhotosError.value = 'Failed to load album photos for cover selection.'
+  } finally {
+    coverPhotosLoading.value = false
+  }
+}
+
+function chooseCoverPhoto(photoId: string) {
+  form.coverPhotoId = photoId
+}
+
+function clearCoverPhoto() {
+  form.coverPhotoId = ''
+}
+
 function resetForm() {
   form.title = ''
   form.slug = ''
@@ -127,6 +291,9 @@ function resetForm() {
   locationQuery.value = ''
   locationResults.value = []
   showNewLocationForm.value = false
+  coverPhotos.value = []
+  coverPhotosLoading.value = false
+  coverPhotosError.value = null
   formError.value = null
 }
 
@@ -148,6 +315,7 @@ function startEdit(album: AdminAlbum) {
   form.takenAt = album.takenAt ? toDateInputValue(album.takenAt) : ''
   selectedLocation.value = album.location
   editingId.value = album.id
+  void loadCoverPhotos(album.id)
 }
 
 function cancelEdit() {
@@ -270,12 +438,105 @@ async function confirmDelete() {
 
 <template>
   <section class="space-y-5">
-    <div class="admin-toolbar">
-      <p class="text-sm text-muted-foreground">
-        {{ flatAlbums.length === 1 ? '1 album' : `${flatAlbums.length} albums` }}
-      </p>
-      <Button type="button" size="sm" class="h-9 px-4" @click="startCreate()">New album</Button>
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div class="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          :variant="visibilityFilter === 'all' ? 'default' : 'outline'"
+          data-testid="visibility-all"
+          @click="setVisibilityFilter('all')"
+        >
+          All
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          :variant="visibilityFilter === 'public' ? 'default' : 'outline'"
+          data-testid="visibility-public"
+          @click="setVisibilityFilter('public')"
+        >
+          Public
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          :variant="visibilityFilter === 'unlisted' ? 'default' : 'outline'"
+          data-testid="visibility-unlisted"
+          @click="setVisibilityFilter('unlisted')"
+        >
+          Unlisted
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          :variant="visibilityFilter === 'private' ? 'default' : 'outline'"
+          data-testid="visibility-private"
+          @click="setVisibilityFilter('private')"
+        >
+          Private
+        </Button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" class="h-9 px-4" @click="startCreate()">New album</Button>
+      </div>
     </div>
+
+    <form
+      class="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-3 sm:flex-row sm:flex-wrap sm:items-end"
+      data-testid="albums-filters"
+      @submit.prevent="submitSearch"
+    >
+      <div class="grid gap-1.5">
+        <Label for="albums-from" class="text-xs text-muted-foreground">From</Label>
+        <Input
+          id="albums-from"
+          v-model="dateFrom"
+          type="date"
+          class="w-full sm:w-40"
+          data-testid="albums-from"
+        />
+      </div>
+      <div class="grid gap-1.5">
+        <Label for="albums-to" class="text-xs text-muted-foreground">To</Label>
+        <Input
+          id="albums-to"
+          v-model="dateTo"
+          type="date"
+          class="w-full sm:w-40"
+          data-testid="albums-to"
+        />
+      </div>
+      <div class="grid min-w-[12rem] flex-1 gap-1.5">
+        <Label for="albums-location" class="text-xs text-muted-foreground">Location</Label>
+        <Input
+          id="albums-location"
+          v-model="locationFilter"
+          type="search"
+          placeholder="Name, city, or country…"
+          data-testid="albums-location"
+        />
+      </div>
+      <div class="grid min-w-[12rem] flex-1 gap-1.5">
+        <Label for="albums-search" class="text-xs text-muted-foreground">Title / slug</Label>
+        <Input
+          id="albums-search"
+          v-model="search"
+          type="search"
+          placeholder="Search title or slug…"
+          data-testid="albums-search"
+        />
+      </div>
+      <Button type="submit" variant="outline" size="sm" class="h-9">Apply filters</Button>
+    </form>
+
+    <p class="text-sm text-muted-foreground">
+      {{ flatAlbums.length === 1 ? '1 album' : `${flatAlbums.length} albums` }}
+      <span v-if="filtersActive && albums.length !== flatAlbums.length">
+        (of {{ albums.length }})
+      </span>
+    </p>
 
     <div v-if="loading" class="admin-panel rounded-2xl p-16 text-center text-sm text-muted-foreground">
       Loading albums…
@@ -297,7 +558,12 @@ async function confirmDelete() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="{ album, depth } in flatAlbums" :key="album.id" class="border-border/60 hover:bg-muted/50">
+          <TableRow
+            v-for="{ album, depth } in flatAlbums"
+            :key="album.id"
+            data-testid="album-row"
+            class="border-border/60 hover:bg-muted/50"
+          >
             <TableCell class="py-4 font-medium text-foreground">
               <span class="inline-flex items-center" :style="{ paddingLeft: `${depth * 1.25}rem` }">
                 <span v-if="depth > 0" class="mr-2 text-muted-foreground/70" aria-hidden="true">↳</span>
@@ -331,9 +597,19 @@ async function confirmDelete() {
             </TableCell>
           </TableRow>
           <TableRow v-if="flatAlbums.length === 0">
-            <TableCell colspan="5" class="h-32 text-center">
-              <p class="text-muted-foreground">No albums yet.</p>
-              <Button type="button" variant="link" class="mt-2" @click="startCreate()">Create your first album</Button>
+            <TableCell colspan="5" class="h-32 text-center" data-testid="albums-empty">
+              <p class="text-muted-foreground">
+                {{ filtersActive ? 'No albums match this filter.' : 'No albums yet.' }}
+              </p>
+              <Button
+                v-if="!filtersActive"
+                type="button"
+                variant="link"
+                class="mt-2"
+                @click="startCreate()"
+              >
+                Create your first album
+              </Button>
             </TableCell>
           </TableRow>
         </TableBody>
@@ -475,8 +751,82 @@ async function confirmDelete() {
           </div>
 
           <div class="grid gap-2">
-            <Label for="album-cover-photo">Cover photo ID</Label>
-            <Input id="album-cover-photo" v-model="form.coverPhotoId" placeholder="Optional photo UUID" />
+            <div class="flex items-center justify-between gap-3">
+              <Label>Cover photo</Label>
+              <Button
+                v-if="form.coverPhotoId"
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="clear-cover-form"
+                @click="clearCoverPhoto"
+              >
+                Clear
+              </Button>
+            </div>
+
+            <p v-if="editingId === 'new'" class="text-sm text-muted-foreground">
+              Save the album and add photos, then pick a cover from the Photos page or by editing again.
+            </p>
+
+            <template v-else>
+              <p v-if="coverPhotosLoading" class="text-sm text-muted-foreground">Loading photos…</p>
+              <p v-else-if="coverPhotosError" class="text-sm text-destructive">{{ coverPhotosError }}</p>
+              <p v-else-if="coverPhotos.length === 0" class="text-sm text-muted-foreground">
+                No photos in this album yet. Upload some from the Photos page, then choose a cover here.
+              </p>
+              <div v-else class="space-y-3">
+                <div
+                  v-if="selectedCoverPhoto && coverThumbSrc(selectedCoverPhoto)"
+                  class="overflow-hidden rounded-lg border bg-muted"
+                >
+                  <img
+                    :src="coverThumbSrc(selectedCoverPhoto)!"
+                    :alt="selectedCoverPhoto.title ?? 'Cover photo'"
+                    class="aspect-[16/9] w-full object-cover"
+                    data-testid="cover-preview"
+                  />
+                </div>
+                <div class="grid grid-cols-3 gap-2 sm:grid-cols-4" data-testid="cover-picker">
+                  <button
+                    v-for="photo in coverPhotos"
+                    :key="photo.id"
+                    type="button"
+                    class="group relative overflow-hidden rounded-md border bg-muted text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    :class="
+                      form.coverPhotoId === photo.id
+                        ? 'border-foreground ring-2 ring-foreground'
+                        : 'border-transparent hover:border-border'
+                    "
+                    data-testid="cover-option"
+                    :disabled="!coverThumbSrc(photo)"
+                    @click="chooseCoverPhoto(photo.id)"
+                  >
+                    <img
+                      v-if="coverThumbSrc(photo)"
+                      :src="coverThumbSrc(photo)!"
+                      :alt="photo.title ?? 'Photo'"
+                      class="aspect-square w-full object-cover"
+                    />
+                    <div v-else class="flex aspect-square items-center justify-center text-[10px] text-muted-foreground">
+                      No preview
+                    </div>
+                    <span
+                      v-if="form.coverPhotoId === photo.id"
+                      class="absolute bottom-1 left-1 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background"
+                    >
+                      Cover
+                    </span>
+                    <span
+                      v-else
+                      class="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] text-muted-foreground opacity-0 transition group-hover:opacity-100"
+                    >
+                      Set cover
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
 
           <Alert v-if="formError" variant="destructive">
