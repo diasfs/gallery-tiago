@@ -8,10 +8,62 @@ apps/api/migrations/Version20260719173837.php.
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Sequence
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import psycopg
+
+STAGES = ("media", "faces", "tags")
+
+
+def _assert_stage(stage: str) -> None:
+    if stage not in STAGES:
+        raise ValueError(f'Unknown processing stage "{stage}".')
+
+
+def _error_lines(current: Optional[str]) -> dict[str, str]:
+    lines: dict[str, str] = {}
+    if current is None or not current.strip():
+        return lines
+
+    for raw_line in current.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        matched_stage = next(
+            (stage for stage in STAGES if line.startswith(f"{stage}:")),
+            None,
+        )
+        if matched_stage is not None:
+            lines[matched_stage] = line
+        else:
+            lines[f"_{line}"] = line
+
+    return lines
+
+
+def _join_error_lines(lines: dict[str, str]) -> str:
+    ordered = [lines[stage] for stage in STAGES if stage in lines]
+    ordered.extend(line for key, line in lines.items() if key not in STAGES)
+    return "\n".join(ordered)
+
+
+def set_stage_error(current: Optional[str], stage: str, message: str) -> str:
+    _assert_stage(stage)
+    normalized_message = re.sub(r"\s+", " ", message).strip()
+    lines = _error_lines(current)
+    lines[stage] = f"{stage}: {normalized_message}"
+    return _join_error_lines(lines)
+
+
+def clear_stage_error(current: Optional[str], stage: str) -> Optional[str]:
+    _assert_stage(stage)
+    lines = _error_lines(current)
+    lines.pop(stage, None)
+    joined = _join_error_lines(lines)
+    return joined or None
+
 
 # Query params understood by libpq connection URIs (kept when sanitizing).
 _LIBPQ_QUERY_PARAMS = frozenset(
@@ -180,14 +232,27 @@ def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Opti
         return row[0], row[1]
 
 
-def set_photo_status(
+def get_processing_error(conn: psycopg.Connection, photo_id: str) -> Optional[str]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT processing_error FROM photo WHERE id = %s", (photo_id,))
+        row = cur.fetchone()
+        return None if row is None else row[0]
+
+
+def set_faces_status(
     conn: psycopg.Connection,
     photo_id: str,
     status: str,
     error: Optional[str] = None,
 ) -> None:
+    current = get_processing_error(conn, photo_id)
+    if status == "done":
+        new_error = clear_stage_error(current, "faces")
+    else:
+        new_error = set_stage_error(current, "faces", error or "unknown error")
+
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE photo SET processing_status = %s, processing_error = %s WHERE id = %s",
-            (status, error, photo_id),
+            "UPDATE photo SET faces_status = %s, processing_error = %s WHERE id = %s",
+            (status, new_error, photo_id),
         )

@@ -3,7 +3,7 @@
 BRPOP `gallery:faces` -> InsightFace CPU detection on the photo's **original**
 file (OpenCV does not reliably decode AVIF) -> pgvector nearest-neighbor
 match via matcher.assign_person -> persist Face/Person rows -> set the
-photo's processing_status to done/failed.
+photo's faces_status to done/failed.
 
 InsightFace/onnxruntime/cv2 are imported lazily inside get_face_app() /
 process_photo() so this module -- and matcher.py in particular -- can be
@@ -144,12 +144,12 @@ def handle_message(conn, cfg: Config, payload: bytes) -> None:
 
     try:
         face_count = process_photo(conn, cfg, photo_id)
-        db.set_photo_status(conn, photo_id, "done")
+        db.set_faces_status(conn, photo_id, "done")
         log.info("photo %s: detected %d face(s), status=done", photo_id, face_count)
     except Exception as e:  # noqa: BLE001 - worker must survive a single bad photo
         log.exception("detect_faces failed for photo %s", photo_id)
         try:
-            db.set_photo_status(conn, photo_id, "failed", error=str(e))
+            db.set_faces_status(conn, photo_id, "failed", error=str(e))
         except Exception:
             log.exception("also failed to record failure status for photo %s", photo_id)
 
