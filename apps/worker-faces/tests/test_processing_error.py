@@ -64,11 +64,26 @@ class FakeConnection:
             None if processing_error is FakeConnection.MISSING else (processing_error,)
         )
         self.executions = []
+        self.transaction_entered = False
+        self.transaction_exited = False
 
     MISSING = object()
 
     def cursor(self):
         return FakeCursor(self)
+
+    def transaction(self):
+        connection = self
+
+        class FakeTransaction:
+            def __enter__(self):
+                connection.transaction_entered = True
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                connection.transaction_exited = True
+                return False
+
+        return FakeTransaction()
 
 
 def test_set_faces_status_sets_prefixed_failure_and_preserves_other_errors():
@@ -76,9 +91,11 @@ def test_set_faces_status_sets_prefixed_failure_and_preserves_other_errors():
 
     set_faces_status(conn, "photo-1", "failed", error="bad\nface")
 
+    assert conn.transaction_entered
+    assert conn.transaction_exited
     assert conn.executions == [
         (
-            "SELECT processing_error FROM photo WHERE id = %s",
+            "SELECT processing_error FROM photo WHERE id = %s FOR UPDATE",
             ("photo-1",),
         ),
         (

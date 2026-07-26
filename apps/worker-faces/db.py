@@ -245,14 +245,21 @@ def set_faces_status(
     status: str,
     error: Optional[str] = None,
 ) -> None:
-    current = get_processing_error(conn, photo_id)
-    if status == "done":
-        new_error = clear_stage_error(current, "faces")
-    else:
-        new_error = set_stage_error(current, "faces", error or "unknown error")
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT processing_error FROM photo WHERE id = %s FOR UPDATE",
+                (photo_id,),
+            )
+            row = cur.fetchone()
+            current = None if row is None else row[0]
 
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE photo SET faces_status = %s, processing_error = %s WHERE id = %s",
-            (status, new_error, photo_id),
-        )
+            if status == "done":
+                new_error = clear_stage_error(current, "faces")
+            else:
+                new_error = set_stage_error(current, "faces", error or "unknown error")
+
+            cur.execute(
+                "UPDATE photo SET faces_status = %s, processing_error = %s WHERE id = %s",
+                (status, new_error, photo_id),
+            )
