@@ -5,6 +5,8 @@ namespace App\Tests\MessageHandler;
 use App\Entity\Album;
 use App\Entity\Photo;
 use App\Message\ConvertMediaMessage;
+use App\Message\DetectFacesMessage;
+use App\Message\SuggestTagsMessage;
 use App\MessageHandler\ConvertMediaHandler;
 use App\Service\MediaStorage;
 use Doctrine\ORM\EntityManagerInterface;
@@ -62,7 +64,7 @@ final class ConvertMediaHandlerTest extends KernelTestCase
         return $photo;
     }
 
-    public function testHandlerConvertsToAvifAndDispatchesDetectFaces(): void
+    public function testHandlerConvertsToAvifAndDispatchesDetectFacesAndSuggestTags(): void
     {
         $photo = $this->makePhotoWithOriginal();
 
@@ -71,7 +73,9 @@ final class ConvertMediaHandlerTest extends KernelTestCase
 
         $this->em->refresh($photo);
 
-        $this->assertSame('detecting', $photo->getProcessingStatus()->value);
+        $this->assertSame('done', $photo->getMediaStatus()->value);
+        $this->assertSame('detecting', $photo->getFacesStatus()->value);
+        $this->assertSame('detecting', $photo->getTagsStatus()->value);
         $this->assertNull($photo->getProcessingError());
         $this->assertNotNull($photo->getAvifPath());
         $this->assertSame(64, $photo->getWidth());
@@ -88,9 +92,17 @@ final class ConvertMediaHandlerTest extends KernelTestCase
 
         /** @var InMemoryTransport $facesTransport */
         $facesTransport = static::getContainer()->get('messenger.transport.faces');
-        $sent = $facesTransport->getSent();
-        $this->assertCount(1, $sent);
-        $this->assertSame((string) $photo->getId(), $sent[0]->getMessage()->getPhotoId());
+        $facesSent = $facesTransport->getSent();
+        $this->assertCount(1, $facesSent);
+        $this->assertInstanceOf(DetectFacesMessage::class, $facesSent[0]->getMessage());
+        $this->assertSame((string) $photo->getId(), $facesSent[0]->getMessage()->getPhotoId());
+
+        /** @var InMemoryTransport $tagsTransport */
+        $tagsTransport = static::getContainer()->get('messenger.transport.tags');
+        $tagsSent = $tagsTransport->getSent();
+        $this->assertCount(1, $tagsSent);
+        $this->assertInstanceOf(SuggestTagsMessage::class, $tagsSent[0]->getMessage());
+        $this->assertSame((string) $photo->getId(), $tagsSent[0]->getMessage()->getPhotoId());
     }
 
     public function testHandlerMarksPhotoFailedWhenOriginalMissing(): void
@@ -106,12 +118,18 @@ final class ConvertMediaHandlerTest extends KernelTestCase
 
         $this->em->refresh($photo);
 
-        $this->assertSame('failed', $photo->getProcessingStatus()->value);
-        $this->assertNotNull($photo->getProcessingError());
+        $this->assertSame('failed', $photo->getMediaStatus()->value);
+        $this->assertSame('pending', $photo->getFacesStatus()->value);
+        $this->assertSame('pending', $photo->getTagsStatus()->value);
+        $this->assertStringStartsWith('media:', $photo->getProcessingError());
 
         /** @var InMemoryTransport $facesTransport */
         $facesTransport = static::getContainer()->get('messenger.transport.faces');
         $this->assertCount(0, $facesTransport->getSent());
+
+        /** @var InMemoryTransport $tagsTransport */
+        $tagsTransport = static::getContainer()->get('messenger.transport.tags');
+        $this->assertCount(0, $tagsTransport->getSent());
     }
 
     public function testHandlerIgnoresUnknownPhotoId(): void

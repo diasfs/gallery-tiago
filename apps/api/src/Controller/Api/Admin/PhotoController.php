@@ -4,12 +4,10 @@ namespace App\Controller\Api\Admin;
 
 use App\Entity\Photo;
 use App\Entity\Tag;
-use App\Enum\ProcessingStatus;
-use App\Message\ConvertMediaMessage;
-use App\Message\DetectFacesMessage;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
 use App\Service\PhotoDeleter;
+use App\Service\PhotoReprocessor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,7 +15,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
@@ -29,8 +26,8 @@ class PhotoController
         private readonly PhotoRepository $photos,
         private readonly TagRepository $tags,
         private readonly EntityManagerInterface $em,
-        private readonly MessageBusInterface $bus,
         private readonly PhotoDeleter $photoDeleter,
+        private readonly PhotoReprocessor $reprocessor,
     ) {
     }
 
@@ -93,36 +90,33 @@ class PhotoController
     }
 
     /**
-     * Deletes prior auto-detected faces (`hasEmbedding = true`) only —
-     * manually-added faces are left untouched (spec §9) — then re-enqueues
-     * the pipeline: `detect_faces` directly if an AVIF master already
-     * exists, otherwise `convert_media` first (which enqueues detection
-     * itself on success).
+     * Re-runs the async pipeline (see PhotoReprocessor for scope semantics).
+     * Accepts an optional JSON body {"scope": "all"|"faces"|"tags"}.
      */
     #[Route('/{id}/reprocess', name: 'admin_photos_reprocess', methods: ['POST'])]
-    public function reprocess(string $id): JsonResponse
+    public function reprocess(string $id, Request $request): JsonResponse
     {
         $photo = $this->findOrFail($id);
+        $scope = $this->resolveScope($request);
 
-        foreach ($photo->getFaces() as $face) {
-            if ($face->hasEmbedding()) {
-                $this->em->remove($face);
-            }
-        }
-
-        $photoId = (string) $photo->getId();
-
-        if (null === $photo->getAvifPath()) {
-            $photo->setProcessingStatus(ProcessingStatus::Pending);
-            $this->em->flush();
-            $this->bus->dispatch(new ConvertMediaMessage($photoId));
-        } else {
-            $photo->setProcessingStatus(ProcessingStatus::Detecting);
-            $this->em->flush();
-            $this->bus->dispatch(new DetectFacesMessage($photoId));
-        }
+        $this->reprocessor->reprocess($photo, $scope);
 
         return new JsonResponse(['data' => $this->normalize($photo)]);
+    }
+
+    private function resolveScope(Request $request): string
+    {
+        if ('' === $request->getContent()) {
+            return PhotoReprocessor::SCOPE_ALL;
+        }
+
+        $payload = $this->decode($request);
+        $scope = $payload['scope'] ?? PhotoReprocessor::SCOPE_ALL;
+        if (!\is_string($scope) || !\in_array($scope, PhotoReprocessor::SCOPES, true)) {
+            throw new BadRequestHttpException('scope must be one of: all, faces, tags.');
+        }
+
+        return $scope;
     }
 
     private function applyTags(Photo $photo, mixed $tagIds): void
@@ -200,7 +194,9 @@ class PhotoController
             'height' => $photo->getHeight(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
-            'processingStatus' => $photo->getProcessingStatus()->value,
+            'mediaStatus' => $photo->getMediaStatus()->value,
+            'facesStatus' => $photo->getFacesStatus()->value,
+            'tagsStatus' => $photo->getTagsStatus()->value,
             'processingError' => $photo->getProcessingError(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),

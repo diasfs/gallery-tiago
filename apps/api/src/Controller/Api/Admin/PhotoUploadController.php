@@ -4,11 +4,11 @@ namespace App\Controller\Api\Admin;
 
 use App\Entity\Album;
 use App\Entity\Photo;
-use App\Enum\ProcessingStatus;
 use App\Message\ConvertMediaMessage;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
 use App\Service\MediaStorage;
+use App\Service\PhotoReprocessor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -33,6 +33,7 @@ class PhotoUploadController
         private readonly EntityManagerInterface $em,
         private readonly MediaStorage $storage,
         private readonly MessageBusInterface $bus,
+        private readonly PhotoReprocessor $reprocessor,
     ) {
     }
 
@@ -43,6 +44,25 @@ class PhotoUploadController
         $photos = array_map($this->normalize(...), $this->photos->findByAlbum($album));
 
         return new JsonResponse(['data' => $photos]);
+    }
+
+    /**
+     * Re-runs the async pipeline for every photo in the album. Accepts an
+     * optional JSON body {"scope": "all"|"faces"|"tags"} (see PhotoReprocessor
+     * for scope semantics).
+     */
+    #[Route('/reprocess', name: 'admin_album_photos_reprocess', methods: ['POST'])]
+    public function reprocess(string $albumId, Request $request): JsonResponse
+    {
+        $album = $this->findAlbumOrFail($albumId);
+        $scope = $this->resolveScope($request);
+
+        $photos = $this->photos->findByAlbum($album);
+        foreach ($photos as $photo) {
+            $this->reprocessor->reprocess($photo, $scope);
+        }
+
+        return new JsonResponse(['data' => array_map($this->normalize(...), $photos)]);
     }
 
     #[Route('', name: 'admin_photos_upload', methods: ['POST'])]
@@ -73,12 +93,31 @@ class PhotoUploadController
         $relativePath = $this->storage->storeOriginal($file, $photoId);
 
         $photo->setOriginalPath($relativePath);
-        $photo->setProcessingStatus(ProcessingStatus::Pending);
         $this->em->flush();
 
         $this->bus->dispatch(new ConvertMediaMessage($photoId));
 
         return new JsonResponse(['data' => $this->normalize($photo)], Response::HTTP_CREATED);
+    }
+
+    private function resolveScope(Request $request): string
+    {
+        if ('' === $request->getContent()) {
+            return PhotoReprocessor::SCOPE_ALL;
+        }
+
+        try {
+            $payload = $request->toArray();
+        } catch (\JsonException) {
+            throw new BadRequestHttpException('Invalid JSON body.');
+        }
+
+        $scope = $payload['scope'] ?? PhotoReprocessor::SCOPE_ALL;
+        if (!\is_string($scope) || !\in_array($scope, PhotoReprocessor::SCOPES, true)) {
+            throw new BadRequestHttpException('scope must be one of: all, faces, tags.');
+        }
+
+        return $scope;
     }
 
     private function findAlbumOrFail(string $id): Album
@@ -105,7 +144,9 @@ class PhotoUploadController
             'title' => $photo->getTitle(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
-            'processingStatus' => $photo->getProcessingStatus()->value,
+            'mediaStatus' => $photo->getMediaStatus()->value,
+            'facesStatus' => $photo->getFacesStatus()->value,
+            'tagsStatus' => $photo->getTagsStatus()->value,
             'processingError' => $photo->getProcessingError(),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];

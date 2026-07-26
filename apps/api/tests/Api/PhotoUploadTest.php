@@ -117,13 +117,18 @@ final class PhotoUploadTest extends WebTestCase
 
         $this->assertResponseStatusCodeSame(201);
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
-        $this->assertSame('pending', $data['processingStatus']);
+        $this->assertSame('pending', $data['mediaStatus']);
+        $this->assertSame('pending', $data['facesStatus']);
+        $this->assertSame('pending', $data['tagsStatus']);
+        $this->assertArrayNotHasKey('processingStatus', $data);
         $this->assertSame((string) $this->album->getId(), $data['albumId']);
         $this->assertSame('holiday-sunset', $data['title']);
 
         $photo = $this->em->getRepository(Photo::class)->find($data['id']);
         $this->assertNotNull($photo);
-        $this->assertSame('pending', $photo->getProcessingStatus()->value);
+        $this->assertSame('pending', $photo->getMediaStatus()->value);
+        $this->assertSame('pending', $photo->getFacesStatus()->value);
+        $this->assertSame('pending', $photo->getTagsStatus()->value);
         $this->assertSame('holiday-sunset', $photo->getTitle());
         $this->assertNotSame('', $photo->getOriginalPath());
 

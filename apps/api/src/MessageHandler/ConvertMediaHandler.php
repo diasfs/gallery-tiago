@@ -2,12 +2,16 @@
 
 namespace App\MessageHandler;
 
-use App\Enum\ProcessingStatus;
+use App\Enum\FacesStatus;
+use App\Enum\MediaStatus;
+use App\Enum\TagsStatus;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
+use App\Message\SuggestTagsMessage;
 use App\Repository\PhotoRepository;
 use App\Service\AvifConverter;
 use App\Service\MediaStorage;
+use App\Service\ProcessingErrorBag;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -44,7 +48,7 @@ final class ConvertMediaHandler
             return;
         }
 
-        $photo->setProcessingStatus(ProcessingStatus::Converting);
+        $photo->setMediaStatus(MediaStatus::Converting);
         $this->em->flush();
 
         $photoId = (string) $photo->getId();
@@ -69,14 +73,25 @@ final class ConvertMediaHandler
             $photo->setThumbPaths($thumbRelativeBySize);
             $photo->setWidth($result->width);
             $photo->setHeight($result->height);
-            $photo->setProcessingError(null);
-            $photo->setProcessingStatus(ProcessingStatus::Detecting);
+            $photo->setMediaStatus(MediaStatus::Done);
+            $photo->setFacesStatus(FacesStatus::Detecting);
+            $photo->setTagsStatus(TagsStatus::Detecting);
+            $photo->setProcessingError(
+                ProcessingErrorBag::clear(
+                    ProcessingErrorBag::clear(
+                        ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
+                        'faces',
+                    ),
+                    'tags',
+                ),
+            );
             $this->em->flush();
 
             $this->bus->dispatch(new DetectFacesMessage($photoId));
+            $this->bus->dispatch(new SuggestTagsMessage($photoId));
         } catch (\Throwable $e) {
-            $photo->setProcessingStatus(ProcessingStatus::Failed);
-            $photo->setProcessingError($e->getMessage());
+            $photo->setMediaStatus(MediaStatus::Failed);
+            $photo->setProcessingError(ProcessingErrorBag::set($photo->getProcessingError(), 'media', $e->getMessage()));
             $this->em->flush();
 
             $this->logger->error('convert_media failed for photo {photoId}: {message}', [
