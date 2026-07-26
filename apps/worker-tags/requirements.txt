@@ -1,0 +1,12 @@
+redis==5.0.8
+psycopg[binary]==3.2.3
+numpy==1.26.4
+Pillow==10.4.0
+timm==1.0.9
+fairscale==0.4.13
+# Undeclared runtime deps of the ram package (setup.cfg lists none).
+transformers==4.38.2
+scipy==1.14.1
+# torch/torchvision are installed from the pytorch CPU index in the Dockerfile.
+# Official package metadata name is `ram` (not recognize-anything).
+ram @ git+https://github.com/xinyu1205/recognize-anything.git@7cb804a8609e9f4b1a50b7f31436d2df40bb9481
