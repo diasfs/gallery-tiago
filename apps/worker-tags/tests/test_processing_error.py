@@ -117,10 +117,9 @@ def test_set_tags_status_done_clears_only_tags_error():
     )
 
 
-def test_handle_message_marks_tags_done_and_commits(monkeypatch):
-    conn = type("FakeConnection", (), {"commit": lambda self: None})()
+def test_handle_message_marks_tags_done(monkeypatch):
+    conn = object()
     statuses = []
-    commits = []
     monkeypatch.setattr(main, "process_photo", lambda _conn, _cfg, _photo_id: 3)
     monkeypatch.setattr(
         main.db,
@@ -129,18 +128,15 @@ def test_handle_message_marks_tags_done_and_commits(monkeypatch):
             (photo_id, status, error)
         ),
     )
-    monkeypatch.setattr(conn, "commit", lambda: commits.append(True))
 
     main.handle_message(conn, object(), b'{"photo_id":"photo-1"}')
 
     assert statuses == [("photo-1", "done", None)]
-    assert commits == [True]
 
 
-def test_handle_message_marks_tags_failed_and_commits(monkeypatch):
-    conn = type("FakeConnection", (), {"commit": lambda self: None})()
+def test_handle_message_marks_tags_failed(monkeypatch):
+    conn = object()
     statuses = []
-    commits = []
 
     def fail_processing(_conn, _cfg, _photo_id):
         raise RuntimeError("tagger unavailable")
@@ -153,9 +149,7 @@ def test_handle_message_marks_tags_failed_and_commits(monkeypatch):
             (photo_id, status, error)
         ),
     )
-    monkeypatch.setattr(conn, "commit", lambda: commits.append(True))
 
     main.handle_message(conn, object(), b'{"photo_id":"photo-1"}')
 
     assert statuses == [("photo-1", "failed", "tagger unavailable")]
-    assert commits == [True]

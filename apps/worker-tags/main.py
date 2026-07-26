@@ -75,13 +75,11 @@ def handle_message(conn, cfg: Config, payload: bytes) -> None:
     try:
         count = process_photo(conn, cfg, photo_id)
         db.set_tags_status(conn, photo_id, "done")
-        conn.commit()
         log.info("photo %s: applied %d tag(s), tags_status=done", photo_id, count)
     except Exception as e:  # noqa: BLE001 - worker must survive a single bad photo
         log.exception("suggest_tags failed for photo %s", photo_id)
         try:
             db.set_tags_status(conn, photo_id, "failed", error=str(e))
-            conn.commit()
         except Exception:
             log.exception("also failed to record tags failure for photo %s", photo_id)
 
