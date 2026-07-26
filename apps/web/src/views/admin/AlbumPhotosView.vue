@@ -15,14 +15,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPhotoSummary, ProcessingStatus } from '../../api/types'
+import type { AdminPhotoSummary, FacesStatus, MediaStatus, ReprocessScope, TagsStatus } from '../../api/types'
 
 const props = defineProps<{ albumId: string }>()
 
 const photos = ref<AdminPhotoSummary[]>([])
+const coverPhotoId = ref<string | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const coverSaving = ref(false)
 const uploadingCount = ref(0)
 const uploadError = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -30,17 +39,37 @@ const selectedIds = ref<Set<string>>(new Set())
 const deleting = ref(false)
 const deleteTarget = ref<AdminPhotoSummary | 'selected' | null>(null)
 
-const STATUS_LABEL: Record<ProcessingStatus, string> = {
-  pending: 'Pending',
+const MEDIA_LABEL: Record<MediaStatus, string> = {
+  pending: 'Media pending',
   converting: 'Converting',
-  detecting: 'Detecting faces',
-  done: 'Done',
-  failed: 'Failed',
+  done: 'Media done',
+  failed: 'Media failed',
 }
 
-const inFlight = computed(() =>
-  photos.value.some((p) => p.processingStatus === 'pending' || p.processingStatus === 'converting' || p.processingStatus === 'detecting'),
-)
+const FACE_LABEL: Record<FacesStatus, string> = {
+  pending: 'Faces pending',
+  detecting: 'Detecting faces',
+  done: 'Faces done',
+  failed: 'Faces failed',
+}
+
+const TAG_LABEL: Record<TagsStatus, string> = {
+  pending: 'Tags pending',
+  detecting: 'Suggesting tags',
+  done: 'Tags done',
+  failed: 'Tags failed',
+}
+
+function isInFlight(p: AdminPhotoSummary): boolean {
+  return (
+    p.mediaStatus === 'pending' ||
+    p.mediaStatus === 'converting' ||
+    p.facesStatus === 'detecting' ||
+    p.tagsStatus === 'detecting'
+  )
+}
+
+const inFlight = computed(() => photos.value.some(isInFlight))
 
 const allSelected = computed(
   () => photos.value.length > 0 && photos.value.every((p) => selectedIds.value.has(p.id)),
@@ -59,13 +88,53 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    photos.value = await adminApi.listAlbumPhotos(props.albumId)
+    const [album, albumPhotos] = await Promise.all([
+      adminApi.getAlbum(props.albumId),
+      adminApi.listAlbumPhotos(props.albumId),
+    ])
+    coverPhotoId.value = album.coverPhotoId
+    photos.value = albumPhotos
     const valid = new Set(photos.value.map((p) => p.id))
     selectedIds.value = new Set([...selectedIds.value].filter((id) => valid.has(id)))
   } catch {
     error.value = 'Failed to load photos for this album.'
   } finally {
     loading.value = false
+  }
+}
+
+async function setAsCover(photo: AdminPhotoSummary) {
+  if (coverSaving.value || coverPhotoId.value === photo.id) {
+    return
+  }
+  coverSaving.value = true
+  error.value = null
+  try {
+    const album = await adminApi.updateAlbum(props.albumId, { coverPhotoId: photo.id })
+    coverPhotoId.value = album.coverPhotoId
+  } catch (err) {
+    error.value =
+      err instanceof ApiError
+        ? `Failed to set cover: ${err.message}`
+        : `Failed to set cover for "${photo.title ?? photo.id}".`
+  } finally {
+    coverSaving.value = false
+  }
+}
+
+async function clearCover() {
+  if (coverSaving.value || !coverPhotoId.value) {
+    return
+  }
+  coverSaving.value = true
+  error.value = null
+  try {
+    const album = await adminApi.updateAlbum(props.albumId, { coverPhotoId: null })
+    coverPhotoId.value = album.coverPhotoId
+  } catch (err) {
+    error.value = err instanceof ApiError ? `Failed to clear cover: ${err.message}` : 'Failed to clear cover.'
+  } finally {
+    coverSaving.value = false
   }
 }
 
@@ -137,6 +206,43 @@ async function onFilesSelected(event: Event) {
 }
 
 const reprocessing = ref<Set<string>>(new Set())
+const reprocessScope = ref<ReprocessScope>('all')
+const reprocessingAlbum = ref(false)
+
+const SCOPE_LABEL: Record<ReprocessScope, string> = {
+  all: 'Faces + tags',
+  faces: 'Faces only',
+  tags: 'Tags only',
+}
+
+async function reprocessAlbum() {
+  if (reprocessingAlbum.value || photos.value.length === 0) {
+    return
+  }
+  reprocessingAlbum.value = true
+  error.value = null
+  try {
+    const updated = await adminApi.reprocessAlbum(props.albumId, reprocessScope.value)
+    const byId = new Map(updated.map((p) => [p.id, p]))
+    photos.value = photos.value.map((p) => {
+      const u = byId.get(p.id)
+      return u
+        ? {
+            ...p,
+            mediaStatus: u.mediaStatus,
+            facesStatus: u.facesStatus,
+            tagsStatus: u.tagsStatus,
+            processingError: u.processingError,
+          }
+        : p
+    })
+    schedulePoll()
+  } catch {
+    error.value = 'Failed to reprocess this album.'
+  } finally {
+    reprocessingAlbum.value = false
+  }
+}
 
 async function reprocess(photo: AdminPhotoSummary) {
   reprocessing.value.add(photo.id)
@@ -144,7 +250,13 @@ async function reprocess(photo: AdminPhotoSummary) {
     const updated = await adminApi.reprocessPhoto(photo.id)
     photos.value = photos.value.map((p) =>
       p.id === photo.id
-        ? { ...p, processingStatus: updated.processingStatus, processingError: updated.processingError }
+        ? {
+            ...p,
+            mediaStatus: updated.mediaStatus,
+            facesStatus: updated.facesStatus,
+            tagsStatus: updated.tagsStatus,
+            processingError: updated.processingError,
+          }
         : p,
     )
     schedulePoll()
@@ -198,11 +310,17 @@ async function confirmDelete() {
       const removed = new Set(ids)
       photos.value = photos.value.filter((p) => !removed.has(p.id))
       selectedIds.value = new Set()
+      if (coverPhotoId.value && removed.has(coverPhotoId.value)) {
+        coverPhotoId.value = null
+      }
     } else {
       await adminApi.deletePhoto(target.id)
       photos.value = photos.value.filter((p) => p.id !== target.id)
       selectedIds.value.delete(target.id)
       selectedIds.value = new Set(selectedIds.value)
+      if (coverPhotoId.value === target.id) {
+        coverPhotoId.value = null
+      }
     }
     deleteTarget.value = null
   } catch {
@@ -215,7 +333,7 @@ async function confirmDelete() {
   }
 }
 
-function badgeVariant(status: ProcessingStatus) {
+function badgeVariantFor(status: string) {
   if (status === 'done') return 'default'
   if (status === 'failed') return 'destructive'
   if (status === 'pending') return 'secondary'
@@ -276,15 +394,53 @@ function badgeVariant(status: ProcessingStatus) {
           Select all
           <span v-if="selectedCount > 0" class="text-muted-foreground">({{ selectedCount }})</span>
         </label>
-        <Button
-          type="button"
-          variant="destructive"
-          size="sm"
-          :disabled="selectedCount === 0 || deleting"
-          @click="requestDeleteSelected"
-        >
-          {{ deleting ? 'Deleting…' : selectedCount > 0 ? `Delete selected (${selectedCount})` : 'Delete selected' }}
-        </Button>
+        <div class="flex flex-wrap items-center gap-2">
+          <Select
+            :model-value="reprocessScope"
+            :disabled="reprocessingAlbum || deleting"
+            @update:model-value="(v) => (reprocessScope = (v ?? 'all') as ReprocessScope)"
+          >
+            <SelectTrigger size="sm" class="w-36" data-testid="reprocess-scope">
+              <SelectValue>{{ SCOPE_LABEL[reprocessScope] }}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Faces + tags</SelectItem>
+              <SelectItem value="faces">Faces only</SelectItem>
+              <SelectItem value="tags">Tags only</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="reprocessingAlbum || deleting || photos.length === 0"
+            data-testid="reprocess-album"
+            @click="reprocessAlbum"
+          >
+            <RefreshCw class="size-3.5 shrink-0" :class="{ 'animate-spin': reprocessingAlbum }" />
+            {{ reprocessingAlbum ? 'Reprocessing…' : 'Reprocess album' }}
+          </Button>
+          <Button
+            v-if="coverPhotoId"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :disabled="coverSaving || deleting"
+            data-testid="clear-cover"
+            @click="clearCover"
+          >
+            Clear cover
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            :disabled="selectedCount === 0 || deleting"
+            @click="requestDeleteSelected"
+          >
+            {{ deleting ? 'Deleting…' : selectedCount > 0 ? `Delete selected (${selectedCount})` : 'Delete selected' }}
+          </Button>
+        </div>
       </div>
 
       <div
@@ -300,7 +456,10 @@ function badgeVariant(status: ProcessingStatus) {
           :key="photo.id"
           data-testid="photo-row"
           class="admin-photo-tile group overflow-hidden rounded-2xl"
-          :class="{ 'admin-photo-tile--selected': selectedIds.has(photo.id) }"
+          :class="{
+            'admin-photo-tile--selected': selectedIds.has(photo.id),
+            'admin-photo-tile--cover': coverPhotoId === photo.id,
+          }"
         >
           <div class="relative aspect-square bg-muted">
             <img
@@ -320,22 +479,49 @@ function badgeVariant(status: ProcessingStatus) {
               <Checkbox
                 :model-value="selectedIds.has(photo.id)"
                 :disabled="deleting"
-              class="admin-photo-check"
+                class="admin-photo-check"
                 :aria-label="`Select ${photo.title ?? 'photo'}`"
                 @update:model-value="toggleSelect(photo.id, $event === true)"
               />
             </div>
+
+            <span
+              v-if="coverPhotoId === photo.id"
+              class="absolute right-2 top-2 z-10 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background"
+              data-testid="cover-badge"
+            >
+              Cover
+            </span>
+
+            <button
+              v-else
+              type="button"
+              class="absolute inset-x-0 bottom-0 z-10 bg-background/85 py-1.5 text-center text-[11px] font-medium text-foreground opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :disabled="coverSaving || deleting || !thumbSrc(photo)"
+              data-testid="set-cover"
+              @click="setAsCover(photo)"
+            >
+              Set as cover
+            </button>
           </div>
 
           <div class="space-y-2 p-3">
             <div class="min-w-0">
               <p class="truncate text-sm font-medium">{{ photo.title ?? '(untitled)' }}</p>
-              <Badge :variant="badgeVariant(photo.processingStatus)" class="mt-1.5 text-[10px]">
-                {{ STATUS_LABEL[photo.processingStatus] }}
-              </Badge>
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                <Badge data-testid="status-media" :variant="badgeVariantFor(photo.mediaStatus)" class="text-[10px]">
+                  {{ MEDIA_LABEL[photo.mediaStatus] }}
+                </Badge>
+                <Badge data-testid="status-faces" :variant="badgeVariantFor(photo.facesStatus)" class="text-[10px]">
+                  {{ FACE_LABEL[photo.facesStatus] }}
+                </Badge>
+                <Badge data-testid="status-tags" :variant="badgeVariantFor(photo.tagsStatus)" class="text-[10px]">
+                  {{ TAG_LABEL[photo.tagsStatus] }}
+                </Badge>
+              </div>
             </div>
             <p
-              v-if="photo.processingStatus === 'failed' && photo.processingError"
+              v-if="photo.processingError"
               class="line-clamp-2 text-xs text-destructive"
             >
               {{ photo.processingError }}

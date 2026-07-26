@@ -167,8 +167,22 @@ function selectPersonResult(value: unknown) {
       >
         ← Album photos
       </RouterLink>
-      <Badge v-if="photo" variant="secondary" class="admin-status-badge">{{ photo.processingStatus }}</Badge>
+      <div v-if="photo" class="flex flex-wrap items-center gap-2">
+        <Badge data-testid="status-media" variant="secondary" class="admin-status-badge">
+          Media: {{ photo.mediaStatus }}
+        </Badge>
+        <Badge data-testid="status-faces" variant="secondary" class="admin-status-badge">
+          Faces: {{ photo.facesStatus }}
+        </Badge>
+        <Badge data-testid="status-tags" variant="secondary" class="admin-status-badge">
+          Tags: {{ photo.tagsStatus }}
+        </Badge>
+      </div>
     </div>
+
+    <Alert v-if="photo?.processingError" variant="destructive" class="mt-0">
+      <AlertDescription class="whitespace-pre-wrap">{{ photo.processingError }}</AlertDescription>
+    </Alert>
 
     <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
       Loading photo…

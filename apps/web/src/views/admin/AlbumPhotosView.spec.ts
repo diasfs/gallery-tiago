@@ -11,8 +11,11 @@ vi.mock('../../api/client', async () => {
     ...actual,
     adminApi: {
       listAlbumPhotos: vi.fn(),
+      getAlbum: vi.fn(),
+      updateAlbum: vi.fn(),
       uploadPhoto: vi.fn(),
       reprocessPhoto: vi.fn(),
+      reprocessAlbum: vi.fn(),
       deletePhoto: vi.fn(),
       bulkDeletePhotos: vi.fn(),
     },
@@ -21,8 +24,11 @@ vi.mock('../../api/client', async () => {
 
 const mockedApi = adminApi as unknown as {
   listAlbumPhotos: ReturnType<typeof vi.fn>
+  getAlbum: ReturnType<typeof vi.fn>
+  updateAlbum: ReturnType<typeof vi.fn>
   uploadPhoto: ReturnType<typeof vi.fn>
   reprocessPhoto: ReturnType<typeof vi.fn>
+  reprocessAlbum: ReturnType<typeof vi.fn>
   deletePhoto: ReturnType<typeof vi.fn>
   bulkDeletePhotos: ReturnType<typeof vi.fn>
 }
@@ -34,7 +40,9 @@ function makePhoto(overrides: Partial<AdminPhotoSummary> = {}): AdminPhotoSummar
     title: 'beach.jpg',
     avifPath: '/media/beach.avif',
     thumbPaths: { sm: '/media/beach-sm.avif' },
-    processingStatus: 'done',
+    mediaStatus: 'done',
+    facesStatus: 'done',
+    tagsStatus: 'done',
     processingError: null,
     createdAt: '2026-07-20T00:00:00Z',
     ...overrides,
@@ -72,12 +80,44 @@ async function mountView() {
 describe('AlbumPhotosView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedApi.getAlbum.mockResolvedValue({
+      id: 'album-1',
+      title: 'Summer 2026',
+      slug: 'summer-2026',
+      description: null,
+      visibility: 'public',
+      sortOrder: 1,
+      coverPhotoId: null,
+      parentId: null,
+      childCount: 0,
+      photoCount: 2,
+      takenAt: null,
+      location: null,
+      createdAt: '2026-07-20T00:00:00Z',
+      updatedAt: '2026-07-20T00:00:00Z',
+    })
     mockedApi.listAlbumPhotos.mockResolvedValue([
       makePhoto(),
-      makePhoto({ id: 'photo-2', title: 'portrait.png', processingStatus: 'detecting' }),
+      makePhoto({ id: 'photo-2', title: 'portrait.png', facesStatus: 'detecting' }),
     ])
     mockedApi.deletePhoto.mockResolvedValue(undefined)
     mockedApi.bulkDeletePhotos.mockResolvedValue(undefined)
+    mockedApi.updateAlbum.mockImplementation(async (_id: string, payload: { coverPhotoId?: string | null }) => ({
+      id: 'album-1',
+      title: 'Summer 2026',
+      slug: 'summer-2026',
+      description: null,
+      visibility: 'public',
+      sortOrder: 1,
+      coverPhotoId: payload.coverPhotoId ?? null,
+      parentId: null,
+      childCount: 0,
+      photoCount: 2,
+      takenAt: null,
+      location: null,
+      createdAt: '2026-07-20T00:00:00Z',
+      updatedAt: '2026-07-20T00:00:00Z',
+    }))
   })
 
   afterEach(() => {
@@ -91,8 +131,12 @@ describe('AlbumPhotosView', () => {
     expect(wrapper.findAll('[data-testid="photo-row"]')).toHaveLength(2)
     expect(wrapper.findAll('[data-slot="checkbox"]')).toHaveLength(3)
     expect(wrapper.findAll('[data-slot="badge"]').map((badge) => badge.text())).toEqual([
-      'Done',
+      'Media done',
+      'Faces done',
+      'Tags done',
+      'Media done',
       'Detecting faces',
+      'Tags done',
     ])
     expect(wrapper.text()).toContain('beach.jpg')
     expect(wrapper.text()).toContain('portrait.png')
@@ -138,6 +182,53 @@ describe('AlbumPhotosView', () => {
 
     expect(mockedApi.bulkDeletePhotos).toHaveBeenCalledWith(['photo-1', 'photo-2'])
     expect(wrapper.findAll('[data-testid="photo-row"]')).toHaveLength(0)
+
+    wrapper.unmount()
+  })
+
+  it('reprocesses the whole album with the selected scope', async () => {
+    mockedApi.reprocessAlbum.mockResolvedValue([
+      makePhoto({ facesStatus: 'detecting', tagsStatus: 'detecting' }),
+      makePhoto({ id: 'photo-2', title: 'portrait.png', facesStatus: 'detecting', tagsStatus: 'detecting' }),
+    ])
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="reprocess-album"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.reprocessAlbum).toHaveBeenCalledWith('album-1', 'all')
+    expect(wrapper.findAll('[data-testid="status-faces"]').map((badge) => badge.text())).toEqual([
+      'Detecting faces',
+      'Detecting faces',
+    ])
+    expect(wrapper.findAll('[data-testid="status-tags"]').map((badge) => badge.text())).toEqual([
+      'Suggesting tags',
+      'Suggesting tags',
+    ])
+
+    wrapper.unmount()
+  })
+
+  it('sets and clears the album cover from the photo grid', async () => {
+    const wrapper = await mountView()
+
+    const setCoverButtons = wrapper.findAll('[data-testid="set-cover"]')
+    expect(setCoverButtons).toHaveLength(2)
+    expect(wrapper.find('[data-testid="cover-badge"]').exists()).toBe(false)
+
+    await setCoverButtons[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.updateAlbum).toHaveBeenCalledWith('album-1', { coverPhotoId: 'photo-1' })
+    expect(wrapper.find('[data-testid="cover-badge"]').text()).toBe('Cover')
+    expect(wrapper.findAll('[data-testid="set-cover"]')).toHaveLength(1)
+
+    await wrapper.find('[data-testid="clear-cover"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.updateAlbum).toHaveBeenCalledWith('album-1', { coverPhotoId: null })
+    expect(wrapper.find('[data-testid="cover-badge"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="set-cover"]')).toHaveLength(2)
 
     wrapper.unmount()
   })

@@ -11,6 +11,14 @@ export interface Tag {
   id: string
   name: string
   slug: string
+  photoCount?: number
+}
+
+export interface AdminTag {
+  id: string
+  name: string
+  slug: string
+  photoCount: number
 }
 
 export interface PersonSummary {
@@ -79,7 +87,11 @@ export interface AdminUser {
   roles: string[]
 }
 
-export type ProcessingStatus = 'pending' | 'converting' | 'detecting' | 'done' | 'failed'
+export type MediaStatus = 'pending' | 'converting' | 'done' | 'failed'
+export type FacesStatus = 'pending' | 'detecting' | 'done' | 'failed'
+export type TagsStatus = 'pending' | 'detecting' | 'done' | 'failed'
+
+export type ReprocessScope = 'all' | 'faces' | 'tags'
 
 export interface AdminAlbum {
   id: string
@@ -104,7 +116,9 @@ export interface AdminPhotoSummary {
   title: string | null
   avifPath: string | null
   thumbPaths: Record<string, string>
-  processingStatus: ProcessingStatus
+  mediaStatus: MediaStatus
+  facesStatus: FacesStatus
+  tagsStatus: TagsStatus
   processingError: string | null
   createdAt: string
 }
@@ -117,7 +131,9 @@ export interface AdminPhotoDetail {
   height: number | null
   avifPath: string | null
   thumbPaths: Record<string, string>
-  processingStatus: ProcessingStatus
+  mediaStatus: MediaStatus
+  facesStatus: FacesStatus
+  tagsStatus: TagsStatus
   processingError: string | null
   tags: Tag[]
   people: PersonSummary[]
