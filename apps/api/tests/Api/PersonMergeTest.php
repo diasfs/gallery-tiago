@@ -10,6 +10,7 @@ use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
+use App\Message\SuggestTagsMessage;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -38,6 +39,7 @@ final class PersonMergeTest extends WebTestCase
         $this->loadFixtures();
         $this->convertTransport()->reset();
         $this->facesTransport()->reset();
+        $this->tagsTransport()->reset();
     }
 
     protected function tearDown(): void
@@ -114,6 +116,11 @@ final class PersonMergeTest extends WebTestCase
     private function facesTransport(): InMemoryTransport
     {
         return static::getContainer()->get('messenger.transport.faces');
+    }
+
+    private function tagsTransport(): InMemoryTransport
+    {
+        return static::getContainer()->get('messenger.transport.tags');
     }
 
     /** @return float[] */
@@ -619,6 +626,9 @@ final class PersonMergeTest extends WebTestCase
         $sent = $this->facesTransport()->getSent();
         $this->assertCount(1, $sent);
         $this->assertInstanceOf(DetectFacesMessage::class, $sent[0]->getMessage());
+        $tagsSent = $this->tagsTransport()->getSent();
+        $this->assertCount(1, $tagsSent);
+        $this->assertInstanceOf(SuggestTagsMessage::class, $tagsSent[0]->getMessage());
         $this->assertCount(0, $this->convertTransport()->getSent());
     }
 
@@ -638,6 +648,7 @@ final class PersonMergeTest extends WebTestCase
         $this->assertCount(1, $sent);
         $this->assertInstanceOf(ConvertMediaMessage::class, $sent[0]->getMessage());
         $this->assertCount(0, $this->facesTransport()->getSent());
+        $this->assertCount(0, $this->tagsTransport()->getSent());
     }
 
     public function testReprocessRequiresAuthentication(): void
@@ -651,6 +662,155 @@ final class PersonMergeTest extends WebTestCase
         $this->loginAsAdmin();
 
         $this->client->request('POST', '/api/admin/photos/00000000-0000-0000-0000-000000000000/reprocess');
+
+        $this->assertResponseStatusCodeSame(404);
+    }
+
+    public function testReprocessScopeFacesOnlyEnqueuesDetectAndDeletesAutoFaces(): void
+    {
+        $person = new Person();
+        $this->em->persist($person);
+        $autoFace = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $autoFaceId = (string) $autoFace->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/'.$this->publicPhoto->getId().'/reprocess', [
+            'scope' => 'faces',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+
+        $this->em->clear();
+        $this->assertNull($this->em->getRepository(Face::class)->find($autoFaceId));
+
+        $sent = $this->facesTransport()->getSent();
+        $this->assertCount(1, $sent);
+        $this->assertInstanceOf(DetectFacesMessage::class, $sent[0]->getMessage());
+        $this->assertCount(0, $this->tagsTransport()->getSent());
+        $this->assertCount(0, $this->convertTransport()->getSent());
+    }
+
+    public function testReprocessScopeTagsOnlyEnqueuesTagsAndKeepsFaces(): void
+    {
+        $person = new Person();
+        $this->em->persist($person);
+        $autoFace = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $autoFaceId = (string) $autoFace->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/'.$this->publicPhoto->getId().'/reprocess', [
+            'scope' => 'tags',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+
+        $this->em->clear();
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($autoFaceId));
+
+        $sent = $this->tagsTransport()->getSent();
+        $this->assertCount(1, $sent);
+        $this->assertInstanceOf(SuggestTagsMessage::class, $sent[0]->getMessage());
+        $this->assertCount(0, $this->facesTransport()->getSent());
+        $this->assertCount(0, $this->convertTransport()->getSent());
+    }
+
+    public function testReprocessRejectsInvalidScope(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/'.$this->publicPhoto->getId().'/reprocess', [
+            'scope' => 'everything',
+        ]);
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
+    // --- Album reprocess -------------------------------------------------------
+
+    public function testAlbumReprocessEnqueuesForEveryPhotoInAlbum(): void
+    {
+        $secondPhoto = new Photo($this->publicAlbum, 'originals/dd/dddd.jpg');
+        $secondPhoto->setAvifPath('converted/dd/dddd/master.avif');
+        $this->em->persist($secondPhoto);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/albums/'.$this->publicAlbum->getId().'/photos/reprocess', [
+            'scope' => 'all',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertCount(2, $data);
+
+        $expectedIds = [(string) $this->publicPhoto->getId(), (string) $secondPhoto->getId()];
+
+        $facesSent = $this->facesTransport()->getSent();
+        $this->assertCount(2, $facesSent);
+        $facesIds = array_map(static fn ($envelope) => $envelope->getMessage()->getPhotoId(), $facesSent);
+        $this->assertEqualsCanonicalizing($expectedIds, $facesIds);
+
+        $tagsSent = $this->tagsTransport()->getSent();
+        $this->assertCount(2, $tagsSent);
+        $tagsIds = array_map(static fn ($envelope) => $envelope->getMessage()->getPhotoId(), $tagsSent);
+        $this->assertEqualsCanonicalizing($expectedIds, $tagsIds);
+
+        $this->assertCount(0, $this->convertTransport()->getSent());
+    }
+
+    public function testAlbumReprocessScopeTagsOnlyEnqueuesTags(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/albums/'.$this->publicAlbum->getId().'/photos/reprocess', [
+            'scope' => 'tags',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertCount(1, $this->tagsTransport()->getSent());
+        $this->assertCount(0, $this->facesTransport()->getSent());
+        $this->assertCount(0, $this->convertTransport()->getSent());
+    }
+
+    public function testAlbumReprocessConvertsPhotosWithoutAvif(): void
+    {
+        $unconverted = new Photo($this->publicAlbum, 'originals/ee/eeee.jpg');
+        $this->em->persist($unconverted);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/albums/'.$this->publicAlbum->getId().'/photos/reprocess', [
+            'scope' => 'tags',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+
+        $convertSent = $this->convertTransport()->getSent();
+        $this->assertCount(1, $convertSent);
+        $this->assertInstanceOf(ConvertMediaMessage::class, $convertSent[0]->getMessage());
+        $this->assertSame((string) $unconverted->getId(), $convertSent[0]->getMessage()->getPhotoId());
+
+        $this->assertCount(1, $this->tagsTransport()->getSent());
+        $this->assertCount(0, $this->facesTransport()->getSent());
+    }
+
+    public function testAlbumReprocessRequiresAuthentication(): void
+    {
+        $this->client->request('POST', '/api/admin/albums/'.$this->publicAlbum->getId().'/photos/reprocess');
+        $this->assertResponseStatusCodeSame(401);
+    }
+
+    public function testAlbumReprocessUnknownAlbumReturns404(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->request('POST', '/api/admin/albums/00000000-0000-0000-0000-000000000000/photos/reprocess');
 
         $this->assertResponseStatusCodeSame(404);
     }
