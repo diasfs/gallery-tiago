@@ -116,7 +116,7 @@ def connect(database_url: str) -> psycopg.Connection:
     return psycopg.connect(sanitize_database_url(database_url), autocommit=True)
 
 
-def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Optional[str], str]:
+def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Optional[str], Optional[str]]:
     """Returns (avif_path, original_path) for the photo."""
     with conn.cursor() as cur:
         cur.execute("SELECT avif_path, original_path FROM photo WHERE id = %s", (photo_id,))

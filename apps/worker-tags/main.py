@@ -1,8 +1,7 @@
 """Tag suggestion worker entrypoint.
 
-BRPOP `gallery:tags` -> RAM++ open-vocabulary tagging on the photo's
-**original** file -> get-or-create Tag by slug -> attach via photo_tag -> set
-the photo's tags_status to done/failed.
+BRPOP `gallery:tags` -> rasterize AVIF master to a temp JPEG -> RAM++ tagging
+-> get-or-create Tag by slug -> attach via photo_tag -> set tags_status.
 """
 
 from __future__ import annotations
@@ -11,11 +10,11 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import redis
 
 import db
+from rasterize import materialize_jpeg
 from tagger import select_tags, slugify_label, tag_image
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -34,34 +33,27 @@ class Config:
         self.tag_max_count = int(os.environ.get("TAG_MAX_COUNT", "10"))
 
 
-def resolve_image_path(media_root: Path, avif_path: Optional[str], original_path: str) -> Path:
-    """Prefer the archived original (JPEG/PNG/WebP); AVIF is a fallback only."""
-    if original_path:
-        return media_root / original_path
-    if avif_path:
-        return media_root / avif_path
-    raise RuntimeError("photo has neither original_path nor avif_path")
-
-
 def process_photo(conn, cfg: Config, photo_id: str) -> int:
     """Tag one photo. Returns number of tags attached (including already-linked)."""
-    avif_path, original_path = db.get_photo_image_paths(conn, photo_id)
-    image_path = resolve_image_path(cfg.media_root, avif_path, original_path)
+    avif_path, _original_path = db.get_photo_image_paths(conn, photo_id)
+    if not avif_path:
+        raise RuntimeError("photo has no avif_path")
 
-    if not image_path.is_file():
-        raise RuntimeError(f"could not read image at {image_path}")
+    image_path = materialize_jpeg(cfg.media_root, avif_path)
+    try:
+        scored = tag_image(image_path)
+        labels = select_tags(scored, cfg.tag_score_threshold, cfg.tag_max_count)
 
-    scored = tag_image(image_path)
-    labels = select_tags(scored, cfg.tag_score_threshold, cfg.tag_max_count)
+        for label in labels:
+            slug = slugify_label(label)
+            if not slug:
+                continue
+            tag_id = db.get_or_create_tag(conn, name=label, slug=slug)
+            db.attach_tag(conn, photo_id, tag_id)
 
-    for label in labels:
-        slug = slugify_label(label)
-        if not slug:
-            continue
-        tag_id = db.get_or_create_tag(conn, name=label, slug=slug)
-        db.attach_tag(conn, photo_id, tag_id)
-
-    return len(labels)
+        return len(labels)
+    finally:
+        image_path.unlink(missing_ok=True)
 
 
 def handle_message(conn, cfg: Config, payload: bytes) -> None:

@@ -1,9 +1,9 @@
 """Face worker entrypoint.
 
-BRPOP `gallery:faces` -> InsightFace CPU detection on the photo's **original**
-file (OpenCV does not reliably decode AVIF) -> pgvector nearest-neighbor
-match via matcher.assign_person -> persist Face/Person rows -> set the
-photo's faces_status to done/failed.
+BRPOP `gallery:faces` -> rasterize AVIF master to a temp JPEG (OpenCV does
+not reliably decode AVIF) -> InsightFace CPU detection -> pgvector nearest-
+neighbor match via matcher.assign_person -> persist Face/Person rows -> set
+the photo's faces_status to done/failed.
 
 InsightFace/onnxruntime/cv2 are imported lazily inside get_face_app() /
 process_photo() so this module -- and matcher.py in particular -- can be
@@ -18,12 +18,12 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import redis
 
 import db
 from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person
+from rasterize import materialize_jpeg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("worker-faces")
@@ -60,20 +60,6 @@ def get_face_app():
     return _face_app
 
 
-def resolve_image_path(media_root: Path, avif_path: Optional[str], original_path: str) -> Path:
-    """Prefer the archived original for detection.
-
-    Converted masters are AVIF; OpenCV's imread typically cannot decode them,
-    while originals are JPEG/PNG/etc. Fall back to AVIF only if the original
-    path is missing.
-    """
-    if original_path:
-        return media_root / original_path
-    if avif_path:
-        return media_root / avif_path
-    raise RuntimeError("photo has neither original_path nor avif_path")
-
-
 def crop_path_for(face_id: str) -> str:
     """Store crops by face id so they outlive the source photo."""
     return f"faces/{face_id[:2]}/{face_id}.jpg"
@@ -83,55 +69,60 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
     """Detect, match, and persist all faces for one photo. Returns face count."""
     import cv2
 
-    avif_path, original_path = db.get_photo_image_paths(conn, photo_id)
-    image_path = resolve_image_path(cfg.media_root, avif_path, original_path)
+    avif_path, _original_path = db.get_photo_image_paths(conn, photo_id)
+    if not avif_path:
+        raise RuntimeError("photo has no avif_path")
 
-    image = cv2.imread(str(image_path))
-    if image is None:
-        raise RuntimeError(f"could not read image at {image_path}")
+    image_path = materialize_jpeg(cfg.media_root, avif_path)
+    try:
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise RuntimeError(f"could not read rasterized image at {image_path}")
 
-    # Safe to call unconditionally: re-detects are idempotent because prior
-    # auto-detected faces are cleared first (manual, no-embedding faces are
-    # untouched -- see db.delete_auto_detected_faces).
-    db.delete_auto_detected_faces(conn, photo_id, media_root=str(cfg.media_root))
+        # Safe to call unconditionally: re-detects are idempotent because prior
+        # auto-detected faces are cleared first (manual, no-embedding faces are
+        # untouched -- see db.delete_auto_detected_faces).
+        db.delete_auto_detected_faces(conn, photo_id, media_root=str(cfg.media_root))
 
-    detected = get_face_app().get(image)
+        detected = get_face_app().get(image)
 
-    for face in detected:
-        embedding = face.normed_embedding.tolist()
-        x1, y1, x2, y2 = (float(v) for v in face.bbox.tolist())
-        confidence = float(face.det_score)
+        for face in detected:
+            embedding = face.normed_embedding.tolist()
+            x1, y1, x2, y2 = (float(v) for v in face.bbox.tolist())
+            confidence = float(face.det_score)
 
-        neighbors = db.nearest_neighbors(conn, embedding, limit=5)
-        person_id, action = assign_person(embedding, neighbors, cfg.match_threshold, cfg.cluster_threshold)
+            neighbors = db.nearest_neighbors(conn, embedding, limit=5)
+            person_id, action = assign_person(embedding, neighbors, cfg.match_threshold, cfg.cluster_threshold)
 
-        if action not in (ASSIGN_NAMED, ASSIGN_CLUSTER):
-            person_id = db.create_person(conn)
+            if action not in (ASSIGN_NAMED, ASSIGN_CLUSTER):
+                person_id = db.create_person(conn)
 
-        face_id = str(uuid.uuid4())
-        crop_relative = crop_path_for(face_id)
-        crop_absolute = cfg.media_root / crop_relative
+            face_id = str(uuid.uuid4())
+            crop_relative = crop_path_for(face_id)
+            crop_absolute = cfg.media_root / crop_relative
 
-        ix1, iy1, ix2, iy2 = max(0, int(x1)), max(0, int(y1)), max(0, int(x2)), max(0, int(y2))
-        crop = image[iy1:iy2, ix1:ix2]
-        if crop.size > 0:
-            crop_absolute.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(crop_absolute), crop)
-        else:
-            crop_relative = None
+            ix1, iy1, ix2, iy2 = max(0, int(x1)), max(0, int(y1)), max(0, int(x2)), max(0, int(y2))
+            crop = image[iy1:iy2, ix1:ix2]
+            if crop.size > 0:
+                crop_absolute.parent.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(crop_absolute), crop)
+            else:
+                crop_relative = None
 
-        db.insert_face(
-            conn,
-            face_id=face_id,
-            photo_id=photo_id,
-            person_id=person_id,
-            bbox=(x1, y1, x2 - x1, y2 - y1),
-            confidence=confidence,
-            embedding=embedding,
-            crop_path=crop_relative,
-        )
+            db.insert_face(
+                conn,
+                face_id=face_id,
+                photo_id=photo_id,
+                person_id=person_id,
+                bbox=(x1, y1, x2 - x1, y2 - y1),
+                confidence=confidence,
+                embedding=embedding,
+                crop_path=crop_relative,
+            )
 
-    return len(detected)
+        return len(detected)
+    finally:
+        image_path.unlink(missing_ok=True)
 
 
 def handle_message(conn, cfg: Config, payload: bytes) -> None:

@@ -34,6 +34,28 @@ final class MediaStorage
         return $relativePath;
     }
 
+    /**
+     * Copies an existing file into the originals tree (e.g. v3 import) and
+     * returns its path relative to MEDIA_ROOT.
+     */
+    public function storeOriginalFromPath(string $absoluteSource, string $photoId): string
+    {
+        if (!is_file($absoluteSource)) {
+            throw new \RuntimeException(\sprintf('Source file "%s" does not exist.', $absoluteSource));
+        }
+
+        $extension = strtolower(pathinfo($absoluteSource, \PATHINFO_EXTENSION) ?: 'bin');
+        $relativePath = \sprintf('originals/%s/%s.%s', substr($photoId, 0, 2), $photoId, $extension);
+        $absoluteDest = $this->absolutePath($relativePath);
+        $this->ensureDirectory(\dirname($absoluteDest));
+
+        if (!copy($absoluteSource, $absoluteDest)) {
+            throw new \RuntimeException(\sprintf('Unable to copy "%s" to "%s".', $absoluteSource, $absoluteDest));
+        }
+
+        return $relativePath;
+    }
+
     public function avifMasterPath(string $photoId): string
     {
         return \sprintf('converted/%s/%s/master.avif', substr($photoId, 0, 2), $photoId);

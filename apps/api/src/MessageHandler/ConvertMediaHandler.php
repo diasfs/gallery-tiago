@@ -34,71 +34,83 @@ final class ConvertMediaHandler
     public function __invoke(ConvertMediaMessage $message): void
     {
         try {
-            $uuid = Uuid::fromString($message->getPhotoId());
-        } catch (\InvalidArgumentException) {
-            $this->logger->warning('ConvertMediaMessage carried an invalid photo id.', ['photoId' => $message->getPhotoId()]);
+            try {
+                $uuid = Uuid::fromString($message->getPhotoId());
+            } catch (\InvalidArgumentException) {
+                $this->logger->warning('ConvertMediaMessage carried an invalid photo id.', ['photoId' => $message->getPhotoId()]);
 
-            return;
-        }
-
-        $photo = $this->photos->find($uuid);
-        if (null === $photo) {
-            $this->logger->warning('ConvertMediaMessage for unknown photo.', ['photoId' => $message->getPhotoId()]);
-
-            return;
-        }
-
-        $photo->setMediaStatus(MediaStatus::Converting);
-        $this->em->flush();
-
-        $photoId = (string) $photo->getId();
-
-        try {
-            $sourceAbsolute = $this->storage->absolutePath($photo->getOriginalPath());
-
-            $masterRelative = $this->storage->avifMasterPath($photoId);
-            $masterAbsolute = $this->storage->absolutePath($masterRelative);
-
-            $thumbRelativeBySize = [];
-            $thumbAbsoluteBySize = [];
-            foreach (AvifConverter::THUMBNAIL_SIZES as $size) {
-                $relative = $this->storage->thumbPath($photoId, $size);
-                $thumbRelativeBySize[(string) $size] = $relative;
-                $thumbAbsoluteBySize[$size] = $this->storage->absolutePath($relative);
+                return;
             }
 
-            $result = $this->converter->convert($sourceAbsolute, $masterAbsolute, $thumbAbsoluteBySize);
+            $photo = $this->photos->find($uuid);
+            if (null === $photo) {
+                $this->logger->warning('ConvertMediaMessage for unknown photo.', ['photoId' => $message->getPhotoId()]);
 
-            $photo->setAvifPath($masterRelative);
-            $photo->setThumbPaths($thumbRelativeBySize);
-            $photo->setWidth($result->width);
-            $photo->setHeight($result->height);
-            $photo->setMediaStatus(MediaStatus::Done);
-            $photo->setFacesStatus(FacesStatus::Detecting);
-            $photo->setTagsStatus(TagsStatus::Detecting);
-            $photo->setProcessingError(
-                ProcessingErrorBag::clear(
+                return;
+            }
+
+            $photo->setMediaStatus(MediaStatus::Converting);
+            $this->em->flush();
+
+            $photoId = (string) $photo->getId();
+
+            try {
+                $originalRelative = $photo->getOriginalPath();
+                if (null === $originalRelative || '' === $originalRelative) {
+                    throw new \RuntimeException('Photo has no original path to convert.');
+                }
+
+                $sourceAbsolute = $this->storage->absolutePath($originalRelative);
+
+                $masterRelative = $this->storage->avifMasterPath($photoId);
+                $masterAbsolute = $this->storage->absolutePath($masterRelative);
+
+                $thumbRelativeBySize = [];
+                $thumbAbsoluteBySize = [];
+                foreach (AvifConverter::THUMBNAIL_SIZES as $size) {
+                    $relative = $this->storage->thumbPath($photoId, $size);
+                    $thumbRelativeBySize[(string) $size] = $relative;
+                    $thumbAbsoluteBySize[$size] = $this->storage->absolutePath($relative);
+                }
+
+                $result = $this->converter->convert($sourceAbsolute, $masterAbsolute, $thumbAbsoluteBySize);
+
+                $this->storage->deleteRelative($originalRelative);
+                $photo->setOriginalPath(null);
+                $photo->setAvifPath($masterRelative);
+                $photo->setThumbPaths($thumbRelativeBySize);
+                $photo->setWidth($result->width);
+                $photo->setHeight($result->height);
+                $photo->setMediaStatus(MediaStatus::Done);
+                $photo->setFacesStatus(FacesStatus::Detecting);
+                $photo->setTagsStatus(TagsStatus::Detecting);
+                $photo->setProcessingError(
                     ProcessingErrorBag::clear(
-                        ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
-                        'faces',
+                        ProcessingErrorBag::clear(
+                            ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
+                            'faces',
+                        ),
+                        'tags',
                     ),
-                    'tags',
-                ),
-            );
-            $this->em->flush();
+                );
+                $this->em->flush();
 
-            $this->bus->dispatch(new DetectFacesMessage($photoId));
-            $this->bus->dispatch(new SuggestTagsMessage($photoId));
-        } catch (\Throwable $e) {
-            $photo->setMediaStatus(MediaStatus::Failed);
-            $photo->setProcessingError(ProcessingErrorBag::set($photo->getProcessingError(), 'media', $e->getMessage()));
-            $this->em->flush();
+                $this->bus->dispatch(new DetectFacesMessage($photoId));
+                $this->bus->dispatch(new SuggestTagsMessage($photoId));
+            } catch (\Throwable $e) {
+                $photo->setMediaStatus(MediaStatus::Failed);
+                $photo->setProcessingError(ProcessingErrorBag::set($photo->getProcessingError(), 'media', $e->getMessage()));
+                $this->em->flush();
 
-            $this->logger->error('convert_media failed for photo {photoId}: {message}', [
-                'photoId' => $photoId,
-                'message' => $e->getMessage(),
-                'exception' => $e,
-            ]);
+                $this->logger->error('convert_media failed for photo {photoId}: {message}', [
+                    'photoId' => $photoId,
+                    'message' => $e->getMessage(),
+                    'exception' => $e,
+                ]);
+            }
+        } finally {
+            // Long-running messenger:consume must not retain entities across jobs.
+            $this->em->clear();
         }
     }
 }

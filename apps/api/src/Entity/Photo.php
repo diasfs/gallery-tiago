@@ -36,8 +36,8 @@ class Photo
     #[ORM\Column(nullable: true)]
     private ?int $height = null;
 
-    #[ORM\Column(length: 1024)]
-    private string $originalPath;
+    #[ORM\Column(length: 1024, nullable: true)]
+    private ?string $originalPath = null;
 
     #[ORM\Column(length: 1024, nullable: true)]
     private ?string $avifPath = null;
@@ -69,7 +69,7 @@ class Photo
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
-    public function __construct(Album $album, string $originalPath)
+    public function __construct(Album $album, ?string $originalPath = null)
     {
         $this->album = $album;
         $this->originalPath = $originalPath;
@@ -131,12 +131,12 @@ class Photo
         return $this;
     }
 
-    public function getOriginalPath(): string
+    public function getOriginalPath(): ?string
     {
         return $this->originalPath;
     }
 
-    public function setOriginalPath(string $originalPath): static
+    public function setOriginalPath(?string $originalPath): static
     {
         $this->originalPath = $originalPath;
 

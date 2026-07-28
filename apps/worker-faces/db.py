@@ -222,7 +222,7 @@ def delete_auto_detected_faces(conn: psycopg.Connection, photo_id: str, media_ro
         cur.execute("DELETE FROM face WHERE photo_id = %s AND has_embedding = true", (photo_id,))
 
 
-def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Optional[str], str]:
+def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Optional[str], Optional[str]]:
     """Returns (avif_path, original_path) for the photo."""
     with conn.cursor() as cur:
         cur.execute("SELECT avif_path, original_path FROM photo WHERE id = %s", (photo_id,))
