@@ -1,8 +1,8 @@
 # Gallery v4
 
-Public photo gallery with admin management, AVIF conversion, and InsightFace person clustering.
+Public photo gallery with admin management, AVIF conversion, InsightFace person clustering, and automatic tag suggestions.
 
-**Stack:** Symfony API, Vue 3 SPA, PostgreSQL + pgvector, Redis/Messenger, libvips convert worker, Python InsightFace worker.
+**Stack:** Symfony API, Vue 3 SPA, PostgreSQL + pgvector, Redis/Messenger, libvips convert worker, Python InsightFace worker, Python tag-suggestion worker.
 
 Design spec and implementation plan:
 
@@ -21,7 +21,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Wait until all services are healthy (`api`, `frontend`, `worker-convert`, `worker-faces`, `postgres`, `redis`).
+Wait until all services are up (`api`, `frontend`, `worker-convert`, `worker-bridge`, `worker-faces`, `worker-tags`, `postgres`, `redis`).
 
 ### Create an admin user
 
@@ -62,8 +62,9 @@ Copy `.env.example` to `.env` before starting. Key variables:
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection (use host `postgres` inside containers) |
-| `REDIS_URL` | Messenger / face-worker queue |
+| `REDIS_URL` | Messenger / Python worker queues |
 | `MEDIA_ROOT` | Shared media volume path |
+| `V3_DATABASE_URL` | Optional MySQL URL for `app:import-v3` (legacy gallery v3) |
 | `VITE_API_BASE_URL` | Frontend → API base URL (browser-facing); leave empty for same-origin requests through the Vite proxy |
 | `VITE_API_PROXY_TARGET` | Where the Vite dev-server proxy forwards `/api` (and media) requests server-side — `http://api` in docker compose, `http://localhost:8081` when running the frontend outside docker |
 | `FACE_MATCH_THRESHOLD` / `FACE_CLUSTER_THRESHOLD` | InsightFace clustering thresholds |
@@ -76,10 +77,12 @@ Copy `.env.example` to `.env` before starting. Key variables:
 |---------|------|
 | `api` | Symfony JSON API (nginx + php-fpm) |
 | `frontend` | Vue dev server (Vite) |
-| `worker-convert` | AVIF/thumbnail conversion + faces queue bridge |
+| `worker-convert` | AVIF/thumbnail conversion (`convert` queue) |
+| `worker-bridge` | Bridges Messenger `faces`/`tags` → Redis lists for Python workers |
 | `worker-faces` | Python InsightFace consumer |
+| `worker-tags` | Python tag-suggestion consumer |
 | `postgres` | PostgreSQL 16 + pgvector |
-| `redis` | Symfony Messenger transport |
+| `redis` | Symfony Messenger transport + worker queues |
 
 Validate compose config without starting containers:
 
@@ -87,15 +90,26 @@ Validate compose config without starting containers:
 docker compose config
 ```
 
+## Console commands (optional)
+
+| Command | Purpose |
+|---------|---------|
+| `gallery:admin:create <email> <password>` | Create an admin user |
+| `app:import-v3` | Import albums/photos/people/tags from gallery v3 (requires `V3_DATABASE_URL`) |
+| `app:backfill-album-date-ranges` | Extract album dates from descriptions (`dd/mm/yyyy` or ranges) |
+| `app:convert-photo <id>` | Re-run AVIF conversion for one photo |
+| `app:purge-originals` | Remove retained original files from disk |
+| `app:restore-missing-originals` | Restore missing originals from v3 image tree |
+
 ## Manual smoke checklist
 
 Run through this after `docker compose up --build` to confirm the full stack end-to-end.
 
 - [ ] **Create admin** — `docker compose exec api php bin/console gallery:admin:create you@example.com secret`; log in at http://localhost:5173/admin/login
 - [ ] **Create albums** — In admin, create three albums with visibility `public`, `unlisted`, and `private`
-- [ ] **Upload photos** — Open the public album, upload at least two JPEG/PNG files; wait until each photo status reaches **`done`** (polls every few seconds in the album view)
+- [ ] **Upload photos** — In admin, open the public album and upload at least two JPEG/PNG files; wait until media, faces, and tags badges all show **done**
 - [ ] **AVIF in public UI** — Open a photo on the public site; in DevTools → Network, confirm image URLs use **`.avif`** (not the original upload format)
-- [ ] **Name a person** — Admin → **Unnamed people**; name one cluster; visit the public person page at `/people/{id}` and confirm photos appear
+- [ ] **Name a person** — Admin → **People** → unnamed filter; name one cluster; visit the public person page at `/people/{id}` and confirm photos appear
 - [ ] **Private album hidden** — While logged out, open the private album slug in a new window/incognito; expect **404** (not a login prompt)
 
 ## Running tests (optional)
@@ -116,6 +130,7 @@ docker compose exec frontend bun run test
 apps/api/           Symfony API
 apps/web/           Vue public + admin SPA
 apps/worker-faces/  Python InsightFace worker
+apps/worker-tags/   Python tag-suggestion worker
 docker-compose.yml
 .env.example
 docs/superpowers/   Design spec and implementation plan
