@@ -1,16 +1,43 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { api } from './api/client'
+import { adminDeepLink } from './lib/adminDeepLink'
 
 const route = useRoute()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
+const albumAdminId = ref<string | null>(null)
+
+watch(
+  () => [route.name, route.params.slug] as const,
+  async ([name, slug]) => {
+    albumAdminId.value = null
+    if (name !== 'album' || typeof slug !== 'string') {
+      return
+    }
+    try {
+      const album = await api.getAlbum(slug)
+      if (route.name === 'album' && route.params.slug === slug) {
+        albumAdminId.value = album.id
+      }
+    } catch {
+      // Keep fallback to /admin when the album cannot be resolved.
+    }
+  },
+  { immediate: true },
+)
+
+const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
 </script>
 
 <template>
   <div class="app" :class="{ 'app--admin': isAdmin }">
     <header v-if="!isAdmin" class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
-      <RouterLink to="/admin" class="app__admin-link">Admin</RouterLink>
+      <div class="app__actions">
+        <RouterLink to="/search" class="app__nav-link" data-testid="nav-search">Busca</RouterLink>
+        <RouterLink :to="adminTo" class="app__nav-link" data-testid="admin-link">Admin</RouterLink>
+      </div>
     </header>
     <main class="app__main" :class="{ 'app__main--flush': isAdmin }">
       <RouterView />
@@ -36,12 +63,23 @@ const isAdmin = computed(() => route.path.startsWith('/admin'))
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
 
-.app__admin-link {
+.app__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app__nav-link {
   color: var(--muted, #888);
   text-decoration: none;
   font-size: 0.85rem;
+}
+
+.app__nav-link:hover {
+  color: var(--fg, #eee);
 }
 
 .app__brand {

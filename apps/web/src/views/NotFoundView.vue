@@ -5,8 +5,8 @@ import { RouterLink } from 'vue-router'
 <template>
   <section class="not-found">
     <h1>404</h1>
-    <p>We couldn't find that page.</p>
-    <RouterLink to="/">Back to home</RouterLink>
+    <p>Não encontramos essa página.</p>
+    <RouterLink to="/">Voltar ao início</RouterLink>
   </section>
 </template>
 

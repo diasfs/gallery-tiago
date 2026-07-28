@@ -7,6 +7,15 @@ export interface Location {
   longitude: number | null
 }
 
+export interface GeocodeSuggestion {
+  name: string
+  city: string | null
+  country: string | null
+  latitude: number
+  longitude: number
+  displayName: string
+}
+
 export interface Tag {
   id: string
   name: string
@@ -24,6 +33,7 @@ export interface AdminTag {
 export interface PersonSummary {
   id: string
   name: string | null
+  avatarCropPath?: string | null
 }
 
 export interface AlbumSummary {
@@ -36,6 +46,7 @@ export interface AlbumSummary {
   coverPhotoId: string | null
   parentSlug: string | null
   takenAt: string | null
+  takenAtEnd?: string | null
   location: Location | null
 }
 
@@ -45,24 +56,61 @@ export interface PhotoSummary {
   title: string | null
   avifPath: string | null
   thumbPaths: Record<string, string>
+  originalPath?: string | null
   tags?: Tag[]
 }
 
 export interface AlbumDetail extends AlbumSummary {
   ancestors: Array<{ slug: string; title: string }>
-  children: AlbumSummary[]
-  photos: PhotoSummary[]
+}
+
+export interface PageMeta {
+  page: number
+  perPage: number
+  total: number
+}
+
+export interface Paginated<T> {
+  data: T[]
+  meta: PageMeta
+}
+
+export interface PublicSearchParams {
+  q?: string
+  person?: string[]
+  tag?: string[]
+  year?: string
+  from?: string
+  to?: string
+  albumPage?: number
+  photoPage?: number
+  albumPerPage?: number
+  photoPerPage?: number
+}
+
+export interface PublicSearchResult {
+  data: {
+    albums: AlbumSummary[]
+    photos: PhotoSummary[]
+  }
+  meta: {
+    albums: PageMeta
+    photos: PageMeta
+  }
 }
 
 export interface PhotoDetail {
   id: string
   albumId: string
   albumSlug: string
+  albumTitle: string
+  albumAncestors: Array<{ slug: string; title: string }>
   title: string | null
   width: number | null
   height: number | null
   avifPath: string | null
   thumbPaths: Record<string, string>
+  originalPath?: string | null
   tags: Tag[]
   people: PersonSummary[]
   prevId: string | null
@@ -71,12 +119,10 @@ export interface PhotoDetail {
 
 export interface TagDetail {
   tag: Tag
-  photos: PhotoSummary[]
 }
 
 export interface LocationDetail {
   location: Location
-  photos: PhotoSummary[]
 }
 
 // --- Admin -----------------------------------------------------------------
@@ -93,6 +139,41 @@ export type TagsStatus = 'pending' | 'detecting' | 'done' | 'failed'
 
 export type ReprocessScope = 'all' | 'faces' | 'tags'
 
+export type ProcessingStage = 'media' | 'faces' | 'tags'
+
+export interface ProcessingSummary {
+  media: Record<string, number>
+  faces: Record<string, number>
+  tags: Record<string, number>
+}
+
+export interface ProcessingPhotoRow {
+  id: string
+  title: string | null
+  albumId: string
+  albumTitle: string
+  mediaStatus: MediaStatus
+  facesStatus: FacesStatus
+  tagsStatus: TagsStatus
+  processingError: string | null
+  hasOriginal: boolean
+  avifPath: string | null
+  thumbPaths: Record<string, string>
+  originalPath?: string | null
+}
+
+export interface ProcessingPhotosPage {
+  data: ProcessingPhotoRow[]
+  meta: { page: number; perPage: number; total: number }
+}
+
+export interface AdminAlbumCover {
+  id: string
+  avifPath: string | null
+  thumbPaths: Record<string, string>
+  originalPath: string | null
+}
+
 export interface AdminAlbum {
   id: string
   title: string
@@ -101,13 +182,21 @@ export interface AdminAlbum {
   visibility: 'public' | 'unlisted' | 'private'
   sortOrder: number
   coverPhotoId: string | null
+  cover: AdminAlbumCover | null
   parentId: string | null
   childCount: number
   photoCount: number
   takenAt: string | null
+  takenAtEnd: string | null
   location: Location | null
   createdAt: string
   updatedAt: string
+}
+
+/** Admin album show payload (children loaded via listAlbumChildren). */
+export interface AdminAlbumDetail extends AdminAlbum {
+  /** Immediate parent summary when nested; null for roots. */
+  parent: { id: string; title: string } | null
 }
 
 export interface AdminPhotoSummary {
@@ -116,6 +205,7 @@ export interface AdminPhotoSummary {
   title: string | null
   avifPath: string | null
   thumbPaths: Record<string, string>
+  originalPath?: string | null
   mediaStatus: MediaStatus
   facesStatus: FacesStatus
   tagsStatus: TagsStatus
@@ -131,6 +221,7 @@ export interface AdminPhotoDetail {
   height: number | null
   avifPath: string | null
   thumbPaths: Record<string, string>
+  originalPath?: string | null
   mediaStatus: MediaStatus
   facesStatus: FacesStatus
   tagsStatus: TagsStatus

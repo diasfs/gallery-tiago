@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="location-map" role="img" :aria-label="label ?? 'Map'"></div>
+  <div ref="container" class="location-map" role="img" :aria-label="label ?? 'Mapa'"></div>
 </template>
 
 <style scoped>

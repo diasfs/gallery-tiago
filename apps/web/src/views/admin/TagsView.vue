@@ -41,7 +41,7 @@ async function load() {
   try {
     tags.value = await adminApi.searchTags(search.value.trim() || undefined)
   } catch {
-    error.value = 'Failed to load tags.'
+    error.value = 'Falha ao carregar tags.'
   } finally {
     loading.value = false
   }
@@ -83,7 +83,7 @@ async function saveTranslation() {
   if (!editing.value) return
   const name = editName.value.trim()
   if (!name) {
-    error.value = 'Name cannot be empty.'
+    error.value = 'O nome não pode ficar vazio.'
     return
   }
 
@@ -94,14 +94,14 @@ async function saveTranslation() {
     tags.value = tags.value.map((t) => (t.id === updated.id ? updated : t))
     closeEdit()
   } catch {
-    error.value = 'Failed to save translation.'
+    error.value = 'Falha ao salvar tradução.'
   } finally {
     saving.value = false
   }
 }
 
 async function removeTag(tag: AdminTag) {
-  if (!window.confirm(`Delete tag “${tag.name}”? It will be removed from all photos.`)) {
+  if (!window.confirm(`Excluir tag “${tag.name}”? Ela será removida de todas as fotos.`)) {
     return
   }
 
@@ -110,7 +110,7 @@ async function removeTag(tag: AdminTag) {
     await adminApi.deleteTag(tag.id)
     tags.value = tags.value.filter((t) => t.id !== tag.id)
   } catch {
-    error.value = 'Failed to delete tag.'
+    error.value = 'Falha ao excluir tag.'
   }
 }
 </script>
@@ -119,24 +119,24 @@ async function removeTag(tag: AdminTag) {
   <section class="space-y-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <p class="max-w-xl text-sm text-muted-foreground">
-        Auto-suggested tags start in English (slug). Translate the display name for visitors —
-        the slug stays stable so future uploads reuse the same tag.
+        Tags sugeridas automaticamente começam em inglês (slug). Traduza o nome exibido para visitantes —
+        o slug permanece estável para que novos envios reutilizem a mesma tag.
       </p>
 
       <form class="flex gap-2" @submit.prevent="submitSearch">
         <Input
           v-model="search"
           type="search"
-          placeholder="Search by name or slug…"
+          placeholder="Buscar por nome ou slug…"
           class="w-56"
           data-testid="tags-search"
         />
-        <Button type="submit" variant="outline" size="sm">Search</Button>
+        <Button type="submit" variant="outline" size="sm">Buscar</Button>
       </form>
     </div>
 
     <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
-      Loading tags…
+      Carregando tags…
     </div>
 
     <Alert v-if="error" variant="destructive">
@@ -147,10 +147,10 @@ async function removeTag(tag: AdminTag) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
+            <TableHead>Nome</TableHead>
             <TableHead>Slug</TableHead>
-            <TableHead class="w-24 text-right">Photos</TableHead>
-            <TableHead class="w-40 text-right">Actions</TableHead>
+            <TableHead class="w-24 text-right">Fotos</TableHead>
+            <TableHead class="w-40 text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -171,7 +171,7 @@ async function removeTag(tag: AdminTag) {
                   data-testid="tag-edit"
                   @click="openEdit(tag)"
                 >
-                  Translate
+                  Traduzir
                 </Button>
                 <Button
                   type="button"
@@ -180,7 +180,7 @@ async function removeTag(tag: AdminTag) {
                   data-testid="tag-delete"
                   @click="removeTag(tag)"
                 >
-                  Delete
+                  Excluir
                 </Button>
               </div>
             </TableCell>
@@ -194,29 +194,29 @@ async function removeTag(tag: AdminTag) {
       class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
       data-testid="tags-empty"
     >
-      No tags yet. Upload photos to generate suggestions, or create tags when editing a photo.
+      Nenhuma tag ainda. Envie fotos para gerar sugestões ou crie tags ao editar uma foto.
     </div>
 
     <Dialog :open="editing !== null" @update:open="(open) => !open && closeEdit()">
       <DialogContent data-testid="tag-edit-dialog">
         <DialogHeader>
-          <DialogTitle>Translate tag</DialogTitle>
+          <DialogTitle>Traduzir tag</DialogTitle>
           <DialogDescription v-if="editing">
-            Slug <span class="font-mono">{{ editing.slug }}</span> stays unchanged.
+            O slug <span class="font-mono">{{ editing.slug }}</span> permanece inalterado.
           </DialogDescription>
         </DialogHeader>
         <form class="space-y-4" @submit.prevent="saveTranslation">
           <Input
             v-model="editName"
             type="text"
-            placeholder="Display name"
+            placeholder="Nome exibido"
             data-testid="tag-edit-name"
             autofocus
           />
           <DialogFooter>
-            <Button type="button" variant="outline" @click="closeEdit">Cancel</Button>
+            <Button type="button" variant="outline" @click="closeEdit">Cancelar</Button>
             <Button type="submit" :disabled="saving" data-testid="tag-save">
-              {{ saving ? 'Saving…' : 'Save' }}
+              {{ saving ? 'Salvando…' : 'Salvar' }}
             </Button>
           </DialogFooter>
         </form>

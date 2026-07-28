@@ -42,6 +42,12 @@ async function mountView(query: Record<string, string> = {}) {
         component: { template: '<div />' },
         props: true,
       },
+      {
+        path: '/people/:id',
+        name: 'person',
+        component: { template: '<div />' },
+        props: true,
+      },
     ],
   })
   await router.push({ name: 'admin-people', query })
@@ -80,8 +86,18 @@ describe('PeopleView', () => {
     expect(mockedApi.listPeople).toHaveBeenCalledWith('all', undefined)
     expect(wrapper.findAll('[data-testid="person-row"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Ada Lovelace')
-    expect(wrapper.text()).toContain('Unnamed cluster')
+    expect(wrapper.text()).toContain('Agrupamento sem nome')
     expect(wrapper.find('[data-testid="person-avatar"]').exists()).toBe(true)
+  })
+
+  it('links each person to their public photos page', async () => {
+    const { wrapper } = await mountView()
+
+    const links = wrapper.findAll('[data-testid="person-public-link"]')
+    expect(links).toHaveLength(2)
+    expect(links[0].attributes('href')).toBe('/people/person-1')
+    expect(links[0].attributes('target')).toBe('_blank')
+    expect(links[1].attributes('href')).toBe('/people/cluster-1')
   })
 
   it('requests unnamed scope when filter is selected', async () => {

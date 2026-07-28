@@ -1,21 +1,20 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import type { PhotoSummary } from '../api/types'
-import { mediaUrl } from '../api/client'
+import { photoDisplayUrl } from '../api/client'
 
 defineProps<{
   photos: PhotoSummary[]
 }>()
 
 function thumbSrc(photo: PhotoSummary): string | null {
-  const thumb = photo.thumbPaths?.medium ?? photo.thumbPaths?.small ?? Object.values(photo.thumbPaths ?? {})[0]
-  return mediaUrl(thumb ?? photo.avifPath)
+  return photoDisplayUrl(photo)
 }
 </script>
 
 <template>
   <div class="photo-grid">
-    <p v-if="photos.length === 0" class="photo-grid__empty">No photos yet.</p>
+    <p v-if="photos.length === 0" class="photo-grid__empty">Nenhuma foto ainda.</p>
     <RouterLink
       v-for="photo in photos"
       :key="photo.id"
@@ -25,10 +24,10 @@ function thumbSrc(photo: PhotoSummary): string | null {
       <img
         v-if="thumbSrc(photo)"
         :src="thumbSrc(photo)!"
-        :alt="photo.title ?? 'Untitled photo'"
+        :alt="photo.title ?? 'Foto sem título'"
         loading="lazy"
       />
-      <div v-else class="photo-grid__placeholder">No preview</div>
+      <div v-else class="photo-grid__placeholder">Sem pré-visualização</div>
       <span v-if="photo.title" class="photo-grid__title">{{ photo.title }}</span>
     </RouterLink>
   </div>

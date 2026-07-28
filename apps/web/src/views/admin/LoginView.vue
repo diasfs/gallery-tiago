@@ -24,7 +24,7 @@ async function submit() {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/admin'
     await router.push(redirect)
   } catch (err) {
-    error.value = err instanceof ApiError && err.status === 401 ? 'Invalid email or password.' : 'Login failed.'
+    error.value = err instanceof ApiError && err.status === 401 ? 'Usuário ou senha inválidos.' : 'Falha no login.'
   } finally {
     submitting.value = false
   }
@@ -45,17 +45,17 @@ async function submit() {
         </div>
         <div>
           <CardTitle class="font-display text-2xl font-semibold tracking-tight">Gallery</CardTitle>
-          <CardDescription class="mt-2 text-sm">Sign in to your admin workspace</CardDescription>
+          <CardDescription class="mt-2 text-sm">Entre no painel administrativo</CardDescription>
         </div>
       </CardHeader>
       <CardContent class="pt-6">
         <form class="flex flex-col gap-4" @submit.prevent="submit">
           <div class="space-y-1.5">
-            <Label for="email">Email</Label>
-            <Input id="email" v-model="email" type="email" required autocomplete="username" />
+            <Label for="email">Usuário</Label>
+            <Input id="email" v-model="email" type="text" required autocomplete="username" />
           </div>
           <div class="space-y-1.5">
-            <Label for="password">Password</Label>
+            <Label for="password">Senha</Label>
             <Input
               id="password"
               v-model="password"
@@ -68,7 +68,7 @@ async function submit() {
             <AlertDescription>{{ error }}</AlertDescription>
           </Alert>
           <Button type="submit" class="mt-1 h-10 w-full font-medium" :disabled="submitting">
-            {{ submitting ? 'Signing in…' : 'Continue' }}
+            {{ submitting ? 'Entrando…' : 'Continuar' }}
           </Button>
         </form>
       </CardContent>

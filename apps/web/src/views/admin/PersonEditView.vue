@@ -40,9 +40,9 @@ const form = reactive({
 })
 
 const title = computed(() => {
-  if (!person.value) return 'Person'
+  if (!person.value) return 'Pessoa'
   if (person.value.isNamed && person.value.name) return person.value.name
-  return 'Unnamed cluster'
+  return 'Agrupamento sem nome'
 })
 
 async function load() {
@@ -57,7 +57,7 @@ async function load() {
     form.name = detail.name ?? ''
     namedPeople.value = named.filter((p) => p.id !== props.id)
   } catch {
-    error.value = 'Failed to load person.'
+    error.value = 'Falha ao carregar pessoa.'
     person.value = null
   } finally {
     loading.value = false
@@ -81,7 +81,7 @@ async function saveName() {
     })
     form.name = person.value.name ?? ''
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to save: ${err.message}` : 'Failed to save name.'
+    error.value = err instanceof ApiError ? `Falha ao salvar: ${err.message}` : 'Falha ao salvar nome.'
   } finally {
     saving.value = false
   }
@@ -95,7 +95,7 @@ async function setPrimaryFace(faceId: string) {
     person.value = await adminApi.updatePerson(person.value.id, { avatarFaceId: faceId })
   } catch (err) {
     error.value =
-      err instanceof ApiError ? `Failed to set primary face: ${err.message}` : 'Failed to set primary face.'
+      err instanceof ApiError ? `Falha ao definir rosto principal: ${err.message}` : 'Falha ao definir rosto principal.'
   } finally {
     saving.value = false
   }
@@ -109,7 +109,7 @@ async function clearPrimaryFace() {
     person.value = await adminApi.updatePerson(person.value.id, { avatarFaceId: null })
   } catch (err) {
     error.value =
-      err instanceof ApiError ? `Failed to clear primary face: ${err.message}` : 'Failed to clear primary face.'
+      err instanceof ApiError ? `Falha ao remover rosto principal: ${err.message}` : 'Falha ao remover rosto principal.'
   } finally {
     saving.value = false
   }
@@ -117,7 +117,7 @@ async function clearPrimaryFace() {
 
 async function mergeInto() {
   if (!person.value || !form.mergeTargetId) {
-    error.value = 'Choose a person to merge into.'
+    error.value = 'Escolha uma pessoa para mesclar.'
     return
   }
   saving.value = true
@@ -126,7 +126,7 @@ async function mergeInto() {
     await adminApi.mergePerson(person.value.id, form.mergeTargetId)
     await router.push({ name: 'admin-person-edit', params: { id: form.mergeTargetId } })
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to merge: ${err.message}` : 'Failed to merge person.'
+    error.value = err instanceof ApiError ? `Falha ao mesclar: ${err.message}` : 'Falha ao mesclar pessoa.'
   } finally {
     saving.value = false
   }
@@ -141,7 +141,7 @@ async function deletePerson() {
     deleteOpen.value = false
     await router.push({ name: 'admin-people' })
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to delete: ${err.message}` : 'Failed to delete person.'
+    error.value = err instanceof ApiError ? `Falha ao excluir: ${err.message}` : 'Falha ao excluir pessoa.'
   } finally {
     saving.value = false
   }
@@ -151,11 +151,11 @@ async function deletePerson() {
 <template>
   <section class="space-y-6">
     <div>
-      <RouterLink to="/admin/people" class="admin-back-link">← People</RouterLink>
+      <RouterLink to="/admin/people" class="admin-back-link">← Pessoas</RouterLink>
     </div>
 
     <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
-      Loading person…
+      Carregando pessoa…
     </div>
 
     <Alert v-if="error" variant="destructive">
@@ -168,9 +168,9 @@ async function deletePerson() {
           <h2 class="font-display text-2xl font-semibold text-foreground">{{ title }}</h2>
           <div class="mt-2 flex items-center gap-2">
             <Badge :variant="person.isNamed ? 'default' : 'secondary'">
-              {{ person.isNamed ? 'Named' : 'Unnamed' }}
+              {{ person.isNamed ? 'Nomeada' : 'Sem nome' }}
             </Badge>
-            <span class="text-sm text-muted-foreground">{{ person.faceCount }} face(s)</span>
+            <span class="text-sm text-muted-foreground">{{ person.faceCount }} rosto(s)</span>
           </div>
         </div>
         <Button
@@ -181,32 +181,32 @@ async function deletePerson() {
           :disabled="saving"
           @click="deleteOpen = true"
         >
-          Delete person
+          Excluir pessoa
         </Button>
       </div>
 
       <div class="admin-panel space-y-4 rounded-xl p-6">
         <div class="space-y-2">
-          <Label for="person-name">Name</Label>
+          <Label for="person-name">Nome</Label>
           <div class="flex gap-2">
             <Input
               id="person-name"
               v-model="form.name"
               type="text"
-              placeholder="Person's name"
+              placeholder="Nome da pessoa"
               :disabled="saving"
               data-testid="person-name-input"
               class="max-w-md flex-1"
             />
             <Button type="button" size="sm" :disabled="saving" data-testid="save-name" @click="saveName">
-              Save name
+              Salvar nome
             </Button>
           </div>
-          <p class="text-xs text-muted-foreground">Leave blank and save to mark as unnamed.</p>
+          <p class="text-xs text-muted-foreground">Deixe em branco e salve para marcar como sem nome.</p>
         </div>
 
         <div v-if="namedPeople.length > 0" class="space-y-2 border-t border-border/60 pt-4">
-          <Label>Merge into another person</Label>
+          <Label>Mesclar com outra pessoa</Label>
           <div class="flex gap-2">
             <Select
               :model-value="form.mergeTargetId"
@@ -214,7 +214,7 @@ async function deletePerson() {
               @update:model-value="(v) => (form.mergeTargetId = String(v ?? ''))"
             >
               <SelectTrigger class="max-w-md min-w-0 flex-1" data-testid="merge-target">
-                <SelectValue placeholder="Choose a person…" />
+                <SelectValue placeholder="Escolha uma pessoa…" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem v-for="p in namedPeople" :key="p.id" :value="p.id">
@@ -223,7 +223,7 @@ async function deletePerson() {
               </SelectContent>
             </Select>
             <Button type="button" variant="outline" size="sm" :disabled="saving" data-testid="merge-submit" @click="mergeInto">
-              Merge
+              Mesclar
             </Button>
           </div>
         </div>
@@ -231,7 +231,7 @@ async function deletePerson() {
 
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-3">
-          <h3 class="text-sm font-medium text-foreground">Faces</h3>
+          <h3 class="text-sm font-medium text-foreground">Rostos</h3>
           <Button
             v-if="person.avatarFaceId"
             type="button"
@@ -241,7 +241,7 @@ async function deletePerson() {
             data-testid="clear-primary"
             @click="clearPrimaryFace"
           >
-            Clear primary
+            Remover principal
           </Button>
         </div>
 
@@ -249,7 +249,7 @@ async function deletePerson() {
           v-if="person.faces.length === 0"
           class="admin-upload-zone rounded-xl p-10 text-center text-sm text-muted-foreground"
         >
-          No faces linked to this person.
+          Nenhum rosto vinculado a esta pessoa.
         </div>
 
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -270,24 +270,24 @@ async function deletePerson() {
             <img
               v-if="faceSrc(face.cropPath)"
               :src="faceSrc(face.cropPath)!"
-              alt="Face crop"
+              alt="Recorte do rosto"
               class="aspect-square w-full object-cover"
             />
             <div v-else class="flex aspect-square items-center justify-center text-xs text-muted-foreground">
-              No crop
+              Sem recorte
             </div>
             <span
               v-if="person.avatarFaceId === face.id"
               class="absolute bottom-1.5 left-1.5 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background"
               data-testid="primary-badge"
             >
-              Primary
+              Principal
             </span>
             <span
               v-else
               class="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] text-muted-foreground opacity-0 transition group-hover:opacity-100"
             >
-              Set as primary
+              Definir como principal
             </span>
           </button>
         </div>
@@ -297,14 +297,14 @@ async function deletePerson() {
     <Dialog :open="deleteOpen" @update:open="(open) => { if (!open && !saving) deleteOpen = false }">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Delete this person?</DialogTitle>
+          <DialogTitle>Excluir esta pessoa?</DialogTitle>
           <DialogDescription>
-            Delete {{ title }} and {{ person?.faceCount ?? 0 }} face(s)? This cannot be undone.
+            Excluir {{ title }} e {{ person?.faceCount ?? 0 }} rosto(s)? Esta ação não pode ser desfeita.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter class="gap-2 sm:gap-2">
           <Button type="button" variant="outline" :disabled="saving" data-testid="delete-cancel" @click="deleteOpen = false">
-            Cancel
+            Cancelar
           </Button>
           <Button
             type="button"
@@ -314,7 +314,7 @@ async function deletePerson() {
             data-testid="delete-confirm"
             @click="deletePerson"
           >
-            Delete person
+            Excluir pessoa
           </Button>
         </DialogFooter>
       </DialogContent>

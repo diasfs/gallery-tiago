@@ -26,6 +26,7 @@ export default defineConfig(({ mode }) => {
       host: true,
       port: 5173,
       strictPort: true,
+      allowedHosts: ['vite.dias.poa.br'],
       proxy: {
         // Same-origin proxy so the admin session cookie (set by
         // `POST /api/admin/login`) is sent on subsequent requests without

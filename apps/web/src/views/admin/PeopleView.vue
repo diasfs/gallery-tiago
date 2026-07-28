@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { ExternalLink } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,7 @@ async function load() {
   try {
     people.value = await adminApi.listPeople(scope.value, search.value.trim() || undefined)
   } catch {
-    error.value = 'Failed to load people.'
+    error.value = 'Falha ao carregar pessoas.'
   } finally {
     loading.value = false
   }
@@ -74,7 +75,7 @@ function submitSearch() {
 }
 
 function displayName(person: AdminPerson): string {
-  return person.isNamed && person.name ? person.name : 'Unnamed cluster'
+  return person.isNamed && person.name ? person.name : 'Agrupamento sem nome'
 }
 
 function avatarSrc(person: AdminPerson): string | null {
@@ -93,7 +94,7 @@ function avatarSrc(person: AdminPerson): string | null {
           data-testid="scope-all"
           @click="setScope('all')"
         >
-          All
+          Todos
         </Button>
         <Button
           type="button"
@@ -102,7 +103,7 @@ function avatarSrc(person: AdminPerson): string | null {
           data-testid="scope-named"
           @click="setScope('named')"
         >
-          Named
+          Nomeadas
         </Button>
         <Button
           type="button"
@@ -111,7 +112,7 @@ function avatarSrc(person: AdminPerson): string | null {
           data-testid="scope-unnamed"
           @click="setScope('unnamed')"
         >
-          Unnamed
+          Sem nome
         </Button>
       </div>
 
@@ -119,16 +120,16 @@ function avatarSrc(person: AdminPerson): string | null {
         <Input
           v-model="search"
           type="search"
-          placeholder="Search by name…"
+          placeholder="Buscar por nome…"
           class="w-56"
           data-testid="people-search"
         />
-        <Button type="submit" variant="outline" size="sm">Search</Button>
+        <Button type="submit" variant="outline" size="sm">Buscar</Button>
       </form>
     </div>
 
     <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
-      Loading people…
+      Carregando pessoas…
     </div>
 
     <Alert v-if="error" variant="destructive">
@@ -140,9 +141,10 @@ function avatarSrc(person: AdminPerson): string | null {
         <TableHeader>
           <TableRow>
             <TableHead class="w-16">Avatar</TableHead>
-            <TableHead>Name</TableHead>
+            <TableHead>Nome</TableHead>
             <TableHead class="w-28">Status</TableHead>
-            <TableHead class="w-24 text-right">Faces</TableHead>
+            <TableHead class="w-24 text-right">Rostos</TableHead>
+            <TableHead class="w-36 text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -180,11 +182,25 @@ function avatarSrc(person: AdminPerson): string | null {
             </TableCell>
             <TableCell>
               <Badge :variant="person.isNamed ? 'default' : 'secondary'">
-                {{ person.isNamed ? 'Named' : 'Unnamed' }}
+                {{ person.isNamed ? 'Nomeada' : 'Sem nome' }}
               </Badge>
             </TableCell>
             <TableCell class="text-right tabular-nums text-muted-foreground">
               {{ person.faceCount }}
+            </TableCell>
+            <TableCell class="text-right" @click.stop>
+              <Button as-child variant="outline" size="sm">
+                <RouterLink
+                  :to="{ name: 'person', params: { id: person.id } }"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="person-public-link"
+                  title="Ver fotos no site público"
+                >
+                  <ExternalLink class="size-3.5" />
+                  Ver no site
+                </RouterLink>
+              </Button>
             </TableCell>
           </TableRow>
         </TableBody>
@@ -196,7 +212,7 @@ function avatarSrc(person: AdminPerson): string | null {
       class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
       data-testid="people-empty"
     >
-      No people match this filter.
+      Nenhuma pessoa corresponde a este filtro.
     </div>
   </section>
 </template>

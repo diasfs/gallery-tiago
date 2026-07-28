@@ -12,6 +12,22 @@ export function toDateInputValue(iso: string): string {
 }
 
 /** Long date label without time. */
-export function formatDateLabel(iso: string, locale?: string): string {
+export function formatDateLabel(iso: string, locale = 'pt-BR'): string {
   return new Date(iso).toLocaleDateString(locale, { dateStyle: 'long' })
+}
+
+/** Single day or "start – end" range label. */
+export function formatAlbumDateRangeLabel(
+  takenAt: string | null | undefined,
+  takenAtEnd?: string | null,
+  locale = 'pt-BR',
+): string | null {
+  if (!takenAt) {
+    return null
+  }
+  const start = formatDateLabel(takenAt, locale)
+  if (!takenAtEnd || takenAtEnd.slice(0, 10) === takenAt.slice(0, 10)) {
+    return start
+  }
+  return `${start} – ${formatDateLabel(takenAtEnd, locale)}`
 }

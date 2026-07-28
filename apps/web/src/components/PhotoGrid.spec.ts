@@ -56,6 +56,25 @@ describe('PhotoGrid', () => {
       global: { plugins: [router] },
     })
 
-    expect(wrapper.text()).toContain('No photos yet.')
+    expect(wrapper.text()).toContain('Nenhuma foto ainda.')
+  })
+
+  it('uses original path when avif and thumbs are missing', () => {
+    const photos = [
+      makePhoto({
+        avifPath: null,
+        thumbPaths: {},
+        originalPath: 'originals/aa/aaaa.jpg',
+      }),
+    ]
+
+    const wrapper = mount(PhotoGrid, {
+      props: { photos },
+      global: { plugins: [router] },
+    })
+
+    const img = wrapper.find('img')
+    expect(img.exists()).toBe(true)
+    expect(img.attributes('src')).toContain('originals/aa/aaaa.jpg')
   })
 })

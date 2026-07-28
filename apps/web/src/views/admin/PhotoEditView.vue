@@ -14,8 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPerson, AdminPhotoDetail, Tag } from '../../api/types'
+import { ApiError, adminApi, mediaUrl, photoDisplayUrl } from '../../api/client'
+import type { AdminPerson, AdminPhotoDetail, PersonSummary, Tag } from '../../api/types'
 
 const props = defineProps<{ id: string }>()
 
@@ -36,7 +36,7 @@ async function load() {
     form.title = photo.value.title ?? ''
     selectedTags.value = [...photo.value.tags]
   } catch {
-    error.value = 'Failed to load this photo.'
+    error.value = 'Falha ao carregar esta foto.'
   } finally {
     loading.value = false
   }
@@ -45,7 +45,7 @@ async function load() {
 onMounted(load)
 watch(() => props.id, load)
 
-const fullSrc = computed(() => mediaUrl(photo.value?.avifPath))
+const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
 
 async function save() {
   saving.value = true
@@ -58,7 +58,7 @@ async function save() {
     })
     saved.value = true
   } catch (err) {
-    error.value = err instanceof ApiError ? `Save failed: ${err.message}` : 'Save failed.'
+    error.value = err instanceof ApiError ? `Falha ao salvar: ${err.message}` : 'Falha ao salvar.'
   } finally {
     saving.value = false
   }
@@ -90,7 +90,7 @@ async function createAndAddTag() {
     const tag = await adminApi.createTag(name)
     addTag(tag)
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to create tag: ${err.message}` : 'Failed to create tag.'
+    error.value = err instanceof ApiError ? `Falha ao criar tag: ${err.message}` : 'Falha ao criar tag.'
   }
 }
 
@@ -123,12 +123,16 @@ async function addPerson(person: AdminPerson) {
   try {
     await adminApi.addPersonToPhoto(photo.value.id, person.id)
     if (!photo.value.people.some((p) => p.id === person.id)) {
-      photo.value.people.push({ id: person.id, name: person.name })
+      photo.value.people.push({
+        id: person.id,
+        name: person.name,
+        avatarCropPath: person.avatarCropPath ?? null,
+      })
     }
     peopleQuery.value = ''
     peopleResults.value = []
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to add person: ${err.message}` : 'Failed to add person.'
+    error.value = err instanceof ApiError ? `Falha ao adicionar pessoa: ${err.message}` : 'Falha ao adicionar pessoa.'
   } finally {
     peopleBusy.value = false
   }
@@ -143,7 +147,7 @@ async function removePerson(personId: string) {
     await adminApi.removePersonFromPhoto(photo.value.id, personId)
     photo.value.people = photo.value.people.filter((p) => p.id !== personId)
   } catch (err) {
-    error.value = err instanceof ApiError ? `Failed to remove person: ${err.message}` : 'Failed to remove person.'
+    error.value = err instanceof ApiError ? `Falha ao remover pessoa: ${err.message}` : 'Falha ao remover pessoa.'
   } finally {
     peopleBusy.value = false
   }
@@ -155,6 +159,10 @@ function selectPersonResult(value: unknown) {
     void addPerson(person)
   }
 }
+
+function personAvatarSrc(person: PersonSummary): string | null {
+  return mediaUrl(person.avatarCropPath)
+}
 </script>
 
 <template>
@@ -165,14 +173,14 @@ function selectPersonResult(value: unknown) {
         :to="{ name: 'admin-album-photos', params: { albumId: photo.albumId } }"
         class="admin-back-link"
       >
-        ← Album photos
+        ← Fotos do álbum
       </RouterLink>
       <div v-if="photo" class="flex flex-wrap items-center gap-2">
         <Badge data-testid="status-media" variant="secondary" class="admin-status-badge">
-          Media: {{ photo.mediaStatus }}
+          Mídia: {{ photo.mediaStatus }}
         </Badge>
         <Badge data-testid="status-faces" variant="secondary" class="admin-status-badge">
-          Faces: {{ photo.facesStatus }}
+          Rostos: {{ photo.facesStatus }}
         </Badge>
         <Badge data-testid="status-tags" variant="secondary" class="admin-status-badge">
           Tags: {{ photo.tagsStatus }}
@@ -185,11 +193,11 @@ function selectPersonResult(value: unknown) {
     </Alert>
 
     <div v-if="loading" class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
-      Loading photo…
+      Carregando foto…
     </div>
 
     <Alert v-else-if="!photo" variant="destructive">
-      <AlertDescription>Photo not found.</AlertDescription>
+      <AlertDescription>Foto não encontrada.</AlertDescription>
     </Alert>
 
     <template v-else>
@@ -197,7 +205,7 @@ function selectPersonResult(value: unknown) {
         <AlertDescription>{{ error }}</AlertDescription>
       </Alert>
       <Alert v-if="saved">
-        <AlertDescription>Saved.</AlertDescription>
+        <AlertDescription>Salvo.</AlertDescription>
       </Alert>
 
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] lg:items-start">
@@ -206,11 +214,11 @@ function selectPersonResult(value: unknown) {
             <img
               v-if="fullSrc"
               :src="fullSrc"
-              :alt="photo.title ?? 'Photo'"
+              :alt="photo.title ?? 'Foto'"
               class="block aspect-[4/3] w-full bg-muted object-contain"
             />
             <div v-else class="flex aspect-[4/3] items-center justify-center text-sm text-muted-foreground">
-              No preview available
+              Sem prévia disponível
             </div>
           </CardContent>
         </Card>
@@ -218,12 +226,12 @@ function selectPersonResult(value: unknown) {
         <form @submit.prevent="save">
           <Card>
             <CardHeader>
-              <CardTitle>Edit photo</CardTitle>
-              <CardDescription>Update the title and tags for this photo.</CardDescription>
+              <CardTitle>Editar foto</CardTitle>
+              <CardDescription>Atualize o título e as tags desta foto.</CardDescription>
             </CardHeader>
             <CardContent class="space-y-6">
               <div class="grid gap-2">
-                <Label for="photo-title">Title</Label>
+                <Label for="photo-title">Título</Label>
                 <Input id="photo-title" v-model="form.title" />
               </div>
 
@@ -237,26 +245,26 @@ function selectPersonResult(value: unknown) {
                       variant="ghost"
                       size="icon"
                       class="size-5 rounded-full"
-                      :aria-label="`Remove ${tag.name} tag`"
+                      :aria-label="`Remover tag ${tag.name}`"
                       @click="removeTag(tag)"
                     >
                       ×
                     </Button>
                   </Badge>
-                  <span v-if="selectedTags.length === 0" class="text-sm text-muted-foreground">No tags yet.</span>
+                  <span v-if="selectedTags.length === 0" class="text-sm text-muted-foreground">Nenhuma tag ainda.</span>
                 </div>
                 <div class="flex flex-col gap-2 sm:flex-row">
                   <Input
                     v-model="tagQuery"
-                    placeholder="Search or create a tag…"
+                    placeholder="Buscar ou criar uma tag…"
                     class="flex-1"
                     @input="searchTags"
                   />
-                  <Button type="button" variant="secondary" @click="createAndAddTag">Add / create</Button>
+                  <Button type="button" variant="secondary" @click="createAndAddTag">Adicionar / criar</Button>
                 </div>
                 <Select v-if="tagResults.length > 0" @update:model-value="selectTagResult">
                   <SelectTrigger class="w-full">
-                    <SelectValue placeholder="Choose a matching tag" />
+                    <SelectValue placeholder="Escolha uma tag correspondente" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="tag in tagResults" :key="tag.id" :value="tag.id">
@@ -267,7 +275,7 @@ function selectPersonResult(value: unknown) {
               </fieldset>
 
               <Button type="submit" size="sm" class="mt-2 px-5" :disabled="saving">
-                {{ saving ? 'Saving…' : 'Save changes' }}
+                {{ saving ? 'Salvando…' : 'Salvar' }}
               </Button>
             </CardContent>
           </Card>
@@ -276,34 +284,55 @@ function selectPersonResult(value: unknown) {
 
       <Card>
         <CardHeader>
-          <CardTitle>People</CardTitle>
-          <CardDescription>Manage the named people tagged in this photo.</CardDescription>
+          <CardTitle>Pessoas</CardTitle>
+          <CardDescription>Gerencie as pessoas nomeadas marcadas nesta foto.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
           <ul v-if="photo.people.length > 0" class="admin-people-list">
-            <li v-for="person in photo.people" :key="person.id">
-              <span class="font-medium">{{ person.name ?? 'Unnamed' }}</span>
+            <li v-for="person in photo.people" :key="person.id" data-testid="photo-person-row">
+              <div class="flex min-w-0 items-center gap-3">
+                <img
+                  v-if="personAvatarSrc(person)"
+                  :src="personAvatarSrc(person)!"
+                  alt=""
+                  class="size-10 shrink-0 rounded-md object-cover bg-muted"
+                  data-testid="photo-person-avatar"
+                />
+                <div
+                  v-else
+                  class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                  data-testid="photo-person-avatar-empty"
+                >
+                  —
+                </div>
+                <RouterLink
+                  :to="{ name: 'admin-person-edit', params: { id: person.id } }"
+                  class="truncate font-medium text-foreground hover:underline"
+                >
+                  {{ person.name ?? 'Sem nome' }}
+                </RouterLink>
+              </div>
               <button
                 type="button"
                 class="admin-action-link admin-action-link--danger"
                 :disabled="peopleBusy"
                 @click="removePerson(person.id)"
               >
-                Remove
+                Remover
               </button>
             </li>
           </ul>
-          <p v-else class="text-sm text-muted-foreground">No people tagged.</p>
+          <p v-else class="text-sm text-muted-foreground">Nenhuma pessoa marcada.</p>
 
           <div
             class="grid gap-2"
             :class="photo.people.length > 0 ? 'border-t border-border pt-4' : undefined"
           >
-            <Label for="people-search" class="admin-label-sentence">Add a person</Label>
+            <Label for="people-search" class="admin-label-sentence">Adicionar pessoa</Label>
             <Input
               id="people-search"
               v-model="peopleQuery"
-              placeholder="Search named people…"
+              placeholder="Buscar pessoas nomeadas…"
               @input="searchPeople"
             />
           </div>
@@ -313,7 +342,7 @@ function selectPersonResult(value: unknown) {
             @update:model-value="selectPersonResult"
           >
             <SelectTrigger class="w-full">
-              <SelectValue placeholder="Choose a matching person" />
+              <SelectValue placeholder="Escolha uma pessoa correspondente" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem v-for="person in peopleResults" :key="person.id" :value="person.id">

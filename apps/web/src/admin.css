@@ -92,15 +92,84 @@
   border-right: 1px solid var(--border);
 }
 
+.admin-shell {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
 .admin-topbar {
   border-bottom: 1px solid var(--border);
   background: rgb(250 250 249 / 0.85);
   backdrop-filter: blur(16px);
-  padding-bottom: 1.25rem;
+  padding: 1.25rem 1rem 1rem;
 }
 
 .admin-main {
-  padding-top: 1.25rem;
+  padding: 1rem 1rem 2.5rem;
+}
+
+.admin-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-icon-btn:hover {
+  background: var(--muted);
+}
+
+.admin-sidebar-backdrop {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .admin-topbar {
+    padding: 1.75rem 2.5rem 1.25rem;
+  }
+
+  .admin-main {
+    padding: 1.25rem 2.5rem 3rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgb(28 25 23 / 0.4);
+  }
+
+  .admin-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: none;
+  }
+
+  .admin-sidebar--open {
+    transform: translateX(0);
+    box-shadow: 8px 0 24px rgb(28 25 23 / 0.12);
+  }
+}
+
+@supports not (height: 100dvh) {
+  .admin-shell {
+    height: 100vh;
+    max-height: 100vh;
+  }
 }
 
 .admin-nav-section {
@@ -580,21 +649,22 @@ button.admin-action-link {
   box-shadow: none !important;
 }
 
-/* Photo card action row */
+/* Photo card action row — icon-only buttons fit the narrow card */
 .admin-photo-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(2, 1.75rem);
   gap: 0.375rem;
   padding-top: 0.25rem;
+  justify-content: start;
 }
 
 .admin-photo-actions a {
   text-decoration: none;
 }
 
-.admin-photo-actions [data-slot="button"][data-size="xs"] {
-  min-width: 0;
-  padding-inline: 0.375rem;
+.admin-photo-actions .admin-photo-action {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .admin-root [data-slot="button"].admin-btn-retry,

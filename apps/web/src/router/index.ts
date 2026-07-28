@@ -10,6 +10,11 @@ const router = createRouter({
       component: () => import('../views/HomeView.vue'),
     },
     {
+      path: '/search',
+      name: 'search',
+      component: () => import('../views/SearchView.vue'),
+    },
+    {
       path: '/albums/:slug',
       name: 'album',
       component: () => import('../views/AlbumView.vue'),
@@ -86,6 +91,16 @@ const router = createRouter({
           path: 'tags',
           name: 'admin-tags',
           component: () => import('../views/admin/TagsView.vue'),
+        },
+        {
+          path: 'processing',
+          name: 'admin-processing',
+          component: () => import('../views/admin/ProcessingView.vue'),
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: () => import('../views/admin/UsersView.vue'),
         },
       ],
     },

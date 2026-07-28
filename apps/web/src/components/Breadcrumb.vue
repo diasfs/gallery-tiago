@@ -8,8 +8,8 @@ defineProps<{
 </script>
 
 <template>
-  <nav class="breadcrumb" aria-label="Breadcrumb">
-    <RouterLink to="/">Home</RouterLink>
+  <nav class="breadcrumb" aria-label="Trilha de navegação">
+    <RouterLink to="/">Início</RouterLink>
     <template v-for="ancestor in ancestors" :key="ancestor.slug">
       <span class="breadcrumb__sep">/</span>
       <RouterLink :to="{ name: 'album', params: { slug: ancestor.slug } }">{{ ancestor.title }}</RouterLink>

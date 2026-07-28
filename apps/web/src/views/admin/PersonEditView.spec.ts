@@ -143,6 +143,6 @@ describe('PersonEditView', () => {
     await wrapper.findAll('[data-testid="face-tile"]')[0]!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Failed to set primary face')
+    expect(wrapper.text()).toContain('Falha ao definir rosto principal')
   })
 })
