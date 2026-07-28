@@ -177,7 +177,14 @@ final class PublicVisibilityGateTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame('Beach', $data['tag']['name']);
-        $this->assertCount(1, $data['photos']);
+        $this->assertArrayNotHasKey('photos', $data);
+
+        $this->client->request('GET', '/api/tags/'.$tag->getSlug().'/photos?perPage=1');
+        $this->assertResponseIsSuccessful();
+        $photosBody = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertCount(1, $photosBody['data']);
+        $this->assertSame(1, $photosBody['meta']['total']);
+        $this->assertSame(1, $photosBody['meta']['perPage']);
     }
 
     public function testTagShowReturns404WhenTagHasNoPhotosAtAll(): void
@@ -217,7 +224,14 @@ final class PublicVisibilityGateTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame('Paris', $data['location']['name']);
-        $this->assertCount(1, $data['photos']);
+        $this->assertArrayNotHasKey('photos', $data);
+
+        $this->client->request('GET', '/api/locations/'.$location->getId().'/photos?perPage=1');
+        $this->assertResponseIsSuccessful();
+        $photosBody = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertCount(1, $photosBody['data']);
+        $this->assertSame(1, $photosBody['meta']['total']);
+        $this->assertSame(1, $photosBody['meta']['perPage']);
     }
 
     public function testLocationShowReturns404WhenLocationHasNoPhotosAtAll(): void

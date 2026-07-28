@@ -25,6 +25,7 @@ services:
 
     App\Service\FaceQueuePublisherInterface: '@App\Service\RedisFaceQueuePublisher'
     App\Service\TagQueuePublisherInterface: '@App\Service\RedisTagQueuePublisher'
+    App\Service\GeocoderInterface: '@App\Service\NominatimGeocoder'
 
 when@test:
     services:
@@ -35,3 +36,8 @@ when@test:
         App\Service\FaceQueuePublisherInterface: '@App\Tests\Fake\InMemoryFaceQueuePublisher'
         App\Tests\Fake\InMemoryTagQueuePublisher: ~
         App\Service\TagQueuePublisherInterface: '@App\Tests\Fake\InMemoryTagQueuePublisher'
+        App\Tests\Fake\FakeGeocoder:
+            public: true
+        App\Service\GeocoderInterface:
+            alias: App\Tests\Fake\FakeGeocoder
+            public: true

@@ -6,9 +6,11 @@ use App\Entity\Album;
 use App\Entity\Location;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
+use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
@@ -17,6 +19,11 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/api/albums')]
 class AlbumController
 {
+    private const DEFAULT_ALBUM_PER_PAGE = 24;
+    private const DEFAULT_PHOTO_PER_PAGE = 48;
+    private const DEFAULT_RECENT_LIMIT = 12;
+    private const MAX_RECENT_LIMIT = 48;
+
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
@@ -24,25 +31,84 @@ class AlbumController
     }
 
     #[Route('', name: 'public_albums_list', methods: ['GET'])]
-    public function list(): JsonResponse
+    public function list(Request $request): JsonResponse
     {
-        $albums = array_map(
-            $this->normalize(...),
-            $this->albums->findPublicRoots(),
-        );
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_ALBUM_PER_PAGE);
+        $result = $this->albums->findPublicRootsPaginated($page, $perPage);
 
-        return new JsonResponse(['data' => $albums]);
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $result['items']),
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
+    }
+
+    #[Route('/recent', name: 'public_albums_recent', methods: ['GET'])]
+    public function recent(Request $request): JsonResponse
+    {
+        $limit = $this->recentLimit($request);
+        $items = $this->albums->findPublicRecent($limit);
+
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $items),
+            'meta' => ['limit' => $limit],
+        ]);
+    }
+
+    #[Route('/{slug}/children', name: 'public_albums_children', methods: ['GET'])]
+    public function children(string $slug, Request $request): JsonResponse
+    {
+        $album = $this->findVisibleOrFail($slug);
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_ALBUM_PER_PAGE);
+        $result = $this->albums->findVisibleChildrenPaginated($album, $page, $perPage);
+
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $result['items']),
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
+    }
+
+    #[Route('/{slug}/photos', name: 'public_albums_photos', methods: ['GET'])]
+    public function photos(string $slug, Request $request): JsonResponse
+    {
+        $album = $this->findVisibleOrFail($slug);
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_PHOTO_PER_PAGE);
+        $result = $this->photos->findByAlbumPaginated($album, $page, $perPage);
+
+        return new JsonResponse([
+            'data' => array_map($this->normalizePhoto(...), $result['items']),
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
     }
 
     #[Route('/{slug}', name: 'public_albums_show', methods: ['GET'])]
     public function show(string $slug): JsonResponse
+    {
+        $album = $this->findVisibleOrFail($slug);
+
+        return new JsonResponse(['data' => $this->normalizeDetail($album)]);
+    }
+
+    private function findVisibleOrFail(string $slug): Album
     {
         $album = $this->albums->findVisibleBySlug($slug);
         if (null === $album) {
             throw new NotFoundHttpException('Album not found.');
         }
 
-        return new JsonResponse(['data' => $this->normalizeDetail($album)]);
+        return $album;
+    }
+
+    private function recentLimit(Request $request): int
+    {
+        $raw = $request->query->get('limit', self::DEFAULT_RECENT_LIMIT);
+        if (!is_numeric($raw)) {
+            return self::DEFAULT_RECENT_LIMIT;
+        }
+
+        return max(1, min(self::MAX_RECENT_LIMIT, (int) $raw));
     }
 
     /** @return array<string, mixed> */
@@ -59,6 +125,7 @@ class AlbumController
             // Never expose a private parent's slug (same rule as `ancestors()`).
             'parentSlug' => $this->isVisible($album->getParent()) ? $album->getParent()->getSlug() : null,
             'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
+            'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
         ];
     }
@@ -68,8 +135,6 @@ class AlbumController
     {
         return $this->normalize($album) + [
             'ancestors' => $this->ancestors($album),
-            'children' => array_map($this->normalize(...), $this->albums->findVisibleChildren($album)),
-            'photos' => array_map($this->normalizePhoto(...), $this->photos->findByAlbum($album)),
         ];
     }
 
@@ -104,6 +169,7 @@ class AlbumController
             'title' => $photo->getTitle(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
         ];
     }
 

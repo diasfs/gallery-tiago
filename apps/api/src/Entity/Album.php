@@ -26,11 +26,11 @@ class Album
     private ?Album $parent = null;
 
     /** @var Collection<int, Album> */
-    #[ORM\OneToMany(mappedBy: 'parent', targetEntity: self::class)]
+    #[ORM\OneToMany(mappedBy: 'parent', targetEntity: self::class, fetch: 'EXTRA_LAZY')]
     private Collection $children;
 
     /** @var Collection<int, Photo> */
-    #[ORM\OneToMany(mappedBy: 'album', targetEntity: Photo::class)]
+    #[ORM\OneToMany(mappedBy: 'album', targetEntity: Photo::class, fetch: 'EXTRA_LAZY')]
     private Collection $photos;
 
     #[ORM\Column(length: 255)]
@@ -48,12 +48,20 @@ class Album
     #[ORM\Column]
     private int $sortOrder = 0;
 
+    /** Legacy gallery `id_album` when imported; used for “recent” ordering like old (`id_album DESC`). */
+    #[ORM\Column(nullable: true, unique: true)]
+    private ?int $legacyId = null;
+
     #[ORM\ManyToOne(targetEntity: Photo::class)]
     #[ORM\JoinColumn(name: 'cover_photo_id', nullable: true, onDelete: 'SET NULL')]
     private ?Photo $coverPhoto = null;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $takenAt = null;
+
+    /** End of date range when album spans multiple days; null means single-day (takenAt only). */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $takenAtEnd = null;
 
     #[ORM\ManyToOne(targetEntity: Location::class)]
     #[ORM\JoinColumn(name: 'location_id', nullable: true, onDelete: 'SET NULL')]
@@ -164,6 +172,18 @@ class Album
         return $this;
     }
 
+    public function getLegacyId(): ?int
+    {
+        return $this->legacyId;
+    }
+
+    public function setLegacyId(?int $legacyId): static
+    {
+        $this->legacyId = $legacyId;
+
+        return $this;
+    }
+
     public function getCoverPhoto(): ?Photo
     {
         return $this->coverPhoto;
@@ -184,6 +204,18 @@ class Album
     public function setTakenAt(?\DateTimeImmutable $takenAt): static
     {
         $this->takenAt = $takenAt;
+
+        return $this;
+    }
+
+    public function getTakenAtEnd(): ?\DateTimeImmutable
+    {
+        return $this->takenAtEnd;
+    }
+
+    public function setTakenAtEnd(?\DateTimeImmutable $takenAtEnd): static
+    {
+        $this->takenAtEnd = $takenAtEnd;
 
         return $this;
     }

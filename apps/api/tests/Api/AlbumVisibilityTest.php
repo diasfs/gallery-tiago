@@ -134,8 +134,112 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->client->request('GET', '/api/albums');
 
         $this->assertResponseIsSuccessful();
-        $slugs = array_column(json_decode($this->client->getResponse()->getContent(), true)['data'], 'slug');
+        $body = json_decode($this->client->getResponse()->getContent(), true);
+        $slugs = array_column($body['data'], 'slug');
         $this->assertContains('landscapes', $slugs);
+        $this->assertArrayHasKey('meta', $body);
+        $this->assertSame(1, $body['meta']['page']);
+        $this->assertGreaterThanOrEqual(1, $body['meta']['total']);
+    }
+
+    public function testPublicAlbumShowOmitsEmbeddedPhotosAndChildren(): void
+    {
+        $this->client->request('GET', '/api/albums/landscapes');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('landscapes', $data['slug']);
+        $this->assertArrayNotHasKey('photos', $data);
+        $this->assertArrayNotHasKey('children', $data);
+        $this->assertArrayHasKey('ancestors', $data);
+    }
+
+    public function testPublicAlbumPhotosEndpointIsPaginated(): void
+    {
+        $this->client->request('GET', '/api/albums/landscapes/photos');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode($this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($body['data']);
+        $this->assertSame(1, $body['meta']['page']);
+        $this->assertArrayHasKey('total', $body['meta']);
+    }
+
+    public function testPublicAlbumChildrenOrderedByLegacyIdDescNotSortOrder(): void
+    {
+        $parent = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
+        $this->assertNotNull($parent);
+
+        // Higher sortOrder must NOT win — siblings follow legacy id_album DESC.
+        $older = new Album('Older Child', 'older-child');
+        $older->setVisibility(AlbumVisibility::Public);
+        $older->setParent($parent);
+        $older->setSortOrder(1);
+        $older->setLegacyId(100);
+        $this->em->persist($older);
+
+        $newer = new Album('Newer Child', 'newer-child');
+        $newer->setVisibility(AlbumVisibility::Public);
+        $newer->setParent($parent);
+        $newer->setSortOrder(99);
+        $newer->setLegacyId(500);
+        $this->em->persist($newer);
+
+        // Native (no legacyId) sorts ahead of imported siblings.
+        $native = new Album('Native Child', 'native-child');
+        $native->setVisibility(AlbumVisibility::Public);
+        $native->setParent($parent);
+        $native->setSortOrder(0);
+        $this->em->persist($native);
+
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/albums/landscapes/children');
+
+        $this->assertResponseIsSuccessful();
+        $slugs = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'slug');
+        $this->assertSame(['native-child', 'newer-child', 'older-child'], $slugs);
+    }
+
+    public function testPublicRecentAlbumsOrderedByLegacyIdDescWithLimit(): void
+    {
+        $parent = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
+        $this->assertNotNull($parent);
+        $parent->setLegacyId(50);
+
+        $nested = new Album('Nested Recent', 'nested-recent');
+        $nested->setVisibility(AlbumVisibility::Public);
+        $nested->setParent($parent);
+        $nested->setLegacyId(500);
+        $this->em->persist($nested);
+
+        $olderLegacy = new Album('Older Legacy', 'older-legacy');
+        $olderLegacy->setVisibility(AlbumVisibility::Public);
+        $olderLegacy->setParent($parent);
+        $olderLegacy->setLegacyId(100);
+        $this->em->persist($olderLegacy);
+
+        $native = new Album('Native Recent', 'native-recent');
+        $native->setVisibility(AlbumVisibility::Public);
+        $this->em->persist($native);
+
+        $unlisted = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'family-hidden']);
+        $private = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'secret']);
+        $this->assertNotNull($unlisted);
+        $this->assertNotNull($private);
+        $unlisted->setLegacyId(999);
+        $private->setLegacyId(1000);
+
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/albums/recent?limit=2');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(['native-recent', 'nested-recent'], array_column($body['data'], 'slug'));
+        $this->assertSame(2, $body['meta']['limit']);
+        $this->assertNotContains('family-hidden', array_column($body['data'], 'slug'));
+        $this->assertNotContains('secret', array_column($body['data'], 'slug'));
     }
 
     // --- Admin endpoints ----------------------------------------------------

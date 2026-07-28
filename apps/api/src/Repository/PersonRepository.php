@@ -61,4 +61,33 @@ class PersonRepository extends ServiceEntityRepository
     {
         return $this->search('named', $query, 20);
     }
+
+    /**
+     * Named people who appear on at least one photo in a public album.
+     *
+     * @return Person[]
+     */
+    public function searchNamedPublic(?string $query, int $limit = 20): array
+    {
+        $qb = $this->createQueryBuilder('person')
+            ->andWhere('person.isNamed = true')
+            ->andWhere(
+                'EXISTS (
+                    SELECT 1 FROM App\Entity\Face f
+                    JOIN f.photo p
+                    JOIN p.album a
+                    WHERE f.person = person AND a.visibility = :visibility
+                )'
+            )
+            ->setParameter('visibility', \App\Enum\AlbumVisibility::Public)
+            ->orderBy('person.name', 'ASC')
+            ->setMaxResults($limit);
+
+        if (null !== $query && '' !== trim($query)) {
+            $qb->andWhere('LOWER(person.name) LIKE :query')
+                ->setParameter('query', '%'.mb_strtolower(trim($query)).'%');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
 }

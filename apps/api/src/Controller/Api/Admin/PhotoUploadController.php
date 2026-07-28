@@ -4,6 +4,7 @@ namespace App\Controller\Api\Admin;
 
 use App\Entity\Album;
 use App\Entity\Photo;
+use App\Http\Pagination;
 use App\Message\ConvertMediaMessage;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
@@ -26,6 +27,7 @@ use Symfony\Component\Uid\Uuid;
 class PhotoUploadController
 {
     private const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const DEFAULT_PHOTO_PER_PAGE = 48;
 
     public function __construct(
         private readonly AlbumRepository $albums,
@@ -38,12 +40,17 @@ class PhotoUploadController
     }
 
     #[Route('', name: 'admin_photos_list', methods: ['GET'])]
-    public function list(string $albumId): JsonResponse
+    public function list(string $albumId, Request $request): JsonResponse
     {
         $album = $this->findAlbumOrFail($albumId);
-        $photos = array_map($this->normalize(...), $this->photos->findByAlbum($album));
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_PHOTO_PER_PAGE);
+        $result = $this->photos->findByAlbumPaginated($album, $page, $perPage);
 
-        return new JsonResponse(['data' => $photos]);
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $result['items']),
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
     }
 
     /**
@@ -81,7 +88,7 @@ class PhotoUploadController
             throw new BadRequestHttpException('Unsupported file type; expected JPEG, PNG, or WebP.');
         }
 
-        $photo = new Photo($album, '');
+        $photo = new Photo($album);
         $title = pathinfo($file->getClientOriginalName(), \PATHINFO_FILENAME);
         if (\is_string($title) && '' !== $title) {
             $photo->setTitle($title);
@@ -144,6 +151,7 @@ class PhotoUploadController
             'title' => $photo->getTitle(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
             'mediaStatus' => $photo->getMediaStatus()->value,
             'facesStatus' => $photo->getFacesStatus()->value,
             'tagsStatus' => $photo->getTagsStatus()->value,

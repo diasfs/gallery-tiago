@@ -30,9 +30,11 @@ class AuthController
     private function userResponse(AdminUser $admin): JsonResponse
     {
         return new JsonResponse([
-            'id' => (string) $admin->getId(),
-            'email' => $admin->getEmail(),
-            'roles' => $admin->getRoles(),
+            'data' => [
+                'id' => (string) $admin->getId(),
+                'email' => $admin->getEmail(),
+                'roles' => $admin->getRoles(),
+            ],
         ]);
     }
 }

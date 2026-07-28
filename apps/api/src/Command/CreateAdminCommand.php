@@ -30,7 +30,7 @@ class CreateAdminCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addArgument('email', InputArgument::REQUIRED, 'Admin email address')
+            ->addArgument('email', InputArgument::REQUIRED, 'Admin username (email or any login id)')
             ->addArgument('password', InputArgument::REQUIRED, 'Admin password');
     }
 
@@ -38,11 +38,17 @@ class CreateAdminCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $email = (string) $input->getArgument('email');
+        $email = strtolower(trim((string) $input->getArgument('email')));
         $password = (string) $input->getArgument('password');
 
+        if ('' === $email) {
+            $io->error('Username cannot be empty.');
+
+            return Command::FAILURE;
+        }
+
         if ($this->adminUsers->findOneBy(['email' => $email])) {
-            $io->error(\sprintf('An admin with email "%s" already exists.', $email));
+            $io->error(\sprintf('An admin with username "%s" already exists.', $email));
 
             return Command::FAILURE;
         }

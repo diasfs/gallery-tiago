@@ -69,4 +69,19 @@ final class CreateAdminCommandTest extends KernelTestCase
 
         $this->assertSame(1, $exitCode);
     }
+
+    public function testCreatesAdminWithNonEmailUsername(): void
+    {
+        $application = new Application(static::$kernel);
+        $tester = new CommandTester($application->find('gallery:admin:create'));
+
+        $exitCode = $tester->execute([
+            'email' => 'Fabio',
+            'password' => 'super-secret',
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $admin = $this->em->getRepository(AdminUser::class)->findOneBy(['email' => 'fabio']);
+        $this->assertNotNull($admin);
+    }
 }

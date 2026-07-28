@@ -427,6 +427,7 @@ final class PersonMergeTest extends WebTestCase
         $this->assertSame('Ana', $detail['name']);
         $this->assertCount(2, $detail['faces']);
         $this->assertNull($detail['avatarFaceId']);
+        $this->assertSame($faceA->getCropPath(), $detail['avatarCropPath']);
 
         $this->client->jsonRequest('PATCH', '/api/admin/people/'.$personId, [
             'avatarFaceId' => $faceBId,
@@ -447,6 +448,30 @@ final class PersonMergeTest extends WebTestCase
         $reloaded = $this->em->getRepository(Person::class)->find($personId);
         $this->assertSame($faceBId, (string) $reloaded->getAvatarFace()->getId());
         $this->assertSame('Ana Silva', $reloaded->getName());
+    }
+
+    public function testPhotoPeopleIncludeAvatarCropFallingBackToFirstFace(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+
+        $photoId = (string) $this->publicPhoto->getId();
+        $personId = (string) $person->getId();
+        $cropPath = $face->getCropPath();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/photos/'.$photoId);
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertCount(1, $payload['people']);
+        $this->assertSame($personId, $payload['people'][0]['id']);
+        $this->assertSame('Ana', $payload['people'][0]['name']);
+        $this->assertSame($cropPath, $payload['people'][0]['avatarCropPath']);
     }
 
     public function testDeletingPhotoKeepsFaceRowsAndCropPaths(): void
@@ -587,11 +612,17 @@ final class PersonMergeTest extends WebTestCase
         $this->client->request('GET', '/api/people/'.$person->getId().'/photos');
 
         $this->assertResponseIsSuccessful();
-        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $data = $body['data'];
+        $meta = $body['meta'];
 
         $this->assertCount(1, $data);
+        $this->assertSame(1, $meta['total']);
+        $this->assertSame(1, $meta['page']);
+        $this->assertSame(48, $meta['perPage']);
         $this->assertSame((string) $this->publicPhoto->getId(), $data[0]['id']);
-        $this->assertStringNotContainsString('originalPath', (string) $this->client->getResponse()->getContent());
+        $this->assertArrayHasKey('originalPath', $data[0]);
+        $this->assertStringNotContainsString('/var/gallery', (string) $this->client->getResponse()->getContent());
     }
 
     public function testPublicPersonPhotosReturns404ForUnknownPerson(): void

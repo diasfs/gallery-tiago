@@ -2,8 +2,10 @@
 
 namespace App\Controller\Api\Public;
 
+use App\Entity\Album;
 use App\Entity\Photo;
 use App\Entity\Tag;
+use App\Enum\AlbumVisibility;
 use App\Repository\PhotoRepository;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -37,30 +39,56 @@ class PhotoController
     }
 
     /**
-     * Never include `originalPath` (or any raw filesystem path derived from
-     * it) in the public payload — only converted AVIF/thumb paths are safe
-     * to expose here.
+     * Media-relative paths only (AVIF, thumbs, and staging original when
+     * convert has not finished). Never absolute filesystem paths.
      *
      * @return array<string, mixed>
      */
     private function normalize(Photo $photo): array
     {
         [$prevId, $nextId] = $this->adjacentIds($photo);
+        $album = $photo->getAlbum();
 
         return [
             'id' => (string) $photo->getId(),
-            'albumId' => (string) $photo->getAlbum()->getId(),
-            'albumSlug' => $photo->getAlbum()->getSlug(),
+            'albumId' => (string) $album->getId(),
+            'albumSlug' => $album->getSlug(),
+            'albumTitle' => $album->getTitle(),
+            'albumAncestors' => $this->albumAncestors($album),
             'title' => $photo->getTitle(),
             'width' => $photo->getWidth(),
             'height' => $photo->getHeight(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
             'prevId' => $prevId,
             'nextId' => $nextId,
         ];
+    }
+
+    /**
+     * Same visibility-stopping walk as public album detail — never leak a
+     * private ancestor's slug/title into the photo breadcrumb.
+     *
+     * @return array<int, array{slug: string, title: string}>
+     */
+    private function albumAncestors(Album $album): array
+    {
+        $chain = [];
+        $current = $album->getParent();
+        while ($this->isVisible($current)) {
+            $chain[] = ['slug' => $current->getSlug(), 'title' => $current->getTitle()];
+            $current = $current->getParent();
+        }
+
+        return array_reverse($chain);
+    }
+
+    private function isVisible(?Album $album): bool
+    {
+        return null !== $album && AlbumVisibility::Private !== $album->getVisibility();
     }
 
     /** @return array{0: ?string, 1: ?string} */
@@ -82,7 +110,7 @@ class PhotoController
         return [$prev?->getId()->toRfc4122(), $next?->getId()->toRfc4122()];
     }
 
-    /** @return array<int, array{id: string, name: ?string}> */
+    /** @return array<int, array{id: string, name: ?string, avatarCropPath: ?string}> */
     private function normalizePeople(Photo $photo): array
     {
         $seen = [];
@@ -97,7 +125,11 @@ class PhotoController
                 continue;
             }
             $seen[$personId] = true;
-            $people[] = ['id' => $personId, 'name' => $person->getName()];
+            $people[] = [
+                'id' => $personId,
+                'name' => $person->getName(),
+                'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
+            ];
         }
 
         return $people;

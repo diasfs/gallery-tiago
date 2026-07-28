@@ -252,12 +252,14 @@ class PersonController
     /** @return array<string, mixed> */
     private function normalizeCluster(Person $person): array
     {
+        $avatar = $person->getAvatarFace();
+
         return [
             'id' => (string) $person->getId(),
             'faceCount' => \count($person->getFaces()),
             'faces' => array_map($this->normalizeFace(...), $person->getFaces()->toArray()),
-            'avatarFaceId' => $person->getAvatarFace() ? (string) $person->getAvatarFace()->getId() : null,
-            'avatarCropPath' => $person->getAvatarFace()?->getCropPath(),
+            'avatarFaceId' => $avatar ? (string) $avatar->getId() : null,
+            'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
         ];
     }
 
@@ -272,7 +274,7 @@ class PersonController
             'isNamed' => $person->isNamed(),
             'faceCount' => \count($person->getFaces()),
             'avatarFaceId' => $avatar ? (string) $avatar->getId() : null,
-            'avatarCropPath' => $avatar?->getCropPath(),
+            'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
         ];
     }
 

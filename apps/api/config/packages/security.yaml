@@ -38,9 +38,12 @@ security:
     # Note: Only the *first* access control that matches will be used
     access_control:
         - { path: ^/api/admin/me, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/users, roles: ROLE_ADMIN }
         - { path: ^/api/admin/albums, roles: ROLE_ADMIN }
         - { path: ^/api/admin/photos, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/processing, roles: ROLE_ADMIN }
         - { path: ^/api/admin/locations, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/geocode, roles: ROLE_ADMIN }
         - { path: ^/api/admin/tags, roles: ROLE_ADMIN }
         - { path: ^/api/admin/people, roles: ROLE_ADMIN }
 

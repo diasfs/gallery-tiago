@@ -72,6 +72,20 @@ class Person
         return $this->avatarFace;
     }
 
+    /**
+     * Face used for display thumbnails: explicit primary, else the first linked face.
+     */
+    public function getEffectiveAvatarFace(): ?Face
+    {
+        if (null !== $this->avatarFace) {
+            return $this->avatarFace;
+        }
+
+        $first = $this->faces->first();
+
+        return false === $first ? null : $first;
+    }
+
     public function setAvatarFace(?Face $avatarFace): static
     {
         $this->avatarFace = $avatarFace;

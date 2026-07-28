@@ -194,6 +194,7 @@ class PhotoController
             'height' => $photo->getHeight(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
             'mediaStatus' => $photo->getMediaStatus()->value,
             'facesStatus' => $photo->getFacesStatus()->value,
             'tagsStatus' => $photo->getTagsStatus()->value,
@@ -204,7 +205,7 @@ class PhotoController
         ];
     }
 
-    /** @return array<int, array{id: string, name: ?string}> */
+    /** @return array<int, array{id: string, name: ?string, avatarCropPath: ?string}> */
     private function normalizePeople(Photo $photo): array
     {
         $seen = [];
@@ -219,7 +220,11 @@ class PhotoController
                 continue;
             }
             $seen[$personId] = true;
-            $people[] = ['id' => $personId, 'name' => $person->getName()];
+            $people[] = [
+                'id' => $personId,
+                'name' => $person->getName(),
+                'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
+            ];
         }
 
         return $people;

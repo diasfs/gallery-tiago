@@ -147,6 +147,33 @@ final class PhotoMetadataTest extends WebTestCase
         $this->assertSame('Golden Gate Bridge', $album->getLocation()->getName());
     }
 
+    public function testAdminCanPatchAlbumTakenAtEndRange(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->publicAlbum->getId(), [
+            'takenAt' => '2024-06-01T00:00:00+00:00',
+            'takenAtEnd' => '2024-06-05T00:00:00+00:00',
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('2024-06-01T00:00:00+00:00', $data['takenAt']);
+        $this->assertSame('2024-06-05T00:00:00+00:00', $data['takenAtEnd']);
+    }
+
+    public function testAdminRejectsInvertedTakenAtRange(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->publicAlbum->getId(), [
+            'takenAt' => '2024-06-05T00:00:00+00:00',
+            'takenAtEnd' => '2024-06-01T00:00:00+00:00',
+        ]);
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
     public function testAdminCanAssignTagsToPhoto(): void
     {
         $this->loginAsAdmin();
@@ -399,14 +426,45 @@ final class PhotoMetadataTest extends WebTestCase
 
     // --- Public photo detail -----------------------------------------------
 
-    public function testPublicPhotoDetailNeverExposesOriginalPath(): void
+    public function testPublicPhotoDetailExposesRelativeOriginalPathOnly(): void
     {
         $this->client->request('GET', '/api/photos/'.$this->publicPhoto->getId());
 
         $this->assertResponseIsSuccessful();
         $body = (string) $this->client->getResponse()->getContent();
-        $this->assertStringNotContainsString('originalPath', $body);
-        $this->assertStringNotContainsString('aaaa.jpg', $body);
+        $data = json_decode($body, true)['data'];
+        $this->assertSame('originals/aa/aaaa.jpg', $data['originalPath']);
+        $this->assertStringNotContainsString('/var/gallery', $body);
+        $this->assertSame($this->publicAlbum->getTitle(), $data['albumTitle']);
+        $this->assertSame($this->publicAlbum->getSlug(), $data['albumSlug']);
+        $this->assertSame([], $data['albumAncestors']);
+    }
+
+    public function testPublicPhotoDetailIncludesAlbumAncestorsStoppingAtPrivate(): void
+    {
+        $privateRoot = new Album('Secret Root', 'secret-root-'.uniqid());
+        $privateRoot->setVisibility(AlbumVisibility::Private);
+        $this->em->persist($privateRoot);
+
+        $publicParent = new Album('Visible Parent', 'visible-parent-'.uniqid());
+        $publicParent->setVisibility(AlbumVisibility::Public);
+        $publicParent->setParent($privateRoot);
+        $this->em->persist($publicParent);
+
+        $this->publicAlbum->setParent($publicParent);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/photos/'.$this->publicPhoto->getId());
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame($this->publicAlbum->getTitle(), $data['albumTitle']);
+        $this->assertSame(
+            [['slug' => $publicParent->getSlug(), 'title' => 'Visible Parent']],
+            $data['albumAncestors'],
+        );
+        $this->assertStringNotContainsString('Secret Root', (string) $this->client->getResponse()->getContent());
+        $this->assertStringNotContainsString($privateRoot->getSlug(), (string) $this->client->getResponse()->getContent());
     }
 
     public function testPublicPhotoDetailIncludesTags(): void

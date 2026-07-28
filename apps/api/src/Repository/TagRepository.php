@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Tag;
+use App\Enum\AlbumVisibility;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -59,5 +60,33 @@ class TagRepository extends ServiceEntityRepository
         }
 
         return $out;
+    }
+
+    /**
+     * Tags attached to at least one photo in a public album.
+     *
+     * @return Tag[]
+     */
+    public function searchPublic(?string $query, int $limit = 20): array
+    {
+        $qb = $this->createQueryBuilder('t')
+            ->andWhere(
+                'EXISTS (
+                    SELECT 1 FROM App\Entity\Photo p
+                    JOIN p.album a
+                    JOIN p.tags pt
+                    WHERE pt = t AND a.visibility = :visibility
+                )'
+            )
+            ->setParameter('visibility', AlbumVisibility::Public)
+            ->orderBy('t.name', 'ASC')
+            ->setMaxResults($limit);
+
+        if (null !== $query && '' !== trim($query)) {
+            $qb->andWhere('LOWER(t.name) LIKE :query OR LOWER(t.slug) LIKE :query')
+                ->setParameter('query', '%'.mb_strtolower(trim($query)).'%');
+        }
+
+        return $qb->getQuery()->getResult();
     }
 }

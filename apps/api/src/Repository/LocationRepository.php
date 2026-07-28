@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Location;
+use App\Service\SearchText;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -24,8 +25,11 @@ class LocationRepository extends ServiceEntityRepository
             ->setMaxResults(20);
 
         if (null !== $query && '' !== $query) {
-            $qb->andWhere('LOWER(l.name) LIKE :query OR LOWER(l.city) LIKE :query OR LOWER(l.country) LIKE :query')
-                ->setParameter('query', '%'.mb_strtolower($query).'%');
+            $qb->andWhere(
+                'LOWER(UNACCENT(COALESCE(l.name, \'\'))) LIKE :query
+                OR LOWER(UNACCENT(COALESCE(l.city, \'\'))) LIKE :query
+                OR LOWER(UNACCENT(COALESCE(l.country, \'\'))) LIKE :query'
+            )->setParameter('query', SearchText::likePattern($query));
         }
 
         return $qb->getQuery()->getResult();

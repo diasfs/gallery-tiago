@@ -6,6 +6,7 @@ use App\Entity\Album;
 use App\Entity\Location;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
+use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
@@ -24,6 +25,8 @@ use Symfony\Component\Uid\Uuid;
 #[Route('/api/admin/albums')]
 class AlbumController
 {
+    private const DEFAULT_ALBUM_PER_PAGE = 24;
+
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
@@ -34,11 +37,40 @@ class AlbumController
     }
 
     #[Route('', name: 'admin_albums_list', methods: ['GET'])]
-    public function list(): JsonResponse
+    public function list(Request $request): JsonResponse
     {
-        $albums = array_map($this->normalize(...), $this->albums->findAllOrdered());
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_ALBUM_PER_PAGE);
+        $filters = [
+            'visibility' => $request->query->get('visibility'),
+            'q' => $request->query->get('q'),
+            'from' => $request->query->get('from'),
+            'to' => $request->query->get('to'),
+            'location' => $request->query->get('location'),
+        ];
 
-        return new JsonResponse(['data' => $albums]);
+        $result = $this->albums->findRootsPaginated($page, $perPage, $filters);
+        $ids = array_map(
+            static fn (Album $album): string => (string) $album->getId(),
+            $result['items'],
+        );
+        $photoCounts = $this->albums->countPhotosForAlbumIds($ids);
+        $childCounts = $this->albums->countChildrenForParentIds($ids);
+
+        $data = [];
+        foreach ($result['items'] as $album) {
+            $id = (string) $album->getId();
+            $data[] = $this->normalize(
+                $album,
+                photoCount: $photoCounts[$id] ?? 0,
+                childCount: $childCounts[$id] ?? 0,
+            );
+        }
+
+        return new JsonResponse([
+            'data' => $data,
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
     }
 
     #[Route('', name: 'admin_albums_create', methods: ['POST'])]
@@ -61,10 +93,58 @@ class AlbumController
         return new JsonResponse(['data' => $this->normalize($album)], Response::HTTP_CREATED);
     }
 
+    #[Route('/{id}/children', name: 'admin_albums_children', methods: ['GET'])]
+    public function children(string $id, Request $request): JsonResponse
+    {
+        $album = $this->findOrFail($id);
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, self::DEFAULT_ALBUM_PER_PAGE);
+        $result = $this->albums->findChildrenPaginated($album, $page, $perPage);
+        $ids = array_map(
+            static fn (Album $child): string => (string) $child->getId(),
+            $result['items'],
+        );
+        $photoCounts = $this->albums->countPhotosForAlbumIds($ids);
+        $childCounts = $this->albums->countChildrenForParentIds($ids);
+
+        $data = [];
+        foreach ($result['items'] as $child) {
+            $childId = (string) $child->getId();
+            $data[] = $this->normalize(
+                $child,
+                photoCount: $photoCounts[$childId] ?? 0,
+                childCount: $childCounts[$childId] ?? 0,
+            );
+        }
+
+        return new JsonResponse([
+            'data' => $data,
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
+    }
+
     #[Route('/{id}', name: 'admin_albums_show', methods: ['GET'])]
     public function show(string $id): JsonResponse
     {
-        return new JsonResponse(['data' => $this->normalize($this->findOrFail($id))]);
+        $album = $this->findOrFail($id);
+        $idStr = (string) $album->getId();
+        $photoCounts = $this->albums->countPhotosForAlbumIds([$idStr]);
+        $childCounts = $this->albums->countChildrenForParentIds([$idStr]);
+
+        $payload = $this->normalize(
+            $album,
+            photoCount: $photoCounts[$idStr] ?? 0,
+            childCount: $childCounts[$idStr] ?? 0,
+        );
+        $parent = $album->getParent();
+        $payload['parent'] = null === $parent
+            ? null
+            : [
+                'id' => (string) $parent->getId(),
+                'title' => $parent->getTitle(),
+            ];
+
+        return new JsonResponse(['data' => $payload]);
     }
 
     #[Route('/{id}', name: 'admin_albums_update', methods: ['PATCH'])]
@@ -154,26 +234,44 @@ class AlbumController
         }
 
         if (\array_key_exists('takenAt', $payload)) {
-            $album->setTakenAt($this->parseTakenAt($payload['takenAt']));
+            $album->setTakenAt($this->parseTakenAt($payload['takenAt'], 'takenAt'));
         }
+
+        if (\array_key_exists('takenAtEnd', $payload)) {
+            $album->setTakenAtEnd($this->parseTakenAt($payload['takenAtEnd'], 'takenAtEnd'));
+        }
+
+        $this->assertTakenAtRange($album);
 
         if (\array_key_exists('locationId', $payload)) {
             $album->setLocation($this->resolveLocation($payload['locationId']));
         }
     }
 
-    private function parseTakenAt(mixed $value): ?\DateTimeImmutable
+    private function assertTakenAtRange(Album $album): void
+    {
+        $start = $album->getTakenAt();
+        $end = $album->getTakenAtEnd();
+        if (null !== $end && null === $start) {
+            throw new BadRequestHttpException('takenAt is required when takenAtEnd is set.');
+        }
+        if (null !== $start && null !== $end && $end < $start) {
+            throw new BadRequestHttpException('takenAtEnd must be on or after takenAt.');
+        }
+    }
+
+    private function parseTakenAt(mixed $value, string $field = 'takenAt'): ?\DateTimeImmutable
     {
         if (null === $value) {
             return null;
         }
         if (!\is_string($value)) {
-            throw new BadRequestHttpException('takenAt must be an ISO-8601 date string or null.');
+            throw new BadRequestHttpException($field.' must be an ISO-8601 date string or null.');
         }
         try {
             return new \DateTimeImmutable($value);
         } catch (\Exception) {
-            throw new BadRequestHttpException('takenAt must be a valid date string.');
+            throw new BadRequestHttpException($field.' must be a valid date string.');
         }
     }
 
@@ -250,7 +348,7 @@ class AlbumController
         }
     }
 
-    private function normalize(Album $album): array
+    private function normalize(Album $album, ?int $photoCount = null, ?int $childCount = null): array
     {
         return [
             'id' => (string) $album->getId(),
@@ -260,13 +358,30 @@ class AlbumController
             'visibility' => $album->getVisibility()->value,
             'sortOrder' => $album->getSortOrder(),
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
+            'cover' => $this->normalizeCover($album->getCoverPhoto()),
             'parentId' => $album->getParent()?->getId()->toRfc4122(),
-            'childCount' => $album->getChildren()->count(),
-            'photoCount' => $album->getPhotos()->count(),
+            'childCount' => $childCount ?? $album->getChildren()->count(),
+            'photoCount' => $photoCount ?? $album->getPhotos()->count(),
             'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
+            'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
             'createdAt' => $album->getCreatedAt()->format(\DATE_ATOM),
             'updatedAt' => $album->getUpdatedAt()->format(\DATE_ATOM),
+        ];
+    }
+
+    /** @return array{id: string, avifPath: ?string, thumbPaths: array<string, string>, originalPath: ?string}|null */
+    private function normalizeCover(?Photo $photo): ?array
+    {
+        if (null === $photo) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $photo->getId(),
+            'avifPath' => $photo->getAvifPath(),
+            'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
         ];
     }
 }

@@ -74,7 +74,7 @@ final class AdminAuthTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true);
-        $this->assertSame(self::EMAIL, $data['email']);
+        $this->assertSame(self::EMAIL, $data['data']['email']);
     }
 
     public function testMeRequiresAuthentication(): void
@@ -96,7 +96,7 @@ final class AdminAuthTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $data = json_decode((string) $this->client->getResponse()->getContent(), true);
-        $this->assertSame(self::EMAIL, $data['email']);
+        $this->assertSame(self::EMAIL, $data['data']['email']);
     }
 
     public function testLogoutEndsSession(): void
