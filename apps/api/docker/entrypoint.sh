@@ -1,6 +1,13 @@
 #!/bin/sh
 set -e
 
+# Import from live v3 MySQL needs pdo_mysql. Older images may lack it until
+# rebuild; install once at container start if missing (CLI + FPM share the .so).
+if ! php -m 2>/dev/null | grep -qi '^pdo_mysql$'; then
+  echo "gallery-entrypoint: installing pdo_mysql..."
+  docker-php-ext-install -j"$(nproc)" pdo_mysql
+fi
+
 # Bind-mounted ./apps/api from the host is often owned by uid 1000; php-fpm
 # runs as www-data and must write cache/logs.
 mkdir -p /app/var/cache /app/var/log

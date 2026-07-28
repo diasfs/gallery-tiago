@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-dev \
         libglib2.0-0 \
         libgomp1 \
+        libvips-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

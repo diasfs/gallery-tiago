@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN docker-php-ext-configure pgsql \
-    && docker-php-ext-install -j"$(nproc)" pdo_pgsql pgsql zip \
+    && docker-php-ext-install -j"$(nproc)" pdo_pgsql pdo_mysql pgsql zip \
     && pecl install redis vips \
     && docker-php-ext-enable redis vips
 

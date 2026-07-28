@@ -25,6 +25,12 @@ services:
     volumes:
       - ./apps/api:/app
       - ./volumes/media_data:/var/gallery/media
+      # Read-only v3 image tree for `app:import-v3` (host: ../old/_img).
+      - ../old/_img:/var/gallery/v3-img:ro
+      # Bind php.ini so memory_limit etc. apply without image rebuild.
+      - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
+      # Entrypoint installs pdo_mysql if the image was built without it.
+      - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
     env_file: .env
     # Host 8080 is often taken (e.g. phpMyAdmin); use 8081 for the gallery API.
     ports: ["8081:80"]
@@ -35,21 +41,50 @@ services:
 
   worker-convert:
     build: ./apps/api
-    # Consumes `convert` (AVIF/thumbnail), `faces` (DetectFacesHandler bridge
-    # to gallery:faces), and `tags` (SuggestTagsHandler bridge to gallery:tags).
+    # Consumes only `convert` (AVIF/thumbnail). Faces/tags bridges run in
+    # worker-bridge so the convert backlog cannot starve them.
     # Run as www-data so converted files share ownership with php-fpm uploads.
+    # --no-debug: long-running consume in APP_ENV=dev leaks TraceableEventDispatcher /
+    # UnitOfWork memory across tens of thousands of messages.
+    # No --time-limit: Docker restarts the container if the process exits
+    # (e.g. --memory-limit). restart: unless-stopped covers crashes/OOM.
+    restart: unless-stopped
     command: >-
       su -s /bin/sh www-data -c
-      'php bin/console messenger:consume convert faces tags -vv --time-limit=3600'
+      'php -d memory_limit=512M bin/console --no-debug messenger:consume convert --memory-limit=400M'
     volumes:
       - ./apps/api:/app
       - ./volumes/media_data:/var/gallery/media
+      - ../old/_img:/var/gallery/v3-img:ro
+      - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
+      - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
     env_file: .env
+    environment:
+      APP_DEBUG: "0"
+    depends_on: [api, redis, postgres]
+    networks: [gallery]
+
+  # Bridges Messenger `faces`/`tags` → Redis lists gallery:faces / gallery:tags
+  # for the Python workers. Must stay separate from convert (fast LPUSH vs slow AVIF).
+  worker-bridge:
+    build: ./apps/api
+    restart: unless-stopped
+    command: >-
+      su -s /bin/sh www-data -c
+      'php -d memory_limit=256M bin/console --no-debug messenger:consume faces tags --memory-limit=200M'
+    volumes:
+      - ./apps/api:/app
+      - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
+      - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
+    env_file: .env
+    environment:
+      APP_DEBUG: "0"
     depends_on: [api, redis, postgres]
     networks: [gallery]
 
   worker-faces:
     build: ./apps/worker-faces
+    restart: unless-stopped
     volumes:
       - ./apps/worker-faces:/app
       - ./volumes/media_data:/var/gallery/media
@@ -59,6 +94,7 @@ services:
 
   worker-tags:
     build: ./apps/worker-tags
+    restart: unless-stopped
     volumes:
       - ./apps/worker-tags:/app
       - ./volumes/media_data:/var/gallery/media
