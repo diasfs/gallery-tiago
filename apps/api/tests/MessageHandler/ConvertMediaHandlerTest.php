@@ -143,6 +143,38 @@ final class ConvertMediaHandlerTest extends KernelTestCase
         $this->assertCount(0, $tagsTransport->getSent());
     }
 
+    public function testHandlerClearsStaleOriginalWhenAvifAlreadyExists(): void
+    {
+        $photo = $this->makePhotoWithOriginal();
+        $photoId = (string) $photo->getId();
+        $originalRelative = $photo->getOriginalPath();
+        $this->assertNotNull($originalRelative);
+
+        $avifRelative = $this->storage->avifMasterPath($photoId);
+        $avifAbsolute = $this->storage->absolutePath($avifRelative);
+        @mkdir(\dirname($avifAbsolute), 0775, true);
+        copy(\dirname(__DIR__).'/fixtures/sample.jpg', $avifAbsolute);
+
+        @unlink($this->storage->absolutePath($originalRelative));
+        $photo->setAvifPath($avifRelative);
+        $photo->setMediaStatus(\App\Enum\MediaStatus::Failed);
+        $photo->setProcessingError('media: Source image does not exist.');
+        $this->em->flush();
+
+        $handler = static::getContainer()->get(ConvertMediaHandler::class);
+        $handler(new ConvertMediaMessage($photoId));
+
+        $photo = $this->em->find(Photo::class, $photoId);
+        $this->assertNotNull($photo);
+        $this->assertSame('done', $photo->getMediaStatus()->value);
+        $this->assertNull($photo->getOriginalPath());
+        $this->assertNull($photo->getProcessingError());
+
+        /** @var InMemoryTransport $facesTransport */
+        $facesTransport = static::getContainer()->get('messenger.transport.faces');
+        $this->assertCount(0, $facesTransport->getSent());
+    }
+
     public function testHandlerIgnoresUnknownPhotoId(): void
     {
         $handler = static::getContainer()->get(ConvertMediaHandler::class);

@@ -62,6 +62,23 @@ final class ConvertMediaHandler
 
                 $sourceAbsolute = $this->storage->absolutePath($originalRelative);
 
+                if (!is_file($sourceAbsolute)) {
+                    $avifRelative = $photo->getAvifPath();
+                    if (null !== $avifRelative && is_file($this->storage->absolutePath($avifRelative))) {
+                        // Original was purged after a prior successful convert; clear stale path.
+                        $photo->setOriginalPath(null);
+                        $photo->setMediaStatus(MediaStatus::Done);
+                        $photo->setProcessingError(
+                            ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
+                        );
+                        $this->em->flush();
+
+                        return;
+                    }
+
+                    throw new \RuntimeException(\sprintf('Source image "%s" does not exist.', $sourceAbsolute));
+                }
+
                 $masterRelative = $this->storage->avifMasterPath($photoId);
                 $masterAbsolute = $this->storage->absolutePath($masterRelative);
 
