@@ -7,7 +7,10 @@ use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Enum\AlbumVisibility;
 use App\Repository\PhotoRepository;
+use App\Service\ViewDeduplicatorInterface;
+use App\Service\ViewVisitorIdentifier;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
@@ -17,8 +20,11 @@ use Symfony\Component\Uid\Uuid;
 #[Route('/api/photos')]
 class PhotoController
 {
-    public function __construct(private readonly PhotoRepository $photos)
-    {
+    public function __construct(
+        private readonly PhotoRepository $photos,
+        private readonly ViewDeduplicatorInterface $viewDeduplicator,
+        private readonly ViewVisitorIdentifier $viewVisitor,
+    ) {
     }
 
     #[Route('/{id}', name: 'public_photos_show', methods: ['GET'])]
@@ -36,6 +42,31 @@ class PhotoController
         }
 
         return new JsonResponse(['data' => $this->normalize($photo)]);
+    }
+
+    #[Route('/{id}/view', name: 'public_photos_record_view', methods: ['POST'])]
+    public function recordView(string $id, Request $request): JsonResponse
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $photo = $this->photos->findVisibleById($uuid);
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $visitorId = $this->viewVisitor->resolve($request);
+        if ($this->viewDeduplicator->claim('photo', (string) $photo->getId(), $visitorId)) {
+            $photo->setViewCount($this->photos->incrementViewCount($photo->getId()));
+        }
+
+        $response = new JsonResponse(['data' => ['viewCount' => $photo->getViewCount()]]);
+        $this->viewVisitor->attachCookie($request, $response, $visitorId);
+
+        return $response;
     }
 
     /**
@@ -61,6 +92,7 @@ class PhotoController
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
             'prevId' => $prevId,
@@ -128,7 +160,7 @@ class PhotoController
             $people[] = [
                 'id' => $personId,
                 'name' => $person->getName(),
-                'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
+                'avatarCropPath' => $person->getEffectiveAvatarPath(),
             ];
         }
 

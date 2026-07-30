@@ -3,6 +3,8 @@
 namespace App\Controller\Api\Admin;
 
 use App\Entity\Tag;
+use App\Enum\TagListSort;
+use App\Http\Pagination;
 use App\Repository\TagRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -33,13 +35,24 @@ class TagController
     public function list(Request $request): JsonResponse
     {
         $q = $request->query->get('q');
-        $rows = $this->tags->searchWithPhotoCount(\is_string($q) ? $q : null);
+        $sort = $this->parseSort($request);
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, 50, 100);
+        $result = $this->tags->searchPaginatedWithPhotoCount(
+            \is_string($q) ? $q : null,
+            $page,
+            $perPage,
+            $sort,
+        );
         $data = array_map(
             fn (array $row): array => $this->normalize($row['tag'], $row['photoCount']),
-            $rows,
+            $result['items'],
         );
 
-        return new JsonResponse(['data' => $data]);
+        return new JsonResponse([
+            'data' => $data,
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
     }
 
     #[Route('', name: 'admin_tags_create', methods: ['POST'])]
@@ -126,6 +139,17 @@ class TagController
         } catch (\JsonException) {
             throw new BadRequestHttpException('Invalid JSON body.');
         }
+    }
+
+    private function parseSort(Request $request): TagListSort
+    {
+        $value = $request->query->getString('sort', TagListSort::Recent->value);
+        $sort = TagListSort::tryFrom($value);
+        if (null === $sort) {
+            throw new BadRequestHttpException('sort must be name, slug, or recent.');
+        }
+
+        return $sort;
     }
 
     /** @return array<string, mixed> */

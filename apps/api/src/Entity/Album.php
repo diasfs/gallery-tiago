@@ -48,6 +48,14 @@ class Album
     #[ORM\Column]
     private int $sortOrder = 0;
 
+    /** Public detail-page views (legacy `album.visit`). */
+    #[ORM\Column]
+    private int $viewCount = 0;
+
+    /** Photos shown per page on the public album view (legacy `album.regs`). */
+    #[ORM\Column(options: ['default' => 48])]
+    private int $photosPerPage = 48;
+
     /** Legacy gallery `id_album` when imported; used for “recent” ordering like old (`id_album DESC`). */
     #[ORM\Column(nullable: true, unique: true)]
     private ?int $legacyId = null;
@@ -168,6 +176,30 @@ class Album
     public function setSortOrder(int $sortOrder): static
     {
         $this->sortOrder = $sortOrder;
+
+        return $this;
+    }
+
+    public function getViewCount(): int
+    {
+        return $this->viewCount;
+    }
+
+    public function setViewCount(int $viewCount): static
+    {
+        $this->viewCount = max(0, $viewCount);
+
+        return $this;
+    }
+
+    public function getPhotosPerPage(): int
+    {
+        return $this->photosPerPage;
+    }
+
+    public function setPhotosPerPage(int $photosPerPage): static
+    {
+        $this->photosPerPage = max(1, $photosPerPage);
 
         return $this;
     }

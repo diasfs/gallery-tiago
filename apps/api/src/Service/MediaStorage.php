@@ -35,6 +35,22 @@ final class MediaStorage
     }
 
     /**
+     * Moves an uploaded avatar into the avatars tree and returns its path
+     * relative to MEDIA_ROOT (`avatars/{aa}/{personId}.{ext}`).
+     */
+    public function storePersonAvatar(UploadedFile $file, string $personId): string
+    {
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'bin');
+        $relativePath = \sprintf('avatars/%s/%s.%s', substr($personId, 0, 2), $personId, $extension);
+
+        $absoluteDir = \dirname($this->absolutePath($relativePath));
+        $this->ensureDirectory($absoluteDir);
+        $file->move($absoluteDir, basename($relativePath));
+
+        return $relativePath;
+    }
+
+    /**
      * Copies an existing file into the originals tree (e.g. v3 import) and
      * returns its path relative to MEDIA_ROOT.
      */

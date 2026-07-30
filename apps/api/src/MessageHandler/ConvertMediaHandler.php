@@ -5,6 +5,7 @@ namespace App\MessageHandler;
 use App\Enum\FacesStatus;
 use App\Enum\MediaStatus;
 use App\Enum\TagsStatus;
+use App\Entity\Photo;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
 use App\Message\SuggestTagsMessage;
@@ -12,6 +13,7 @@ use App\Repository\PhotoRepository;
 use App\Service\AvifConverter;
 use App\Service\MediaStorage;
 use App\Service\ProcessingErrorBag;
+use App\Service\ProcessingSettingsReader;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -28,6 +30,7 @@ final class ConvertMediaHandler
         private readonly AvifConverter $converter,
         private readonly MessageBusInterface $bus,
         private readonly LoggerInterface $logger,
+        private readonly ProcessingSettingsReader $settings,
     ) {
     }
 
@@ -57,22 +60,20 @@ final class ConvertMediaHandler
             try {
                 $originalRelative = $photo->getOriginalPath();
                 if (null === $originalRelative || '' === $originalRelative) {
+                    // Duplicate ConvertMediaMessage after a successful convert (original already purged).
+                    if ($this->markDoneIfAvifPresent($photo)) {
+                        return;
+                    }
+
                     throw new \RuntimeException('Photo has no original path to convert.');
                 }
 
                 $sourceAbsolute = $this->storage->absolutePath($originalRelative);
 
                 if (!is_file($sourceAbsolute)) {
-                    $avifRelative = $photo->getAvifPath();
-                    if (null !== $avifRelative && is_file($this->storage->absolutePath($avifRelative))) {
-                        // Original was purged after a prior successful convert; clear stale path.
-                        $photo->setOriginalPath(null);
-                        $photo->setMediaStatus(MediaStatus::Done);
-                        $photo->setProcessingError(
-                            ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
-                        );
-                        $this->em->flush();
-
+                    // Another worker may have finished convert since we loaded the entity.
+                    $this->em->refresh($photo);
+                    if ($this->markDoneIfAvifPresent($photo)) {
                         return;
                     }
 
@@ -99,8 +100,12 @@ final class ConvertMediaHandler
                 $photo->setWidth($result->width);
                 $photo->setHeight($result->height);
                 $photo->setMediaStatus(MediaStatus::Done);
-                $photo->setFacesStatus(FacesStatus::Detecting);
-                $photo->setTagsStatus(TagsStatus::Detecting);
+
+                $facesEnabled = $this->settings->isFacesEnabled();
+                $tagsEnabled = $this->settings->isTagsEnabled();
+
+                $photo->setFacesStatus($facesEnabled ? FacesStatus::Queued : FacesStatus::Disabled);
+                $photo->setTagsStatus($tagsEnabled ? TagsStatus::Queued : TagsStatus::Disabled);
                 $photo->setProcessingError(
                     ProcessingErrorBag::clear(
                         ProcessingErrorBag::clear(
@@ -112,8 +117,12 @@ final class ConvertMediaHandler
                 );
                 $this->em->flush();
 
-                $this->bus->dispatch(new DetectFacesMessage($photoId));
-                $this->bus->dispatch(new SuggestTagsMessage($photoId));
+                if ($facesEnabled) {
+                    $this->bus->dispatch(new DetectFacesMessage($photoId));
+                }
+                if ($tagsEnabled) {
+                    $this->bus->dispatch(new SuggestTagsMessage($photoId));
+                }
             } catch (\Throwable $e) {
                 $photo->setMediaStatus(MediaStatus::Failed);
                 $photo->setProcessingError(ProcessingErrorBag::set($photo->getProcessingError(), 'media', $e->getMessage()));
@@ -129,5 +138,28 @@ final class ConvertMediaHandler
             // Long-running messenger:consume must not retain entities across jobs.
             $this->em->clear();
         }
+    }
+
+    /**
+     * When AVIF already exists on disk, treat convert as done (idempotent re-delivery).
+     */
+    private function markDoneIfAvifPresent(Photo $photo): bool
+    {
+        $avifRelative = $photo->getAvifPath();
+        if (null === $avifRelative || '' === $avifRelative) {
+            return false;
+        }
+        if (!is_file($this->storage->absolutePath($avifRelative))) {
+            return false;
+        }
+
+        $photo->setOriginalPath(null);
+        $photo->setMediaStatus(MediaStatus::Done);
+        $photo->setProcessingError(
+            ProcessingErrorBag::clear($photo->getProcessingError(), 'media'),
+        );
+        $this->em->flush();
+
+        return true;
     }
 }

@@ -36,6 +36,65 @@ class AlbumController
     ) {
     }
 
+    #[Route('/parent-options', name: 'admin_albums_parent_options', methods: ['GET'])]
+    public function parentOptions(Request $request): JsonResponse
+    {
+        $page = Pagination::page($request);
+        $perPage = Pagination::perPage($request, 20);
+        $q = $request->query->get('q');
+        $q = \is_string($q) && '' !== trim($q) ? trim($q) : null;
+
+        $excludeIds = [];
+        $exclude = $request->query->get('exclude');
+        if (\is_string($exclude) && '' !== $exclude) {
+            $album = $this->findOrFail($exclude);
+            $excludeIds[] = (string) $album->getId();
+            $excludeIds = array_merge($excludeIds, $this->albums->findDescendantIds($album));
+        }
+
+        $result = $this->albums->findParentOptionsPaginated($page, $perPage, $q, $excludeIds);
+        $data = [];
+        foreach ($result['items'] as $album) {
+            $data[] = [
+                'id' => (string) $album->getId(),
+                'title' => $album->getTitle(),
+                'parentId' => $album->getParent()?->getId()->toRfc4122(),
+            ];
+        }
+
+        return new JsonResponse([
+            'data' => $data,
+            'meta' => Pagination::meta($page, $perPage, $result['total']),
+        ]);
+    }
+
+    /**
+     * Replaces root-album order. `albumIds` must list every root album.
+     */
+    #[Route('/order', name: 'admin_albums_order', methods: ['PUT'])]
+    public function reorderRoots(Request $request): JsonResponse
+    {
+        $orderedIds = $this->parseAlbumIds($request);
+        $albums = $this->albums->findRootsOrdered();
+        $this->applyReorder($albums, $orderedIds);
+
+        $ids = array_map(static fn (Album $album): string => (string) $album->getId(), $albums);
+        $photoCounts = $this->albums->countPhotosForAlbumIds($ids);
+        $childCounts = $this->albums->countChildrenForParentIds($ids);
+
+        $data = [];
+        foreach ($this->albums->findRootsOrdered() as $album) {
+            $id = (string) $album->getId();
+            $data[] = $this->normalize(
+                $album,
+                photoCount: $photoCounts[$id] ?? 0,
+                childCount: $childCounts[$id] ?? 0,
+            );
+        }
+
+        return new JsonResponse(['data' => $data]);
+    }
+
     #[Route('', name: 'admin_albums_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
@@ -220,6 +279,13 @@ class AlbumController
             $album->setSortOrder($payload['sortOrder']);
         }
 
+        if (\array_key_exists('photosPerPage', $payload)) {
+            if (!\is_int($payload['photosPerPage']) || $payload['photosPerPage'] < 1) {
+                throw new BadRequestHttpException('photosPerPage must be an integer greater than or equal to 1.');
+            }
+            $album->setPhotosPerPage($payload['photosPerPage']);
+        }
+
         if (\array_key_exists('parentId', $payload)) {
             if (null === $payload['parentId']) {
                 $album->setParent(null);
@@ -227,6 +293,7 @@ class AlbumController
                 $parent = $this->findOrFail((string) $payload['parentId']);
                 $album->setParent($parent);
             }
+            $this->assertValidParent($album);
         }
 
         if (\array_key_exists('coverPhotoId', $payload)) {
@@ -245,6 +312,26 @@ class AlbumController
 
         if (\array_key_exists('locationId', $payload)) {
             $album->setLocation($this->resolveLocation($payload['locationId']));
+        }
+    }
+
+    private function assertValidParent(Album $album): void
+    {
+        $parent = $album->getParent();
+        if (null === $parent) {
+            return;
+        }
+
+        if ($parent->getId()->equals($album->getId())) {
+            throw new BadRequestHttpException('An album cannot be its own parent.');
+        }
+
+        $ancestor = $parent->getParent();
+        while (null !== $ancestor) {
+            if ($ancestor->getId()->equals($album->getId())) {
+                throw new BadRequestHttpException('An album cannot be moved under its own descendant.');
+            }
+            $ancestor = $ancestor->getParent();
         }
     }
 
@@ -348,6 +435,62 @@ class AlbumController
         }
     }
 
+    /** @return list<string> */
+    private function parseAlbumIds(Request $request): array
+    {
+        $payload = $this->decode($request);
+        $albumIds = $payload['albumIds'] ?? null;
+        if (!\is_array($albumIds) || [] === $albumIds) {
+            throw new BadRequestHttpException('albumIds must be a non-empty array of album ids.');
+        }
+
+        $ordered = [];
+        foreach ($albumIds as $id) {
+            if (!\is_string($id) || '' === $id) {
+                throw new BadRequestHttpException('albumIds must contain only non-empty strings.');
+            }
+            $ordered[] = $id;
+        }
+
+        if (\count($ordered) !== \count(array_unique($ordered))) {
+            throw new BadRequestHttpException('albumIds must not contain duplicates.');
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * @param Album[]  $albums
+     * @param string[] $orderedIds
+     */
+    private function applyReorder(array $albums, array $orderedIds, ?Album $expectedParent = null): void
+    {
+        if (\count($orderedIds) !== \count($albums)) {
+            throw new BadRequestHttpException('albumIds must include every album exactly once.');
+        }
+
+        $byId = [];
+        foreach ($albums as $album) {
+            $parentId = $album->getParent()?->getId()->toRfc4122();
+            $expectedParentId = $expectedParent?->getId()->toRfc4122();
+            if ($parentId !== $expectedParentId) {
+                throw new BadRequestHttpException('albumIds contains an album outside this scope.');
+            }
+            $byId[(string) $album->getId()] = $album;
+        }
+
+        foreach ($orderedIds as $id) {
+            if (!isset($byId[$id])) {
+                throw new BadRequestHttpException('albumIds contains an album that does not belong to this scope.');
+            }
+        }
+
+        foreach ($orderedIds as $index => $id) {
+            $byId[$id]->setSortOrder($index);
+        }
+        $this->em->flush();
+    }
+
     private function normalize(Album $album, ?int $photoCount = null, ?int $childCount = null): array
     {
         return [
@@ -357,6 +500,7 @@ class AlbumController
             'description' => $album->getDescription(),
             'visibility' => $album->getVisibility()->value,
             'sortOrder' => $album->getSortOrder(),
+            'photosPerPage' => $album->getPhotosPerPage(),
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
             'cover' => $this->normalizeCover($album->getCoverPhoto()),
             'parentId' => $album->getParent()?->getId()->toRfc4122(),

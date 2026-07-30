@@ -28,6 +28,20 @@ class TagController
     #[Route('', name: 'public_tags_search', methods: ['GET'], priority: 10)]
     public function search(Request $request): JsonResponse
     {
+        if ($request->query->getBoolean('index')) {
+            $rows = $this->tags->listPublicWithPhotoCount();
+
+            return new JsonResponse([
+                'data' => array_map(
+                    fn (array $row): array => [
+                        ...$this->normalizeTag($row['tag']),
+                        'photoCount' => $row['photoCount'],
+                    ],
+                    $rows,
+                ),
+            ]);
+        }
+
         $q = $request->query->get('q');
         $q = \is_string($q) ? $q : null;
         $tags = $this->tags->searchPublic($q);
@@ -101,6 +115,7 @@ class TagController
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
         ];
     }
 }

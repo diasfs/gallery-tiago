@@ -5,16 +5,19 @@ namespace App\Service;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Pushes photo ids to the plain Redis list `gallery:tags` consumed by the
- * Python RAM tagging worker (apps/worker-tags).
+ * Publishes photo ids to the Redis stream `gallery:tags:stream` consumed by
+ * the Python tag-suggestion worker (apps/worker-tags).
+ *
+ * Uses Redis Streams (XADD) instead of a plain list so the worker can
+ * acknowledge only after persisting a terminal tags_status. Abandoned
+ * deliveries are reclaimable via XAUTOCLAIM.
  *
  * Bypasses Symfony Messenger's Redis transport the same way
- * RedisFaceQueuePublisher does: Messenger stream envelopes are PHP-serialized
- * and unusable by a non-PHP consumer. We RPUSH `{"photo_id":"<uuid>"}` instead.
+ * RedisFaceQueuePublisher does.
  */
 final class RedisTagQueuePublisher implements TagQueuePublisherInterface
 {
-    private const QUEUE_KEY = 'gallery:tags';
+    private const STREAM_KEY = 'gallery:tags:stream';
 
     private ?\Redis $redis = null;
 
@@ -26,8 +29,7 @@ final class RedisTagQueuePublisher implements TagQueuePublisherInterface
 
     public function publish(string $photoId): void
     {
-        $payload = json_encode(['photo_id' => $photoId], JSON_THROW_ON_ERROR);
-        $this->connection()->rPush(self::QUEUE_KEY, $payload);
+        $this->connection()->xAdd(self::STREAM_KEY, '*', ['photo_id' => $photoId]);
     }
 
     private function connection(): \Redis

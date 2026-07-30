@@ -110,6 +110,32 @@ final class ProcessingAdminTest extends WebTestCase
         $this->assertGreaterThanOrEqual(1, \count($this->convertTransport()->get()));
     }
 
+    public function testSummaryAndPhotosIncludeQueuedStatus(): void
+    {
+        $queued = new Photo($this->album, null);
+        $queued->setTitle('Queued tags');
+        $queued->setMediaStatus(MediaStatus::Done);
+        $queued->setAvifPath('converted/aa/queued/master.avif');
+        $queued->setTagsStatus(\App\Enum\TagsStatus::Queued);
+        $queued->setFacesStatus(\App\Enum\FacesStatus::Queued);
+        $this->em->persist($queued);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/processing/summary');
+        $this->assertResponseIsSuccessful();
+        $summary = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(1, $summary['tags']['queued'] ?? 0);
+        $this->assertSame(1, $summary['faces']['queued'] ?? 0);
+
+        $this->client->request('GET', '/api/admin/processing/photos?stage=tags&status=queued&page=1&perPage=10');
+        $this->assertResponseIsSuccessful();
+        $body = json_decode($this->client->getResponse()->getContent(), true);
+        $this->assertCount(1, $body['data']);
+        $this->assertSame('queued', $body['data'][0]['tagsStatus']);
+        $this->assertSame(1, $body['meta']['total']);
+    }
+
     private function clearFixtures(): void
     {
         foreach ($this->em->getRepository(Photo::class)->findAll() as $photo) {

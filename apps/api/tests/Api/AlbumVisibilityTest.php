@@ -163,6 +163,26 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->assertIsArray($body['data']);
         $this->assertSame(1, $body['meta']['page']);
         $this->assertArrayHasKey('total', $body['meta']);
+        $this->assertSame(48, $body['meta']['perPage']);
+    }
+
+    public function testPublicAlbumPhotosUsesAlbumPhotosPerPageAndIgnoresQuery(): void
+    {
+        $album = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
+        $this->assertNotNull($album);
+        $album->setPhotosPerPage(2);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/albums/landscapes');
+        $this->assertResponseIsSuccessful();
+        $detail = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(2, $detail['photosPerPage']);
+
+        $this->client->request('GET', '/api/albums/landscapes/photos?perPage=100');
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(2, $body['meta']['perPage']);
+        $this->assertLessThanOrEqual(2, \count($body['data']));
     }
 
     public function testPublicAlbumChildrenOrderedByLegacyIdDescNotSortOrder(): void

@@ -14,6 +14,8 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
 
     private readonly bool $hasAlbumDataColumn;
 
+    private readonly bool $hasAlbumRegsColumn;
+
     public function __construct(
         private readonly string $dsn,
         private readonly string $user,
@@ -21,6 +23,7 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
     ) {
         $this->pdo = $this->connect();
         $this->hasAlbumDataColumn = $this->columnExists('album', 'data');
+        $this->hasAlbumRegsColumn = $this->columnExists('album', 'regs');
     }
 
     public static function fromDatabaseUrl(string $databaseUrl): self
@@ -53,8 +56,9 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
     public function fetchAlbums(): array
     {
         $dataSelect = $this->hasAlbumDataColumn ? 'a.`data`' : 'NULL AS `data`';
+        $regsSelect = $this->hasAlbumRegsColumn ? 'a.`regs`' : 'NULL AS `regs`';
         $sql = <<<SQL
-            SELECT a.id_album, a.id_pai, a.titulo, a.descricao, a.url, a.ativo, a.ordem, {$dataSelect}
+            SELECT a.id_album, a.id_pai, a.titulo, a.descricao, a.url, a.ativo, a.ordem, {$dataSelect}, a.visit, {$regsSelect}
             FROM album a
             ORDER BY a.id_album ASC
             SQL;
@@ -62,6 +66,8 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
         $rows = $this->run(fn (): array => $this->pdo->query($sql)->fetchAll());
 
         return array_map(static function (array $row): array {
+            $regs = (int) ($row['regs'] ?? 0);
+
             return [
                 'id_album' => (int) $row['id_album'],
                 'id_pai' => (int) $row['id_pai'],
@@ -71,30 +77,79 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
                 'ativo' => (string) $row['ativo'],
                 'ordem' => (int) $row['ordem'],
                 'data' => null !== $row['data'] && '' !== $row['data'] ? (string) $row['data'] : null,
+                'visit' => (int) ($row['visit'] ?? 0),
+                'regs' => $regs >= 1 ? $regs : 48,
             ];
         }, $rows);
     }
 
     public function fetchPhotosForAlbum(int $albumId): array
     {
+        // Match classic old/_controller/album.php::show() display order:
+        // UNION of active child albums + photos, then ORDER BY data_cadastro DESC.
+        // Only photo rows are returned; albums are kept in the UNION because they
+        // affect MySQL's resulting photo sequence (as on gallery.meuser.com.br).
         $rows = $this->run(function () use ($albumId): array {
-            $stmt = $this->pdo->prepare(
-                'SELECT id_foto, id_album, titulo, foto, ordem FROM foto WHERE id_album = :id ORDER BY ordem ASC, id_foto ASC'
-            );
+            $sql = <<<'SQL'
+                (
+                    SELECT
+                        id_album,
+                        '' AS id_foto,
+                        'album' AS tipo,
+                        id_pai,
+                        titulo,
+                        descricao,
+                        data_cadastro,
+                        url,
+                        visit,
+                        ordem,
+                        '' AS foto
+                    FROM album
+                    WHERE id_pai = :id AND ativo = 'S'
+                    ORDER BY ativo ASC, ordem ASC
+                )
+                UNION
+                (
+                    SELECT
+                        id_album,
+                        id_foto,
+                        'foto' AS tipo,
+                        '' AS id_pai,
+                        titulo,
+                        '' AS descricao,
+                        '' AS data_cadastro,
+                        '' AS url,
+                        visit,
+                        ordem,
+                        foto
+                    FROM foto
+                    WHERE id_album = :id
+                    ORDER BY ordem ASC
+                )
+                ORDER BY data_cadastro DESC
+                SQL;
+            $stmt = $this->pdo->prepare($sql);
             $stmt->execute(['id' => $albumId]);
 
             return $stmt->fetchAll();
         });
 
-        return array_map(static function (array $row): array {
-            return [
+        $photos = [];
+        foreach ($rows as $row) {
+            if ('foto' !== (string) ($row['tipo'] ?? '')) {
+                continue;
+            }
+            $photos[] = [
                 'id_foto' => (int) $row['id_foto'],
                 'id_album' => (int) $row['id_album'],
                 'titulo' => null !== $row['titulo'] && '' !== $row['titulo'] ? (string) $row['titulo'] : null,
                 'foto' => (string) $row['foto'],
                 'ordem' => (int) $row['ordem'],
+                'visit' => (int) ($row['visit'] ?? 0),
             ];
-        }, $rows);
+        }
+
+        return $photos;
     }
 
     public function fetchDestaques(): array

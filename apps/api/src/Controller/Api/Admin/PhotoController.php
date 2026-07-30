@@ -6,6 +6,7 @@ use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
+use App\Exception\ProcessingStageDisabledException;
 use App\Service\PhotoDeleter;
 use App\Service\PhotoReprocessor;
 use Doctrine\ORM\EntityManagerInterface;
@@ -14,6 +15,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
@@ -99,7 +101,11 @@ class PhotoController
         $photo = $this->findOrFail($id);
         $scope = $this->resolveScope($request);
 
-        $this->reprocessor->reprocess($photo, $scope);
+        try {
+            $this->reprocessor->reprocess($photo, $scope);
+        } catch (ProcessingStageDisabledException $e) {
+            throw new ConflictHttpException($e->getMessage(), $e);
+        }
 
         return new JsonResponse(['data' => $this->normalize($photo)]);
     }
@@ -223,7 +229,7 @@ class PhotoController
             $people[] = [
                 'id' => $personId,
                 'name' => $person->getName(),
-                'avatarCropPath' => $person->getEffectiveAvatarFace()?->getCropPath(),
+                'avatarCropPath' => $person->getEffectiveAvatarPath(),
             ];
         }
 

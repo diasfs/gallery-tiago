@@ -369,7 +369,10 @@ final class PhotoMetadataTest extends WebTestCase
         $this->client->request('GET', '/api/admin/tags');
 
         $this->assertResponseIsSuccessful();
-        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $data = $body['data'];
+        $this->assertArrayHasKey('meta', $body);
+        $this->assertSame(1, $body['meta']['page']);
         $this->assertNotEmpty($data);
         $dog = null;
         foreach ($data as $row) {

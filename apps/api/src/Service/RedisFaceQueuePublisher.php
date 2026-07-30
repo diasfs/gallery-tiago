@@ -5,20 +5,19 @@ namespace App\Service;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
- * Pushes photo ids to the plain Redis list `gallery:faces` consumed by the
- * Python InsightFace worker (apps/worker-faces).
+ * Publishes photo ids to the Redis stream `gallery:faces:stream` consumed by
+ * the Python InsightFace worker (apps/worker-faces).
  *
- * This intentionally bypasses Symfony Messenger's own Redis transport
- * (config/packages/messenger.yaml `faces` transport): Messenger's Redis
- * transport uses stream entries with PHP-serialized envelopes, which a
- * non-PHP consumer cannot parse. Instead we RPUSH a minimal JSON payload
- * `{"photo_id":"<uuid>"}`, per the chosen contract in
- * docs/superpowers/specs/2026-07-19-photo-gallery-design.md §6 and
- * .superpowers/sdd/task-7-brief.md.
+ * Uses Redis Streams (XADD) instead of a plain list so the worker can
+ * acknowledge only after persisting a terminal faces_status. Abandoned
+ * deliveries are reclaimable via XAUTOCLAIM.
+ *
+ * Intentionally bypasses Symfony Messenger's Redis transport envelopes
+ * (PHP-serialized) so a non-PHP consumer can parse the payload.
  */
 final class RedisFaceQueuePublisher implements FaceQueuePublisherInterface
 {
-    private const QUEUE_KEY = 'gallery:faces';
+    private const STREAM_KEY = 'gallery:faces:stream';
 
     private ?\Redis $redis = null;
 
@@ -30,8 +29,7 @@ final class RedisFaceQueuePublisher implements FaceQueuePublisherInterface
 
     public function publish(string $photoId): void
     {
-        $payload = json_encode(['photo_id' => $photoId], JSON_THROW_ON_ERROR);
-        $this->connection()->rPush(self::QUEUE_KEY, $payload);
+        $this->connection()->xAdd(self::STREAM_KEY, '*', ['photo_id' => $photoId]);
     }
 
     private function connection(): \Redis

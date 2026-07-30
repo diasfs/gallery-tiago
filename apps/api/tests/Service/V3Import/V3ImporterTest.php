@@ -95,10 +95,22 @@ final class V3ImporterTest extends KernelTestCase
         $this->assertSame(AlbumVisibility::Private, $child->getVisibility());
         $this->assertSame($root->getId()->toRfc4122(), $child->getParent()?->getId()->toRfc4122());
         $this->assertNotNull($root->getCoverPhoto());
+        $this->assertSame(42, $root->getViewCount());
+        $this->assertSame(0, $child->getViewCount());
+        $this->assertSame(30, $root->getPhotosPerPage());
+        $this->assertSame(48, $child->getPhotosPerPage());
 
         /** @var PhotoRepository $photos */
         $photos = $this->em->getRepository(Photo::class);
         $this->assertCount(2, $photos->findAll());
+        $cover = $photos->findOneBy(['title' => 'Cover']);
+        $this->assertNotNull($cover);
+        $this->assertSame(0, $cover->getSortOrder());
+        $this->assertSame(99, $cover->getViewCount());
+        $childPhoto = $photos->findOneBy(['album' => $child]);
+        $this->assertNotNull($childPhoto);
+        $this->assertSame(0, $childPhoto->getSortOrder());
+        $this->assertSame(5, $childPhoto->getViewCount());
 
         $envelopes = $this->convertTransport()->get();
         $this->assertCount(2, $envelopes);
@@ -113,16 +125,139 @@ final class V3ImporterTest extends KernelTestCase
         $this->importer->import($source, $this->options());
         $this->convertTransport()->reset();
 
+        /** @var PhotoRepository $photos */
+        $photos = $this->em->getRepository(Photo::class);
+        $cover = $photos->findOneBy(['title' => 'Cover']);
+        $this->assertNotNull($cover);
+        $cover->setSortOrder(99);
+        $this->em->flush();
+
         $stats = $this->importer->import($source, $this->options());
 
         $this->assertSame(0, $stats->albumsCreated);
         $this->assertSame(4, $stats->albumsUpdated);
         $this->assertSame(0, $stats->photosCreated);
         $this->assertSame(2, $stats->photosSkipped);
+        $this->assertSame(2, $stats->photosSortUpdated);
         $this->assertSame(1, $stats->photosMissingFile);
         $this->assertSame(0, $stats->convertDispatched);
         $this->assertCount(0, $this->convertTransport()->get());
         $this->assertCount(2, $this->em->getRepository(Photo::class)->findAll());
+
+        $this->em->clear();
+        $cover = $this->em->getRepository(Photo::class)->findOneBy(['title' => 'Cover']);
+        $this->assertNotNull($cover);
+        $this->assertSame(0, $cover->getSortOrder());
+        $this->assertSame(99, $cover->getViewCount());
+
+        $root = $this->em->getRepository(Album::class)->findOneBySlug('root-album');
+        $this->assertNotNull($root);
+        $this->assertSame(42, $root->getViewCount());
+    }
+
+    public function testReimportRefreshesLegacyViewCounts(): void
+    {
+        $source = $this->fixtureSource();
+        $this->importer->import($source, $this->options());
+
+        $cover = $this->em->getRepository(Photo::class)->findOneBy(['title' => 'Cover']);
+        $root = $this->em->getRepository(Album::class)->findOneBySlug('root-album');
+        $this->assertNotNull($cover);
+        $this->assertNotNull($root);
+        $cover->setViewCount(1);
+        $root->setViewCount(1);
+        $root->setPhotosPerPage(12);
+        $this->em->flush();
+
+        $this->importer->import($source, $this->options());
+        $this->em->clear();
+
+        $cover = $this->em->getRepository(Photo::class)->findOneBy(['title' => 'Cover']);
+        $root = $this->em->getRepository(Album::class)->findOneBySlug('root-album');
+        $this->assertNotNull($cover);
+        $this->assertNotNull($root);
+        $this->assertSame(99, $cover->getViewCount());
+        $this->assertSame(42, $root->getViewCount());
+        $this->assertSame(30, $root->getPhotosPerPage());
+    }
+
+    public function testSortOrderFollowsSourceDisplaySequenceNotRawOrdem(): void
+    {
+        mkdir($this->imgRoot.'/ordered-album', 0775, true);
+        $fixture = \dirname(__DIR__, 2).'/fixtures/sample.jpg';
+        copy($fixture, $this->imgRoot.'/ordered-album/later.jpg');
+        copy($fixture, $this->imgRoot.'/ordered-album/earlier.jpg');
+
+        // Source order is classic display order: later.jpg first even though ordem is higher.
+        $source = new ArrayV3GallerySource(
+            albums: [
+                [
+                    'id_album' => 50,
+                    'id_pai' => 0,
+                    'titulo' => 'Ordered',
+                    'descricao' => null,
+                    'url' => 'ordered-album',
+                    'ativo' => 'S',
+                    'ordem' => 1,
+                    'data' => null,
+                ],
+            ],
+            photos: [
+                [
+                    'id_foto' => 501,
+                    'id_album' => 50,
+                    'titulo' => 'Later',
+                    'foto' => 'later.jpg',
+                    'ordem' => 90,
+                ],
+                [
+                    'id_foto' => 502,
+                    'id_album' => 50,
+                    'titulo' => 'Earlier',
+                    'foto' => 'earlier.jpg',
+                    'ordem' => 10,
+                ],
+            ],
+        );
+
+        $this->importer->import($source, $this->options());
+
+        /** @var AlbumRepository $albums */
+        $albums = $this->em->getRepository(Album::class);
+        $album = $albums->findOneBySlug('ordered-album');
+        $this->assertNotNull($album);
+
+        /** @var PhotoRepository $photos */
+        $photos = $this->em->getRepository(Photo::class);
+        $ordered = $photos->findByAlbum($album);
+        $this->assertSame(['Later', 'Earlier'], array_map(
+            static fn (Photo $p): ?string => $p->getTitle(),
+            $ordered
+        ));
+        $this->assertSame([0, 1], array_map(
+            static fn (Photo $p): int => $p->getSortOrder(),
+            $ordered
+        ));
+
+        $later = $photos->findOneBy(['title' => 'Later']);
+        $this->assertNotNull($later);
+        $later->setSortOrder(99);
+        $this->em->flush();
+
+        $this->importer->import($source, $this->options());
+        $this->em->clear();
+
+        $ordered = $this->em->getRepository(Photo::class)->findByAlbum(
+            $this->em->getRepository(Album::class)->findOneBySlug('ordered-album')
+        );
+        $this->assertSame(['Later', 'Earlier'], array_map(
+            static fn (Photo $p): ?string => $p->getTitle(),
+            $ordered
+        ));
+        $this->assertSame([0, 1], array_map(
+            static fn (Photo $p): int => $p->getSortOrder(),
+            $ordered
+        ));
     }
 
     public function testDryRunDoesNotPersist(): void
@@ -164,6 +299,8 @@ final class V3ImporterTest extends KernelTestCase
                     'ativo' => 'S',
                     'ordem' => 1,
                     'data' => '2012-01-15',
+                    'visit' => 42,
+                    'regs' => 30,
                 ],
                 [
                     'id_album' => 2,
@@ -174,6 +311,8 @@ final class V3ImporterTest extends KernelTestCase
                     'ativo' => 'N',
                     'ordem' => 2,
                     'data' => null,
+                    'visit' => 0,
+                    'regs' => 0,
                 ],
                 [
                     'id_album' => 3,
@@ -184,6 +323,8 @@ final class V3ImporterTest extends KernelTestCase
                     'ativo' => 'S',
                     'ordem' => 3,
                     'data' => '2010-01-01',
+                    'visit' => 1,
+                    'regs' => 15,
                 ],
                 [
                     'id_album' => 4,
@@ -194,6 +335,7 @@ final class V3ImporterTest extends KernelTestCase
                     'ativo' => 'S',
                     'ordem' => 4,
                     'data' => null,
+                    'visit' => 2,
                 ],
             ],
             photos: [
@@ -203,6 +345,7 @@ final class V3ImporterTest extends KernelTestCase
                     'titulo' => 'Cover',
                     'foto' => 'cover.jpg',
                     'ordem' => 1,
+                    'visit' => 99,
                 ],
                 [
                     'id_foto' => 11,
@@ -210,6 +353,7 @@ final class V3ImporterTest extends KernelTestCase
                     'titulo' => null,
                     'foto' => 'photo-a.jpg',
                     'ordem' => 1,
+                    'visit' => 5,
                 ],
                 [
                     'id_foto' => 12,
@@ -217,6 +361,7 @@ final class V3ImporterTest extends KernelTestCase
                     'titulo' => 'Missing',
                     'foto' => 'photo-b.jpg',
                     'ordem' => 2,
+                    'visit' => 8,
                 ],
             ],
             destaques: [

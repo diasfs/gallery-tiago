@@ -158,10 +158,12 @@ class SearchController
             'visibility' => $album->getVisibility()->value,
             'sortOrder' => $album->getSortOrder(),
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
+            'coverPhoto' => $this->normalizeCoverPhoto($album->getCoverPhoto()),
             'parentSlug' => $this->isVisible($album->getParent()) ? $album->getParent()->getSlug() : null,
             'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
             'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
+            'viewCount' => $album->getViewCount(),
         ];
     }
 
@@ -172,6 +174,24 @@ class SearchController
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
             'title' => $photo->getTitle(),
+            'avifPath' => $photo->getAvifPath(),
+            'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
+        ];
+    }
+
+    /**
+     * @return array{id: string, avifPath: ?string, thumbPaths: array, originalPath: ?string}|null
+     */
+    private function normalizeCoverPhoto(?Photo $photo): ?array
+    {
+        if (null === $photo) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $photo->getId(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),

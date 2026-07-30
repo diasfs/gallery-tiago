@@ -121,7 +121,7 @@ final class PublicSearchTest extends WebTestCase
         $this->em->persist($unlistedPhoto);
 
         $this->namedPerson = new Person();
-        $this->namedPerson->setName('Ana Silva');
+        $this->namedPerson->setName('Fábio Silva');
         $this->namedPerson->setIsNamed(true);
         $this->em->persist($this->namedPerson);
 
@@ -260,11 +260,11 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSuggestPeopleAndTagsHidePrivateOnly(): void
     {
-        $this->client->request('GET', '/api/people?q=Ana');
+        $this->client->request('GET', '/api/people?q=fabio');
         $this->assertResponseIsSuccessful();
         $people = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $names = array_column($people, 'name');
-        $this->assertContains('Ana Silva', $names);
+        $this->assertContains('Fábio Silva', $names);
 
         $this->client->request('GET', '/api/people?q=Secret');
         $people = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
@@ -274,5 +274,32 @@ final class PublicSearchTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $tags = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertContains('beach', array_column($tags, 'slug'));
+    }
+
+    public function testTagsIndexReturnsPublicTagsAlphabeticallyWithPhotoCount(): void
+    {
+        $zebra = new Tag('Zebra', 'zebra');
+        $this->em->persist($zebra);
+        $this->publicPhoto->addTag($zebra);
+
+        $secretOnly = new Tag('SecretOnly', 'secret-only');
+        $this->em->persist($secretOnly);
+        $this->privatePhoto->addTag($secretOnly);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/tags?index=1');
+
+        $this->assertResponseIsSuccessful();
+        $tags = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $slugs = array_column($tags, 'slug');
+
+        $this->assertSame(['beach', 'zebra'], $slugs);
+        $this->assertNotContains('secret-only', $slugs);
+
+        $bySlug = array_column($tags, null, 'slug');
+        $this->assertSame(1, $bySlug['beach']['photoCount']);
+        $this->assertSame(1, $bySlug['zebra']['photoCount']);
+        $this->assertArrayHasKey('id', $bySlug['beach']);
+        $this->assertArrayHasKey('name', $bySlug['beach']);
     }
 }

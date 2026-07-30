@@ -56,6 +56,7 @@ final class PersonMergeTest extends WebTestCase
         $this->em->flush();
         foreach ($this->em->getRepository(Person::class)->findAll() as $person) {
             $person->setAvatarFace(null);
+            $person->setAvatarPath(null);
         }
         $this->em->flush();
         foreach ($this->em->getRepository(Person::class)->findAll() as $person) {
@@ -398,6 +399,118 @@ final class PersonMergeTest extends WebTestCase
         $this->assertSame($face->getCropPath(), $namedRow['avatarCropPath']);
     }
 
+    public function testAdminPeopleListIsPaginated(): void
+    {
+        for ($index = 1; $index <= 25; ++$index) {
+            $person = new Person();
+            $person->setName(\sprintf('Person %02d', $index));
+            $person->setIsNamed(true);
+            $this->em->persist($person);
+        }
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=named&page=2&perPage=10');
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertCount(10, $payload['data']);
+        $this->assertSame(25, $payload['meta']['total']);
+        $this->assertSame(2, $payload['meta']['page']);
+        $this->assertSame(10, $payload['meta']['perPage']);
+        $this->assertSame('Person 11', $payload['data'][0]['name']);
+    }
+
+    public function testAdminPeopleSearchFindsPersonBeyondFirstTwenty(): void
+    {
+        for ($index = 1; $index <= 25; ++$index) {
+            $person = new Person();
+            $person->setName(\sprintf('Person %02d', $index));
+            $person->setIsNamed(true);
+            $this->em->persist($person);
+        }
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=named&q=Person%2025&page=1&perPage=20');
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(1, $payload['meta']['total']);
+        $this->assertSame(['Person 25'], array_column($payload['data'], 'name'));
+    }
+
+    public function testAdminPeoplePerPageIsCappedAtOneHundred(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=all&perPage=999');
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(100, $payload['meta']['perPage']);
+    }
+
+    public function testAdminPeopleListReturnsAggregatedFaceCountAndFallbackAvatar(): void
+    {
+        $person = new Person();
+        $person->setName('Face owner');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $first = $this->detectedFace($this->publicPhoto, $person);
+        $second = $this->detectedFace($this->privatePhoto, $person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=named&q=Face%20owner');
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(2, $payload['data'][0]['faceCount']);
+        $this->assertContains(
+            $payload['data'][0]['avatarCropPath'],
+            [$first->getCropPath(), $second->getCropPath()],
+        );
+    }
+
+    public function testPaginatedPeopleQueriesDoNotInitializeFaceCollections(): void
+    {
+        $person = new Person();
+        $person->setName('Bounded');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $this->em->clear();
+
+        /** @var \App\Repository\PersonRepository $repository */
+        $repository = $this->em->getRepository(Person::class);
+        $result = $repository->searchPaginated('named', 'Bounded', 1, 50);
+        $listed = $result['items'][0];
+        $faces = $listed->getFaces();
+        $this->assertInstanceOf(\Doctrine\ORM\PersistentCollection::class, $faces);
+        /** @var \Doctrine\ORM\PersistentCollection<int, Face> $faces */
+        $this->assertFalse($faces->isInitialized());
+
+        $repository->summarizeFacesForPersonIds([(string) $listed->getId()]);
+        $this->assertFalse($faces->isInitialized());
+    }
+
+    public function testAdminPeopleSearchIgnoresAccents(): void
+    {
+        $person = new Person();
+        $person->setName('Fábio');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?q=fabio');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertContains('Fábio', array_column($data, 'name'));
+    }
+
     public function testAdminCanShowPersonDetailAndSetAvatar(): void
     {
         $person = new Person();
@@ -448,6 +561,95 @@ final class PersonMergeTest extends WebTestCase
         $reloaded = $this->em->getRepository(Person::class)->find($personId);
         $this->assertSame($faceBId, (string) $reloaded->getAvatarFace()->getId());
         $this->assertSame('Ana Silva', $reloaded->getName());
+    }
+
+    public function testAdminCanUploadAndDeleteCustomAvatar(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $person->setAvatarFace($face);
+        $this->em->flush();
+
+        $personId = (string) $person->getId();
+        $faceCrop = $face->getCropPath();
+        $storage = static::getContainer()->get(\App\Service\MediaStorage::class);
+
+        $this->loginAsAdmin();
+
+        $this->client->request('POST', '/api/admin/people/'.$personId.'/avatar', [], [
+            'file' => $this->avatarFixtureUpload(),
+        ]);
+        $this->assertResponseIsSuccessful();
+        $uploaded = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertTrue($uploaded['hasCustomAvatar']);
+        $this->assertNull($uploaded['avatarFaceId']);
+        $this->assertNotNull($uploaded['avatarCropPath']);
+        $this->assertStringStartsWith('avatars/', $uploaded['avatarCropPath']);
+        $this->assertTrue(is_file($storage->absolutePath($uploaded['avatarCropPath'])));
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Person::class)->find($personId);
+        $this->assertNull($reloaded->getAvatarFace());
+        $this->assertSame($uploaded['avatarCropPath'], $reloaded->getAvatarPath());
+        $this->assertSame($uploaded['avatarCropPath'], $reloaded->getEffectiveAvatarPath());
+
+        $this->client->request('GET', '/api/admin/photos/'.(string) $this->publicPhoto->getId());
+        $this->assertResponseIsSuccessful();
+        $photoPayload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame($uploaded['avatarCropPath'], $photoPayload['people'][0]['avatarCropPath']);
+
+        $customPath = $uploaded['avatarCropPath'];
+        $this->client->request('DELETE', '/api/admin/people/'.$personId.'/avatar');
+        $this->assertResponseIsSuccessful();
+        $cleared = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertFalse($cleared['hasCustomAvatar']);
+        $this->assertSame($faceCrop, $cleared['avatarCropPath']);
+        $this->assertFalse(is_file($storage->absolutePath($customPath)));
+    }
+
+    public function testSettingPrimaryFaceClearsCustomAvatar(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+
+        $personId = (string) $person->getId();
+        $faceId = (string) $face->getId();
+        $faceCrop = $face->getCropPath();
+        $storage = static::getContainer()->get(\App\Service\MediaStorage::class);
+
+        $this->loginAsAdmin();
+
+        $this->client->request('POST', '/api/admin/people/'.$personId.'/avatar', [], [
+            'file' => $this->avatarFixtureUpload(),
+        ]);
+        $this->assertResponseIsSuccessful();
+        $customPath = json_decode((string) $this->client->getResponse()->getContent(), true)['data']['avatarCropPath'];
+
+        $this->client->jsonRequest('PATCH', '/api/admin/people/'.$personId, [
+            'avatarFaceId' => $faceId,
+        ]);
+        $this->assertResponseIsSuccessful();
+        $updated = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertFalse($updated['hasCustomAvatar']);
+        $this->assertSame($faceId, $updated['avatarFaceId']);
+        $this->assertSame($faceCrop, $updated['avatarCropPath']);
+        $this->assertFalse(is_file($storage->absolutePath($customPath)));
+    }
+
+    private function avatarFixtureUpload(string $filename = 'avatar.jpg'): \Symfony\Component\HttpFoundation\File\UploadedFile
+    {
+        $source = \dirname(__DIR__).'/fixtures/sample.jpg';
+        $copy = tempnam(sys_get_temp_dir(), 'avatar').'.jpg';
+        copy($source, $copy);
+
+        return new \Symfony\Component\HttpFoundation\File\UploadedFile($copy, $filename, 'image/jpeg', null, true);
     }
 
     public function testPhotoPeopleIncludeAvatarCropFallingBackToFirstFace(): void
@@ -538,6 +740,54 @@ final class PersonMergeTest extends WebTestCase
         $addedFace = $photo->getFaces()->first();
         $this->assertFalse($addedFace->hasEmbedding());
         $this->assertSame((string) $person->getId(), (string) $addedFace->getPerson()->getId());
+    }
+
+    public function testAdminCanCreateNamedPersonWhenAddingToPhotoByName(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/'.$this->publicPhoto->getId().'/people', [
+            'name' => 'Grace Hopper',
+        ]);
+
+        $this->assertResponseStatusCodeSame(201);
+        $facePayload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNotNull($facePayload['personId']);
+        $this->assertFalse($facePayload['hasEmbedding']);
+
+        $this->em->clear();
+        $person = $this->em->getRepository(Person::class)->find($facePayload['personId']);
+        $this->assertNotNull($person);
+        $this->assertSame('Grace Hopper', $person->getName());
+        $this->assertTrue($person->isNamed());
+
+        $photo = $this->em->getRepository(Photo::class)->find($this->publicPhoto->getId());
+        $this->assertCount(1, $photo->getFaces());
+        $this->assertSame((string) $person->getId(), (string) $photo->getFaces()->first()->getPerson()->getId());
+    }
+
+    public function testAddToPhotoByNameReusesExistingNamedPerson(): void
+    {
+        $person = new Person();
+        $person->setName('Ana Silva');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $this->em->flush();
+        $personId = (string) $person->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/photos/'.$this->publicPhoto->getId().'/people', [
+            'name' => 'ana silva',
+        ]);
+
+        $this->assertResponseStatusCodeSame(201);
+        $facePayload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame($personId, $facePayload['personId']);
+
+        $this->em->clear();
+        $named = $this->em->getRepository(Person::class)->findBy(['isNamed' => true]);
+        $this->assertCount(1, $named);
     }
 
     public function testManualAddDoesNotDuplicateExistingDetectedFace(): void

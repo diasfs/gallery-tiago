@@ -6,6 +6,7 @@ use App\Entity\Photo;
 use App\Enum\FacesStatus;
 use App\Enum\MediaStatus;
 use App\Enum\TagsStatus;
+use App\Exception\ProcessingStageDisabledException;
 use App\Message\ConvertMediaMessage;
 use App\Repository\PhotoRepository;
 use App\Service\PhotoReprocessor;
@@ -13,6 +14,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
@@ -93,7 +95,11 @@ final class ProcessingController
                 ++$skipped;
                 continue;
             }
-            $this->reprocessor->reprocess($photo, $scope);
+            try {
+                $this->reprocessor->reprocess($photo, $scope);
+            } catch (ProcessingStageDisabledException $e) {
+                throw new ConflictHttpException($e->getMessage(), $e);
+            }
             ++$processed;
         }
 

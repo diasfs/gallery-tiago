@@ -78,6 +78,24 @@ class AlbumRepository extends ServiceEntityRepository
         return $this->findOneBy(['slug' => $slug]);
     }
 
+    /**
+     * Atomically increments and returns the new view_count.
+     * Safe under concurrent detail-page loads.
+     */
+    public function incrementViewCount(Uuid $id): int
+    {
+        $result = $this->getEntityManager()->getConnection()->fetchOne(
+            'UPDATE album SET view_count = view_count + 1 WHERE id = :id RETURNING view_count',
+            ['id' => $id->toRfc4122()],
+        );
+
+        if (false === $result || null === $result) {
+            throw new \RuntimeException(\sprintf('Album %s not found for view increment.', $id->toRfc4122()));
+        }
+
+        return (int) $result;
+    }
+
     public function findVisibleBySlug(string $slug): ?Album
     {
         return $this->createQueryBuilder('a')
@@ -151,6 +169,63 @@ class AlbumRepository extends ServiceEntityRepository
             ->addOrderBy('a.title', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /** @return list<string> */
+    public function findDescendantIds(Album $album): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchFirstColumn(
+            <<<'SQL'
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM album WHERE parent_id = :id
+                UNION ALL
+                SELECT a.id FROM album a
+                INNER JOIN descendants d ON a.parent_id = d.id
+            )
+            SELECT id::text FROM descendants
+            SQL,
+            ['id' => (string) $album->getId()],
+        );
+
+        return array_map(static fn (mixed $id): string => (string) $id, $rows);
+    }
+
+    /**
+     * @param list<string> $excludeIds
+     *
+     * @return array{items: Album[], total: int}
+     */
+    public function findParentOptionsPaginated(int $page, int $perPage, ?string $q, array $excludeIds = []): array
+    {
+        $qb = $this->createQueryBuilder('a');
+
+        if (null !== $q && '' !== trim($q)) {
+            $qb->andWhere('(LOWER(UNACCENT(a.title)) LIKE :q OR LOWER(UNACCENT(a.slug)) LIKE :q)')
+                ->setParameter('q', SearchText::likePattern($q));
+        }
+
+        if ([] !== $excludeIds) {
+            $qb->andWhere('a.id NOT IN (:excludeIds)')
+                ->setParameter(
+                    'excludeIds',
+                    array_map(static fn (string $id): Uuid => Uuid::fromString($id), $excludeIds),
+                );
+        }
+
+        $total = (int) (clone $qb)
+            ->select('COUNT(a.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $items = $qb
+            ->orderBy('a.sortOrder', 'ASC')
+            ->addOrderBy('a.title', 'ASC')
+            ->setFirstResult(max(0, ($page - 1) * $perPage))
+            ->setMaxResults($perPage)
+            ->getQuery()
+            ->getResult();
+
+        return ['items' => $items, 'total' => $total];
     }
 
     /** @return Album[] */

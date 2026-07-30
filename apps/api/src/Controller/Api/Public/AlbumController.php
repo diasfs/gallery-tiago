@@ -9,6 +9,8 @@ use App\Enum\AlbumVisibility;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Service\ViewDeduplicatorInterface;
+use App\Service\ViewVisitorIdentifier;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -20,13 +22,14 @@ use Symfony\Component\Routing\Attribute\Route;
 class AlbumController
 {
     private const DEFAULT_ALBUM_PER_PAGE = 24;
-    private const DEFAULT_PHOTO_PER_PAGE = 48;
     private const DEFAULT_RECENT_LIMIT = 12;
     private const MAX_RECENT_LIMIT = 48;
 
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
+        private readonly ViewDeduplicatorInterface $viewDeduplicator,
+        private readonly ViewVisitorIdentifier $viewVisitor,
     ) {
     }
 
@@ -74,7 +77,8 @@ class AlbumController
     {
         $album = $this->findVisibleOrFail($slug);
         $page = Pagination::page($request);
-        $perPage = Pagination::perPage($request, self::DEFAULT_PHOTO_PER_PAGE);
+        // Authoritative album setting — ignore visitor-supplied perPage.
+        $perPage = max(1, $album->getPhotosPerPage());
         $result = $this->photos->findByAlbumPaginated($album, $page, $perPage);
 
         return new JsonResponse([
@@ -89,6 +93,22 @@ class AlbumController
         $album = $this->findVisibleOrFail($slug);
 
         return new JsonResponse(['data' => $this->normalizeDetail($album)]);
+    }
+
+    #[Route('/{slug}/view', name: 'public_albums_record_view', methods: ['POST'])]
+    public function recordView(string $slug, Request $request): JsonResponse
+    {
+        $album = $this->findVisibleOrFail($slug);
+        $visitorId = $this->viewVisitor->resolve($request);
+
+        if ($this->viewDeduplicator->claim('album', (string) $album->getId(), $visitorId)) {
+            $album->setViewCount($this->albums->incrementViewCount($album->getId()));
+        }
+
+        $response = new JsonResponse(['data' => ['viewCount' => $album->getViewCount()]]);
+        $this->viewVisitor->attachCookie($request, $response, $visitorId);
+
+        return $response;
     }
 
     private function findVisibleOrFail(string $slug): Album
@@ -122,11 +142,13 @@ class AlbumController
             'visibility' => $album->getVisibility()->value,
             'sortOrder' => $album->getSortOrder(),
             'coverPhotoId' => $album->getCoverPhoto()?->getId()->toRfc4122(),
+            'coverPhoto' => $this->normalizeCoverPhoto($album->getCoverPhoto()),
             // Never expose a private parent's slug (same rule as `ancestors()`).
             'parentSlug' => $this->isVisible($album->getParent()) ? $album->getParent()->getSlug() : null,
             'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
             'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
+            'viewCount' => $album->getViewCount(),
         ];
     }
 
@@ -135,6 +157,7 @@ class AlbumController
     {
         return $this->normalize($album) + [
             'ancestors' => $this->ancestors($album),
+            'photosPerPage' => $album->getPhotosPerPage(),
         ];
     }
 
@@ -167,6 +190,26 @@ class AlbumController
         return [
             'id' => (string) $photo->getId(),
             'title' => $photo->getTitle(),
+            'avifPath' => $photo->getAvifPath(),
+            'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
+        ];
+    }
+
+    /**
+     * Media paths for album-card covers — never triggers a photo detail fetch.
+     *
+     * @return array{id: string, avifPath: ?string, thumbPaths: array, originalPath: ?string}|null
+     */
+    private function normalizeCoverPhoto(?Photo $photo): ?array
+    {
+        if (null === $photo) {
+            return null;
+        }
+
+        return [
+            'id' => (string) $photo->getId(),
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),

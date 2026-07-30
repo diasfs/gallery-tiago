@@ -8,8 +8,8 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
- * Bridges Messenger's `tags` transport to the plain Redis list
- * `gallery:tags` consumed by the Python RAM worker (apps/worker-tags).
+ * Bridges Messenger's `tags` transport to the Redis stream
+ * `gallery:tags:stream` consumed by the Python tag worker (apps/worker-tags).
  * Same adapter pattern as DetectFacesHandler.
  */
 #[AsMessageHandler]
@@ -25,7 +25,7 @@ final class SuggestTagsHandler
     {
         $this->publisher->publish($message->getPhotoId());
 
-        $this->logger->info('Bridged suggest_tags to gallery:tags for photo {photoId}.', [
+        $this->logger->info('Bridged suggest_tags to gallery:tags:stream for photo {photoId}.', [
             'photoId' => $message->getPhotoId(),
         ]);
     }

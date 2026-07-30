@@ -131,12 +131,84 @@ final class PhotoUploadTest extends WebTestCase
         $this->assertSame('pending', $photo->getTagsStatus()->value);
         $this->assertSame('holiday-sunset', $photo->getTitle());
         $this->assertNotSame('', $photo->getOriginalPath());
+        $this->assertSame(0, $photo->getSortOrder());
+        $this->assertSame(0, $data['sortOrder']);
 
         $sent = $this->convertTransport()->getSent();
         $this->assertCount(1, $sent);
         $envelope = $sent[0]->getMessage();
         $this->assertInstanceOf(ConvertMediaMessage::class, $envelope);
         $this->assertSame((string) $photo->getId(), $envelope->getPhotoId());
+    }
+
+    public function testUploadAssignsNextSortOrderAndListIsOrdered(): void
+    {
+        $this->loginAsAdmin();
+
+        $existing = new Photo($this->album, 'originals/ab/existing.jpg');
+        $existing->setSortOrder(5);
+        $this->em->persist($existing);
+        $this->em->flush();
+
+        $this->client->request('POST', \sprintf('/api/admin/albums/%s/photos', $this->album->getId()), [], [
+            'file' => $this->fixtureUpload('next.jpg'),
+        ]);
+        $this->assertResponseStatusCodeSame(201);
+        $uploaded = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(6, $uploaded['sortOrder']);
+
+        $this->client->request('GET', \sprintf('/api/admin/albums/%s/photos?perPage=100', $this->album->getId()));
+        $this->assertResponseIsSuccessful();
+        $list = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame([(string) $existing->getId(), $uploaded['id']], array_column($list, 'id'));
+        $this->assertSame([5, 6], array_column($list, 'sortOrder'));
+    }
+
+    public function testAdminCanReorderAlbumPhotos(): void
+    {
+        $this->loginAsAdmin();
+        $a = new Photo($this->album, 'originals/ab/a.jpg');
+        $a->setTitle('A');
+        $a->setSortOrder(0);
+        $b = new Photo($this->album, 'originals/ab/b.jpg');
+        $b->setTitle('B');
+        $b->setSortOrder(1);
+        $this->em->persist($a);
+        $this->em->persist($b);
+        $this->em->flush();
+        $aId = (string) $a->getId();
+        $bId = (string) $b->getId();
+
+        $this->client->jsonRequest(
+            'PUT',
+            \sprintf('/api/admin/albums/%s/photos/order', $this->album->getId()),
+            ['photoIds' => [$bId, $aId]],
+        );
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame([$bId, $aId], array_column($data, 'id'));
+        $this->assertSame([0, 1], array_column($data, 'sortOrder'));
+
+        $this->em->clear();
+        $this->assertSame(0, $this->em->getRepository(Photo::class)->find($bId)->getSortOrder());
+        $this->assertSame(1, $this->em->getRepository(Photo::class)->find($aId)->getSortOrder());
+    }
+
+    public function testReorderRejectsIncompletePhotoList(): void
+    {
+        $this->loginAsAdmin();
+        $a = new Photo($this->album, 'originals/ab/a.jpg');
+        $b = new Photo($this->album, 'originals/ab/b.jpg');
+        $this->em->persist($a);
+        $this->em->persist($b);
+        $this->em->flush();
+
+        $this->client->jsonRequest(
+            'PUT',
+            \sprintf('/api/admin/albums/%s/photos/order', $this->album->getId()),
+            ['photoIds' => [(string) $a->getId()]],
+        );
+        $this->assertResponseStatusCodeSame(400);
     }
 
     public function testUploadRejectsUnsupportedFileType(): void

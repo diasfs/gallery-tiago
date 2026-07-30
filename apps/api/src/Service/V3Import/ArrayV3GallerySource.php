@@ -16,14 +16,17 @@ final class ArrayV3GallerySource implements V3GallerySourceInterface
      *     url: string,
      *     ativo: string,
      *     ordem: int,
-     *     data: ?string
+     *     data: ?string,
+     *     visit?: int,
+     *     regs?: int
      * }> $albums
      * @param list<array{
      *     id_foto: int,
      *     id_album: int,
      *     titulo: ?string,
      *     foto: string,
-     *     ordem: int
+     *     ordem: int,
+     *     visit?: int
      * }> $photos
      * @param list<array{id_album: int, foto: string, url: string}> $destaques
      */
@@ -36,20 +39,26 @@ final class ArrayV3GallerySource implements V3GallerySourceInterface
 
     public function fetchAlbums(): array
     {
-        return $this->albums;
+        return array_map(static function (array $row): array {
+            $regs = (int) ($row['regs'] ?? 0);
+
+            return $row + [
+                'visit' => (int) ($row['visit'] ?? 0),
+                'regs' => $regs >= 1 ? $regs : 48,
+            ];
+        }, $this->albums);
     }
 
     public function fetchPhotosForAlbum(int $albumId): array
     {
-        $rows = array_values(array_filter(
-            $this->photos,
-            static fn (array $p): bool => $p['id_album'] === $albumId
+        // Preserve caller/fixture order — this is the classic display sequence.
+        return array_values(array_map(
+            static fn (array $p): array => $p + ['visit' => (int) ($p['visit'] ?? 0)],
+            array_filter(
+                $this->photos,
+                static fn (array $p): bool => $p['id_album'] === $albumId
+            ),
         ));
-        usort($rows, static function (array $a, array $b): int {
-            return [$a['ordem'], $a['id_foto']] <=> [$b['ordem'], $b['id_foto']];
-        });
-
-        return $rows;
     }
 
     public function fetchDestaques(): array

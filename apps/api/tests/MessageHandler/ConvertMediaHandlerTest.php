@@ -4,6 +4,8 @@ namespace App\Tests\MessageHandler;
 
 use App\Entity\Album;
 use App\Entity\Photo;
+use App\Entity\ProcessingSettings;
+use App\Enum\TagDetector;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
 use App\Message\SuggestTagsMessage;
@@ -24,12 +26,39 @@ final class ConvertMediaHandlerTest extends KernelTestCase
         $this->em = static::getContainer()->get(EntityManagerInterface::class);
         $this->storage = static::getContainer()->get(MediaStorage::class);
         $this->clearFixtures();
+        $this->resetSettings();
+        $this->resetTransports();
     }
 
     protected function tearDown(): void
     {
         $this->clearFixtures();
+        $this->resetSettings();
         parent::tearDown();
+    }
+
+    private function resetSettings(): void
+    {
+        $row = $this->em->find(ProcessingSettings::class, ProcessingSettings::SINGLETON_ID);
+        if (null === $row) {
+            $row = ProcessingSettings::defaults();
+            $this->em->persist($row);
+        } else {
+            $row->setFacesEnabled(true);
+            $row->setTagsEnabled(true);
+            $row->setTagDetector(TagDetector::RamPlus);
+        }
+        $this->em->flush();
+    }
+
+    private function resetTransports(): void
+    {
+        /** @var InMemoryTransport $faces */
+        $faces = static::getContainer()->get('messenger.transport.faces');
+        $faces->reset();
+        /** @var InMemoryTransport $tags */
+        $tags = static::getContainer()->get('messenger.transport.tags');
+        $tags->reset();
     }
 
     private function clearFixtures(): void
@@ -80,8 +109,8 @@ final class ConvertMediaHandlerTest extends KernelTestCase
         $this->assertNotNull($photo);
 
         $this->assertSame('done', $photo->getMediaStatus()->value);
-        $this->assertSame('detecting', $photo->getFacesStatus()->value);
-        $this->assertSame('detecting', $photo->getTagsStatus()->value);
+        $this->assertSame('queued', $photo->getFacesStatus()->value);
+        $this->assertSame('queued', $photo->getTagsStatus()->value);
         $this->assertNull($photo->getProcessingError());
         $this->assertNotNull($photo->getAvifPath());
         $this->assertNull($photo->getOriginalPath());
@@ -173,6 +202,78 @@ final class ConvertMediaHandlerTest extends KernelTestCase
         /** @var InMemoryTransport $facesTransport */
         $facesTransport = static::getContainer()->get('messenger.transport.faces');
         $this->assertCount(0, $facesTransport->getSent());
+    }
+
+    public function testHandlerIsIdempotentWhenOriginalAlreadyPurgedAndAvifExists(): void
+    {
+        $album = new Album('Test Album', 'test-album-'.uniqid());
+        $this->em->persist($album);
+        $photo = new Photo($album);
+        $this->em->persist($photo);
+        $this->em->flush();
+
+        $photoId = (string) $photo->getId();
+        $avifRelative = $this->storage->avifMasterPath($photoId);
+        $avifAbsolute = $this->storage->absolutePath($avifRelative);
+        @mkdir(\dirname($avifAbsolute), 0775, true);
+        copy(\dirname(__DIR__).'/fixtures/sample.jpg', $avifAbsolute);
+
+        $photo->setAvifPath($avifRelative);
+        $photo->setOriginalPath(null);
+        $photo->setMediaStatus(\App\Enum\MediaStatus::Failed);
+        $photo->setProcessingError('media: Photo has no original path to convert.');
+        $photo->setFacesStatus(\App\Enum\FacesStatus::Done);
+        $photo->setTagsStatus(\App\Enum\TagsStatus::Done);
+        $this->em->flush();
+
+        $handler = static::getContainer()->get(ConvertMediaHandler::class);
+        $handler(new ConvertMediaMessage($photoId));
+
+        $photo = $this->em->find(Photo::class, $photoId);
+        $this->assertNotNull($photo);
+        $this->assertSame('done', $photo->getMediaStatus()->value);
+        $this->assertSame('done', $photo->getFacesStatus()->value);
+        $this->assertSame('done', $photo->getTagsStatus()->value);
+        $this->assertNull($photo->getOriginalPath());
+        $this->assertNull($photo->getProcessingError());
+        $this->assertSame($avifRelative, $photo->getAvifPath());
+
+        /** @var InMemoryTransport $facesTransport */
+        $facesTransport = static::getContainer()->get('messenger.transport.faces');
+        $this->assertCount(0, $facesTransport->getSent());
+
+        /** @var InMemoryTransport $tagsTransport */
+        $tagsTransport = static::getContainer()->get('messenger.transport.tags');
+        $this->assertCount(0, $tagsTransport->getSent());
+    }
+
+    public function testHandlerSkipsDisabledStages(): void
+    {
+        $settings = $this->em->find(ProcessingSettings::class, ProcessingSettings::SINGLETON_ID);
+        $this->assertNotNull($settings);
+        $settings->setFacesEnabled(false);
+        $settings->setTagsEnabled(false);
+        $this->em->flush();
+
+        $photo = $this->makePhotoWithOriginal();
+        $photoId = (string) $photo->getId();
+
+        $handler = static::getContainer()->get(ConvertMediaHandler::class);
+        $handler(new ConvertMediaMessage($photoId));
+
+        $photo = $this->em->find(Photo::class, $photoId);
+        $this->assertNotNull($photo);
+        $this->assertSame('done', $photo->getMediaStatus()->value);
+        $this->assertSame('disabled', $photo->getFacesStatus()->value);
+        $this->assertSame('disabled', $photo->getTagsStatus()->value);
+
+        /** @var InMemoryTransport $facesTransport */
+        $facesTransport = static::getContainer()->get('messenger.transport.faces');
+        $this->assertCount(0, $facesTransport->getSent());
+
+        /** @var InMemoryTransport $tagsTransport */
+        $tagsTransport = static::getContainer()->get('messenger.transport.tags');
+        $this->assertCount(0, $tagsTransport->getSent());
     }
 
     public function testHandlerIgnoresUnknownPhotoId(): void

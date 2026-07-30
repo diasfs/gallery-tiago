@@ -156,6 +156,24 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame(['native-child', 'newer-child', 'usa-sandiego'], $slugs);
     }
 
+    public function testAdminCanReorderRootAlbums(): void
+    {
+        $second = new Album('Second Root', 'second-root');
+        $second->setVisibility(AlbumVisibility::Public);
+        $second->setSortOrder(1);
+        $this->em->persist($second);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/albums/order', [
+            'albumIds' => [(string) $second->getId(), (string) $this->parent->getId()],
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $ids = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'id');
+        $this->assertSame([(string) $second->getId(), (string) $this->parent->getId()], $ids);
+    }
+
     public function testShowIncludesParentSummaryForChildAlbum(): void
     {
         $this->loginAsAdmin();
@@ -247,5 +265,96 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame(1, $body['meta']['total']);
         $this->assertCount(1, $body['data']);
         $this->assertSame((string) $this->childPhoto->getId(), $body['data'][0]['id']);
+    }
+
+    public function testCreateDefaultsPhotosPerPageToFortyEight(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('POST', '/api/admin/albums', [
+            'title' => 'Paged',
+            'slug' => 'paged-album',
+        ]);
+
+        $this->assertResponseStatusCodeSame(201);
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(48, $data['photosPerPage']);
+    }
+
+    public function testUpdatePhotosPerPage(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'photosPerPage' => 30,
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(30, $data['photosPerPage']);
+
+        $this->em->clear();
+        $album = $this->em->getRepository(Album::class)->find($this->parent->getId());
+        $this->assertNotNull($album);
+        $this->assertSame(30, $album->getPhotosPerPage());
+    }
+
+    public function testRejectsInvalidPhotosPerPage(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'photosPerPage' => 0,
+        ]);
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
+    public function testMoveChildAlbumToAnotherParent(): void
+    {
+        $other = new Album('Europe', 'europe');
+        $other->setVisibility(AlbumVisibility::Public);
+        $this->em->persist($other);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->child->getId(), [
+            'parentId' => (string) $other->getId(),
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame((string) $other->getId(), $data['parentId']);
+
+        $this->em->clear();
+        $child = $this->em->getRepository(Album::class)->find($this->child->getId());
+        $this->assertNotNull($child);
+        $this->assertSame((string) $other->getId(), (string) $child->getParent()?->getId());
+    }
+
+    public function testRejectsMovingAlbumUnderItsDescendant(): void
+    {
+        $grandchild = new Album('Downtown', 'downtown');
+        $grandchild->setVisibility(AlbumVisibility::Public);
+        $grandchild->setParent($this->child);
+        $this->em->persist($grandchild);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'parentId' => (string) $grandchild->getId(),
+        ]);
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
+    public function testParentOptionsListsMatchingAlbums(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/albums/parent-options?q=San+Diego&exclude='.(string) $this->child->getId());
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('meta', $body);
+        $ids = array_column($body['data'], 'id');
+        $this->assertContains((string) $this->parent->getId(), $ids);
+        $this->assertNotContains((string) $this->child->getId(), $ids);
     }
 }

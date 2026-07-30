@@ -106,6 +106,7 @@ final class ImportV3Command extends Command
                 ['Albums skipped', (string) $stats->albumsSkipped],
                 ['Photos created', (string) $stats->photosCreated],
                 ['Photos skipped (mapped)', (string) $stats->photosSkipped],
+                ['Photos sort order updated', (string) $stats->photosSortUpdated],
                 ['Photos missing file', (string) $stats->photosMissingFile],
                 ['Convert dispatched', (string) $stats->convertDispatched],
                 ['Covers set', (string) $stats->coversSet],

@@ -34,6 +34,24 @@ class PhotoRepository extends ServiceEntityRepository
     }
 
     /**
+     * Atomically increments and returns the new view_count.
+     * Safe under concurrent detail-page loads.
+     */
+    public function incrementViewCount(Uuid $id): int
+    {
+        $result = $this->getEntityManager()->getConnection()->fetchOne(
+            'UPDATE photo SET view_count = view_count + 1 WHERE id = :id RETURNING view_count',
+            ['id' => $id->toRfc4122()],
+        );
+
+        if (false === $result || null === $result) {
+            throw new \RuntimeException(\sprintf('Photo %s not found for view increment.', $id->toRfc4122()));
+        }
+
+        return (int) $result;
+    }
+
+    /**
      * Uses an EXISTS subquery (rather than joining `Face`) so photos with
      * multiple matching faces aren't duplicated — a plain `DISTINCT` isn't
      * an option here since Postgres can't compare the `thumb_paths` json
@@ -81,7 +99,8 @@ class PhotoRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('p')
             ->andWhere('p.album = :album')
             ->setParameter('album', $album)
-            ->orderBy('p.createdAt', 'ASC')
+            ->orderBy('p.sortOrder', 'ASC')
+            ->addOrderBy('p.createdAt', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -101,13 +120,26 @@ class PhotoRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         $items = (clone $base)
-            ->orderBy('p.createdAt', 'ASC')
+            ->orderBy('p.sortOrder', 'ASC')
+            ->addOrderBy('p.createdAt', 'ASC')
             ->setFirstResult(max(0, ($page - 1) * $perPage))
             ->setMaxResults($perPage)
             ->getQuery()
             ->getResult();
 
         return ['items' => $items, 'total' => $total];
+    }
+
+    public function nextSortOrderForAlbum(Album $album): int
+    {
+        $max = $this->createQueryBuilder('p')
+            ->select('MAX(p.sortOrder)')
+            ->andWhere('p.album = :album')
+            ->setParameter('album', $album)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return null === $max ? 0 : ((int) $max) + 1;
     }
 
     /**
@@ -281,6 +313,28 @@ class PhotoRepository extends ServiceEntityRepository
             ->setParameter('status', MediaStatus::Pending)
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /**
+     * Photos waiting for a faces/tags worker claim, oldest first.
+     *
+     * @return Photo[]
+     */
+    public function findQueuedForStage(string $stage, int $limit): array
+    {
+        $field = match ($stage) {
+            'faces' => 'p.facesStatus',
+            'tags' => 'p.tagsStatus',
+            default => throw new \InvalidArgumentException(\sprintf('Invalid stage "%s"; expected faces|tags.', $stage)),
+        };
+
+        return $this->createQueryBuilder('p')
+            ->andWhere($field.' = :status')
+            ->setParameter('status', 'queued')
+            ->orderBy('p.createdAt', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
     }
 
     /**

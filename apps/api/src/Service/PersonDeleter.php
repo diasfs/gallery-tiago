@@ -18,6 +18,8 @@ final class PersonDeleter
 
     public function delete(Person $person): void
     {
+        $this->storage->deleteRelative($person->getAvatarPath());
+        $person->setAvatarPath(null);
         $person->setAvatarFace(null);
         $this->em->flush();
 

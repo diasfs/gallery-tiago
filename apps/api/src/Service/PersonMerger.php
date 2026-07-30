@@ -13,8 +13,10 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  */
 final class PersonMerger
 {
-    public function __construct(private readonly EntityManagerInterface $em)
-    {
+    public function __construct(
+        private readonly EntityManagerInterface $em,
+        private readonly MediaStorage $storage,
+    ) {
     }
 
     public function merge(Person $source, Person $target): void
@@ -31,6 +33,15 @@ final class PersonMerger
             $target->setAvatarFace($source->getAvatarFace());
         }
         $source->setAvatarFace(null);
+
+        if (null === $target->getAvatarPath() && null !== $source->getAvatarPath()) {
+            $target->setAvatarPath($source->getAvatarPath());
+            $source->setAvatarPath(null);
+        } else {
+            $this->storage->deleteRelative($source->getAvatarPath());
+            $source->setAvatarPath(null);
+        }
+
         $this->em->flush();
 
         $this->em->remove($source);

@@ -46,6 +46,7 @@ security:
         - { path: ^/api/admin/geocode, roles: ROLE_ADMIN }
         - { path: ^/api/admin/tags, roles: ROLE_ADMIN }
         - { path: ^/api/admin/people, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/settings, roles: ROLE_ADMIN }
 
 when@test:
     security:

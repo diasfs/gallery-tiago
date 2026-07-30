@@ -108,7 +108,7 @@ final class V3Importer
             // Fetch one album at a time — never hold all ~80k v3 photo rows in RAM.
             $fotos = $source->fetchPhotosForAlbum($legacyId);
 
-            foreach ($fotos as $foto) {
+            foreach ($fotos as $displayIndex => $foto) {
                 if (null !== $options->limitPhotos && $photosImported >= $options->limitPhotos) {
                     break 2;
                 }
@@ -116,6 +116,28 @@ final class V3Importer
                 $mapped = $map->getPhotoUuid($foto['id_foto']);
                 if (null !== $mapped) {
                     ++$stats->photosSkipped;
+                    if (!$options->dryRun) {
+                        try {
+                            $existing = $this->em->find(Photo::class, Uuid::fromString($mapped));
+                        } catch (\InvalidArgumentException) {
+                            $existing = null;
+                        }
+                        if ($existing instanceof Photo) {
+                            $existing->setSortOrder((int) $displayIndex);
+                            $existing->setViewCount((int) ($foto['visit'] ?? 0));
+                            ++$stats->photosSortUpdated;
+                            ++$sinceClear;
+                            if ($sinceClear >= self::EM_CLEAR_EVERY) {
+                                $this->em->flush();
+                                $map->save();
+                                $this->em->clear();
+                                $albumEntities = [];
+                                $album = $this->albumRef($legacyId, $albumUuids, $albumEntities);
+                                $sinceClear = 0;
+                                gc_collect_cycles();
+                            }
+                        }
+                    }
                     ++$photosImported;
 
                     continue;
@@ -148,6 +170,8 @@ final class V3Importer
                 if (\is_string($title) && '' !== $title) {
                     $photo->setTitle($title);
                 }
+                $photo->setSortOrder((int) $displayIndex);
+                $photo->setViewCount((int) ($foto['visit'] ?? 0));
                 $this->em->persist($photo);
                 $this->em->flush();
 
@@ -404,6 +428,8 @@ final class V3Importer
             $album->setDescription($description);
             $album->setVisibility($visibility);
             $album->setSortOrder($row['ordem']);
+            $album->setViewCount((int) ($row['visit'] ?? 0));
+            $album->setPhotosPerPage($this->photosPerPageFromRow($row));
             $album->setLegacyId($legacyId);
             $album->setParent($parent);
             $album->setTakenAt($takenAt);
@@ -424,6 +450,8 @@ final class V3Importer
         $album->setSlug($row['url']);
         $album->setVisibility($visibility);
         $album->setSortOrder($row['ordem']);
+        $album->setViewCount((int) ($row['visit'] ?? 0));
+        $album->setPhotosPerPage($this->photosPerPageFromRow($row));
         $album->setLegacyId($legacyId);
         $album->setParent($parent);
         $album->setTakenAt($takenAt);
@@ -432,6 +460,16 @@ final class V3Importer
         $map->setAlbumUuid($legacyId, (string) $album->getId());
 
         return ['action' => 'updated', 'album' => $album];
+    }
+
+    /**
+     * @param array{regs?: int} $row
+     */
+    private function photosPerPageFromRow(array $row): int
+    {
+        $regs = (int) ($row['regs'] ?? 0);
+
+        return $regs >= 1 ? $regs : 48;
     }
 
     /**

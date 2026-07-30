@@ -8,6 +8,7 @@ use App\Http\Pagination;
 use App\Message\ConvertMediaMessage;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Exception\ProcessingStageDisabledException;
 use App\Service\MediaStorage;
 use App\Service\PhotoReprocessor;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,6 +18,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
@@ -65,8 +67,12 @@ class PhotoUploadController
         $scope = $this->resolveScope($request);
 
         $photos = $this->photos->findByAlbum($album);
-        foreach ($photos as $photo) {
-            $this->reprocessor->reprocess($photo, $scope);
+        try {
+            foreach ($photos as $photo) {
+                $this->reprocessor->reprocess($photo, $scope);
+            }
+        } catch (ProcessingStageDisabledException $e) {
+            throw new ConflictHttpException($e->getMessage(), $e);
         }
 
         return new JsonResponse(['data' => array_map($this->normalize(...), $photos)]);
@@ -93,6 +99,7 @@ class PhotoUploadController
         if (\is_string($title) && '' !== $title) {
             $photo->setTitle($title);
         }
+        $photo->setSortOrder($this->photos->nextSortOrderForAlbum($album));
         $this->em->persist($photo);
         $this->em->flush();
 
@@ -105,6 +112,63 @@ class PhotoUploadController
         $this->bus->dispatch(new ConvertMediaMessage($photoId));
 
         return new JsonResponse(['data' => $this->normalize($photo)], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Replaces the within-album order. `photoIds` must list every photo in the album.
+     */
+    #[Route('/order', name: 'admin_album_photos_order', methods: ['PUT'])]
+    public function reorder(string $albumId, Request $request): JsonResponse
+    {
+        $album = $this->findAlbumOrFail($albumId);
+
+        try {
+            $payload = $request->toArray();
+        } catch (\JsonException) {
+            throw new BadRequestHttpException('Invalid JSON body.');
+        }
+
+        $photoIds = $payload['photoIds'] ?? null;
+        if (!\is_array($photoIds) || [] === $photoIds) {
+            throw new BadRequestHttpException('photoIds must be a non-empty array of photo ids.');
+        }
+
+        $ordered = [];
+        foreach ($photoIds as $id) {
+            if (!\is_string($id) || '' === $id) {
+                throw new BadRequestHttpException('photoIds must contain only non-empty strings.');
+            }
+            $ordered[] = $id;
+        }
+
+        if (\count($ordered) !== \count(array_unique($ordered))) {
+            throw new BadRequestHttpException('photoIds must not contain duplicates.');
+        }
+
+        $photos = $this->photos->findByAlbum($album);
+        if (\count($ordered) !== \count($photos)) {
+            throw new BadRequestHttpException('photoIds must include every photo in the album exactly once.');
+        }
+
+        $byId = [];
+        foreach ($photos as $photo) {
+            $byId[(string) $photo->getId()] = $photo;
+        }
+
+        foreach ($ordered as $id) {
+            if (!isset($byId[$id])) {
+                throw new BadRequestHttpException('photoIds contains a photo that does not belong to this album.');
+            }
+        }
+
+        foreach ($ordered as $index => $id) {
+            $byId[$id]->setSortOrder($index);
+        }
+        $this->em->flush();
+
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $this->photos->findByAlbum($album)),
+        ]);
     }
 
     private function resolveScope(Request $request): string
@@ -156,6 +220,7 @@ class PhotoUploadController
             'facesStatus' => $photo->getFacesStatus()->value,
             'tagsStatus' => $photo->getTagsStatus()->value,
             'processingError' => $photo->getProcessingError(),
+            'sortOrder' => $photo->getSortOrder(),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
     }

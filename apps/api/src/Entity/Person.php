@@ -29,6 +29,10 @@ class Person
     #[ORM\JoinColumn(name: 'avatar_face_id', nullable: true, onDelete: 'SET NULL')]
     private ?Face $avatarFace = null;
 
+    /** Media-relative path for an uploaded custom avatar (independent of faces). */
+    #[ORM\Column(length: 500, nullable: true)]
+    private ?string $avatarPath = null;
+
     /** @var Collection<int, Face> */
     #[ORM\OneToMany(mappedBy: 'person', targetEntity: Face::class)]
     private Collection $faces;
@@ -91,6 +95,30 @@ class Person
         $this->avatarFace = $avatarFace;
 
         return $this;
+    }
+
+    public function getAvatarPath(): ?string
+    {
+        return $this->avatarPath;
+    }
+
+    public function setAvatarPath(?string $avatarPath): static
+    {
+        $this->avatarPath = $avatarPath;
+
+        return $this;
+    }
+
+    /**
+     * Display path: custom upload wins, else the effective face crop.
+     */
+    public function getEffectiveAvatarPath(): ?string
+    {
+        if (null !== $this->avatarPath && '' !== $this->avatarPath) {
+            return $this->avatarPath;
+        }
+
+        return $this->getEffectiveAvatarFace()?->getCropPath();
     }
 
     /** @return Collection<int, Face> */

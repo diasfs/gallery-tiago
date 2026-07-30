@@ -104,6 +104,7 @@ class PersonController
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
         ];
     }

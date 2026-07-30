@@ -57,6 +57,14 @@ class Photo
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $processingError = null;
 
+    /** Within-album display order (legacy `foto.ordem`). */
+    #[ORM\Column]
+    private int $sortOrder = 0;
+
+    /** Public detail-page views (legacy `foto.visit`). */
+    #[ORM\Column]
+    private int $viewCount = 0;
+
     /** @var Collection<int, Tag> */
     #[ORM\ManyToMany(targetEntity: Tag::class, inversedBy: 'photos')]
     #[ORM\JoinTable(name: 'photo_tag')]
@@ -211,6 +219,30 @@ class Photo
     public function setProcessingError(?string $processingError): static
     {
         $this->processingError = $processingError;
+
+        return $this;
+    }
+
+    public function getSortOrder(): int
+    {
+        return $this->sortOrder;
+    }
+
+    public function setSortOrder(int $sortOrder): static
+    {
+        $this->sortOrder = $sortOrder;
+
+        return $this;
+    }
+
+    public function getViewCount(): int
+    {
+        return $this->viewCount;
+    }
+
+    public function setViewCount(int $viewCount): static
+    {
+        $this->viewCount = max(0, $viewCount);
 
         return $this;
     }

@@ -16,18 +16,23 @@ interface V3GallerySourceInterface
      *     url: string,
      *     ativo: string,
      *     ordem: int,
-     *     data: ?string
+     *     data: ?string,
+     *     visit: int,
+     *     regs: int
      * }>
      */
     public function fetchAlbums(): array;
 
     /**
+     * Photos in classic gallery display order for the album (not raw `foto.ordem`).
+     *
      * @return list<array{
      *     id_foto: int,
      *     id_album: int,
      *     titulo: ?string,
      *     foto: string,
-     *     ordem: int
+     *     ordem: int,
+     *     visit: int
      * }>
      */
     public function fetchPhotosForAlbum(int $albumId): array;
