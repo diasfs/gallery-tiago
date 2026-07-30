@@ -64,8 +64,9 @@ services:
     depends_on: [api, redis, postgres]
     networks: [gallery]
 
-  # Bridges Messenger `faces`/`tags` → Redis lists gallery:faces / gallery:tags
-  # for the Python workers. Must stay separate from convert (fast LPUSH vs slow AVIF).
+  # Bridges Messenger `faces`/`tags` → Redis streams gallery:faces:stream /
+  # gallery:tags:stream for the Python workers. Must stay separate from convert
+  # (fast XADD vs slow AVIF).
   worker-bridge:
     build: ./apps/api
     restart: unless-stopped
@@ -95,6 +96,10 @@ services:
   worker-tags:
     build: ./apps/worker-tags
     restart: unless-stopped
+    deploy:
+      resources:
+        limits: 
+          cpus: "8"
     volumes:
       - ./apps/worker-tags:/app
       - ./volumes/media_data:/var/gallery/media
