@@ -166,6 +166,27 @@ def attach_tag(conn: psycopg.Connection, photo_id: str, tag_id: str) -> None:
         )
 
 
+def get_tags_status(conn: psycopg.Connection, photo_id: str) -> Optional[str]:
+    with conn.cursor() as cur:
+        cur.execute("SELECT tags_status FROM photo WHERE id = %s", (photo_id,))
+        row = cur.fetchone()
+        return None if row is None else row[0]
+
+
+def claim_tags_detecting(conn: psycopg.Connection, photo_id: str) -> bool:
+    """Mark tags_status=detecting when currently queued/detecting. Returns False if skipped."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE photo
+            SET tags_status = 'detecting'
+            WHERE id = %s AND tags_status IN ('pending', 'queued', 'detecting')
+            """,
+            (photo_id,),
+        )
+        return cur.rowcount > 0
+
+
 def set_tags_status(
     conn: psycopg.Connection,
     photo_id: str,
@@ -181,7 +202,7 @@ def set_tags_status(
             row = cur.fetchone()
             current = None if row is None else row[0]
 
-            if status == "done":
+            if status in ("done", "disabled"):
                 new_error = clear_stage_error(current, "tags")
             else:
                 new_error = set_stage_error(current, "tags", error or "unknown error")
@@ -190,3 +211,27 @@ def set_tags_status(
                 "UPDATE photo SET tags_status = %s, processing_error = %s WHERE id = %s",
                 (status, new_error, photo_id),
             )
+
+
+def get_processing_settings(conn: psycopg.Connection) -> dict:
+    """Return global AI processing flags. Defaults match ProcessingSettings entity."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT faces_enabled, tags_enabled, tag_detector
+            FROM processing_settings
+            WHERE id = 1
+            """
+        )
+        row = cur.fetchone()
+        if row is None:
+            return {
+                "faces_enabled": True,
+                "tags_enabled": True,
+                "tag_detector": "ram_plus",
+            }
+        return {
+            "faces_enabled": bool(row[0]),
+            "tags_enabled": bool(row[1]),
+            "tag_detector": row[2] or "ram_plus",
+        }

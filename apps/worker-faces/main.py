@@ -1,9 +1,11 @@
 """Face worker entrypoint.
 
-BRPOP `gallery:faces` -> rasterize AVIF master to a temp JPEG (OpenCV does
-not reliably decode AVIF) -> InsightFace CPU detection -> pgvector nearest-
-neighbor match via matcher.assign_person -> persist Face/Person rows -> set
-the photo's faces_status to done/failed.
+XREADGROUP `gallery:faces:stream` (consumer group `faces-workers`) ->
+check processing_settings / claim detecting -> rasterize AVIF master to a
+temp JPEG (OpenCV does not reliably decode AVIF) -> InsightFace CPU
+detection -> pgvector nearest-neighbor match via matcher.assign_person ->
+persist Face/Person rows -> set faces_status -> XACK only after a terminal
+status is persisted.
 
 InsightFace/onnxruntime/cv2 are imported lazily inside get_face_app() /
 process_photo() so this module -- and matcher.py in particular -- can be
@@ -13,23 +15,25 @@ dependencies installed.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import socket
 import uuid
 from pathlib import Path
 
 import redis
 
 import db
+import stream_queue
 from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person
 from rasterize import materialize_jpeg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("worker-faces")
 
-QUEUE_KEY = "gallery:faces"
-BRPOP_TIMEOUT_SECONDS = 5
+STREAM_KEY = "gallery:faces:stream"
+GROUP_NAME = "faces-workers"
+TERMINAL_STATUSES = frozenset({"done", "failed", "disabled"})
 
 
 class Config:
@@ -40,6 +44,11 @@ class Config:
         self.match_threshold = float(os.environ.get("FACE_MATCH_THRESHOLD", "0.35"))
         self.cluster_threshold = float(os.environ.get("FACE_CLUSTER_THRESHOLD", "0.40"))
         self.embedding_dim = int(os.environ.get("FACE_EMBEDDING_DIM", "512"))
+        self.consumer_name = os.environ.get(
+            "FACES_CONSUMER_NAME",
+            f"{socket.gethostname()}-{os.getpid()}",
+        )
+        self.min_idle_ms = int(os.environ.get("FACES_CLAIM_MIN_IDLE_MS", "60000"))
 
 
 _face_app = None
@@ -125,24 +134,46 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
         image_path.unlink(missing_ok=True)
 
 
-def handle_message(conn, cfg: Config, payload: bytes) -> None:
-    try:
-        data = json.loads(payload)
-        photo_id = data["photo_id"]
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        log.error("skipping malformed message on %s: %s (%r)", QUEUE_KEY, e, payload)
-        return
+def handle_photo(conn, cfg: Config, photo_id: str) -> bool:
+    """Process one photo_id. Returns True when the stream message may be ACKed."""
+    status = db.get_faces_status(conn, photo_id)
+    if status is None:
+        log.warning("photo %s not found; acking stream message", photo_id)
+        return True
+    if status in TERMINAL_STATUSES:
+        log.info("photo %s: faces_status=%s (terminal); skipping duplicate", photo_id, status)
+        return True
+
+    settings = db.get_processing_settings(conn)
+    if not settings["faces_enabled"]:
+        try:
+            db.set_faces_status(conn, photo_id, "disabled")
+        except Exception:
+            log.exception("failed to record faces disabled for photo %s", photo_id)
+            return False
+        log.info("photo %s: faces disabled globally, faces_status=disabled", photo_id)
+        return True
+
+    if not db.claim_faces_detecting(conn, photo_id):
+        status = db.get_faces_status(conn, photo_id)
+        if status in TERMINAL_STATUSES:
+            return True
+        log.warning("photo %s: could not claim detecting (status=%s); leave unacked", photo_id, status)
+        return False
 
     try:
         face_count = process_photo(conn, cfg, photo_id)
         db.set_faces_status(conn, photo_id, "done")
         log.info("photo %s: detected %d face(s), status=done", photo_id, face_count)
+        return True
     except Exception as e:  # noqa: BLE001 - worker must survive a single bad photo
         log.exception("detect_faces failed for photo %s", photo_id)
         try:
             db.set_faces_status(conn, photo_id, "failed", error=str(e))
+            return True
         except Exception:
             log.exception("also failed to record failure status for photo %s", photo_id)
+            return False
 
 
 def main() -> None:
@@ -150,15 +181,23 @@ def main() -> None:
     conn = db.connect(cfg.database_url)
     r = redis.Redis.from_url(cfg.redis_url)
 
-    log.info("worker-faces started; BRPOP %s", QUEUE_KEY)
+    stream_queue.ensure_consumer_group(r, STREAM_KEY, GROUP_NAME)
+    log.info(
+        "worker-faces started; stream=%s group=%s consumer=%s",
+        STREAM_KEY,
+        GROUP_NAME,
+        cfg.consumer_name,
+    )
 
     while True:
-        item = r.brpop(QUEUE_KEY, timeout=BRPOP_TIMEOUT_SECONDS)
-        if item is None:
-            continue
-
-        _, payload = item
-        handle_message(conn, cfg, payload)
+        stream_queue.consume_once(
+            r,
+            STREAM_KEY,
+            GROUP_NAME,
+            cfg.consumer_name,
+            lambda photo_id: handle_photo(conn, cfg, photo_id),
+            min_idle_ms=cfg.min_idle_ms,
+        )
 
 
 if __name__ == "__main__":

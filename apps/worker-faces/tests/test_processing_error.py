@@ -114,3 +114,68 @@ def test_set_faces_status_done_clears_only_faces_error():
         "UPDATE photo SET faces_status = %s, processing_error = %s WHERE id = %s",
         ("done", "media: disk\ntags: timeout", "photo-1"),
     )
+
+
+def test_set_faces_status_disabled_clears_faces_error():
+    conn = FakeConnection("media: disk\nfaces: bad face")
+
+    set_faces_status(conn, "photo-1", "disabled")
+
+    assert conn.executions[-1] == (
+        "UPDATE photo SET faces_status = %s, processing_error = %s WHERE id = %s",
+        ("disabled", "media: disk", "photo-1"),
+    )
+
+
+def test_handle_photo_marks_faces_done(monkeypatch):
+    import main
+
+    statuses = []
+    monkeypatch.setattr(main.db, "get_faces_status", lambda _c, _p: "queued")
+    monkeypatch.setattr(main.db, "claim_faces_detecting", lambda _c, _p: True)
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _c: {"faces_enabled": True, "tags_enabled": True, "tag_detector": "ram_plus"},
+    )
+    monkeypatch.setattr(main, "process_photo", lambda *_a, **_k: 2)
+    monkeypatch.setattr(
+        main.db,
+        "set_faces_status",
+        lambda _c, photo_id, status, error=None: statuses.append((photo_id, status, error)),
+    )
+
+    assert main.handle_photo(object(), object(), "photo-1") is True
+    assert statuses == [("photo-1", "done", None)]
+
+
+def test_handle_photo_skips_terminal_duplicate(monkeypatch):
+    import main
+
+    called = []
+    monkeypatch.setattr(main.db, "get_faces_status", lambda _c, _p: "done")
+    monkeypatch.setattr(main, "process_photo", lambda *_a, **_k: called.append(True) or 0)
+
+    assert main.handle_photo(object(), object(), "photo-1") is True
+    assert called == []
+
+
+def test_handle_photo_leaves_unacked_when_failure_status_write_fails(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main.db, "get_faces_status", lambda _c, _p: "queued")
+    monkeypatch.setattr(main.db, "claim_faces_detecting", lambda _c, _p: True)
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _c: {"faces_enabled": True, "tags_enabled": True, "tag_detector": "ram_plus"},
+    )
+    monkeypatch.setattr(main, "process_photo", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    def fail_status(_c, _p, status, error=None):
+        if status == "failed":
+            raise RuntimeError("db down")
+
+    monkeypatch.setattr(main.db, "set_faces_status", fail_status)
+
+    assert main.handle_photo(object(), object(), "photo-1") is False

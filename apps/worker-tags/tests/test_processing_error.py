@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import main
 from db import clear_stage_error, set_stage_error, set_tags_status
+from tagger import threshold_for
+from vocabulary import load_ram_tag_list
 
 
 def test_set_stage_error_adds_line():
@@ -52,23 +54,32 @@ class FakeCursor:
     def __exit__(self, exc_type, exc_value, traceback):
         return False
 
-    def execute(self, query, params):
+    def execute(self, query, params=None):
         self.connection.executions.append((" ".join(query.split()), params))
+        q = " ".join(query.split())
+        if "FROM processing_settings" in q:
+            self.connection.row = self.connection.settings_row
+        elif "SELECT processing_error" in q:
+            self.connection.row = (
+                None
+                if self.connection.processing_error is FakeConnection.MISSING
+                else (self.connection.processing_error,)
+            )
 
     def fetchone(self):
         return self.connection.row
 
 
 class FakeConnection:
-    def __init__(self, processing_error):
-        self.row = (
-            None if processing_error is FakeConnection.MISSING else (processing_error,)
-        )
+    MISSING = object()
+
+    def __init__(self, processing_error, settings_row=(True, True, "ram_plus")):
+        self.processing_error = processing_error
+        self.settings_row = settings_row
+        self.row = None
         self.executions = []
         self.transaction_entered = False
         self.transaction_exited = False
-
-    MISSING = object()
 
     def cursor(self):
         return FakeCursor(self)
@@ -117,10 +128,38 @@ def test_set_tags_status_done_clears_only_tags_error():
     )
 
 
-def test_handle_message_marks_tags_done(monkeypatch):
+def test_set_tags_status_disabled_clears_tags_error():
+    conn = FakeConnection("media: disk\ntags: timeout")
+
+    set_tags_status(conn, "photo-1", "disabled")
+
+    assert conn.executions[-1] == (
+        "UPDATE photo SET tags_status = %s, processing_error = %s WHERE id = %s",
+        ("disabled", "media: disk", "photo-1"),
+    )
+
+
+def test_handle_photo_marks_tags_done(monkeypatch):
     conn = object()
     statuses = []
-    monkeypatch.setattr(main, "process_photo", lambda _conn, _cfg, _photo_id: 3)
+    seen = []
+
+    def fake_process(_conn, _cfg, photo_id, detector):
+        seen.append((photo_id, detector))
+        return 3
+
+    monkeypatch.setattr(main, "process_photo", fake_process)
+    monkeypatch.setattr(main.db, "get_tags_status", lambda _conn, _pid: "queued")
+    monkeypatch.setattr(main.db, "claim_tags_detecting", lambda _conn, _pid: True)
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _conn: {
+            "faces_enabled": True,
+            "tags_enabled": True,
+            "tag_detector": "mobileclip_s0",
+        },
+    )
     monkeypatch.setattr(
         main.db,
         "set_tags_status",
@@ -129,19 +168,32 @@ def test_handle_message_marks_tags_done(monkeypatch):
         ),
     )
 
-    main.handle_message(conn, object(), b'{"photo_id":"photo-1"}')
+    assert main.handle_photo(conn, object(), "photo-1") is True
 
+    assert seen == [("photo-1", "mobileclip_s0")]
     assert statuses == [("photo-1", "done", None)]
 
 
-def test_handle_message_marks_tags_failed(monkeypatch):
+def test_handle_photo_marks_disabled_when_tags_off(monkeypatch):
     conn = object()
     statuses = []
+    called = []
 
-    def fail_processing(_conn, _cfg, _photo_id):
-        raise RuntimeError("tagger unavailable")
-
-    monkeypatch.setattr(main, "process_photo", fail_processing)
+    monkeypatch.setattr(
+        main,
+        "process_photo",
+        lambda *_args, **_kwargs: called.append(True) or 0,
+    )
+    monkeypatch.setattr(main.db, "get_tags_status", lambda _conn, _pid: "queued")
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _conn: {
+            "faces_enabled": True,
+            "tags_enabled": False,
+            "tag_detector": "ram_plus",
+        },
+    )
     monkeypatch.setattr(
         main.db,
         "set_tags_status",
@@ -150,6 +202,91 @@ def test_handle_message_marks_tags_failed(monkeypatch):
         ),
     )
 
-    main.handle_message(conn, object(), b'{"photo_id":"photo-1"}')
+    assert main.handle_photo(conn, object(), "photo-1") is True
+
+    assert called == []
+    assert statuses == [("photo-1", "disabled", None)]
+
+
+def test_handle_photo_marks_tags_failed(monkeypatch):
+    conn = object()
+    statuses = []
+
+    def fail_processing(_conn, _cfg, _photo_id, _detector):
+        raise RuntimeError("tagger unavailable")
+
+    monkeypatch.setattr(main, "process_photo", fail_processing)
+    monkeypatch.setattr(main.db, "get_tags_status", lambda _conn, _pid: "queued")
+    monkeypatch.setattr(main.db, "claim_tags_detecting", lambda _conn, _pid: True)
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _conn: {
+            "faces_enabled": True,
+            "tags_enabled": True,
+            "tag_detector": "ram_plus",
+        },
+    )
+    monkeypatch.setattr(
+        main.db,
+        "set_tags_status",
+        lambda _conn, photo_id, status, error=None: statuses.append(
+            (photo_id, status, error)
+        ),
+    )
+
+    assert main.handle_photo(conn, object(), "photo-1") is True
 
     assert statuses == [("photo-1", "failed", "tagger unavailable")]
+
+
+def test_handle_photo_skips_terminal_duplicate(monkeypatch):
+    called = []
+    monkeypatch.setattr(main.db, "get_tags_status", lambda _conn, _pid: "done")
+    monkeypatch.setattr(
+        main,
+        "process_photo",
+        lambda *_a, **_k: called.append(True) or 0,
+    )
+
+    assert main.handle_photo(object(), object(), "photo-1") is True
+    assert called == []
+
+
+def test_handle_photo_leaves_unacked_when_failure_status_write_fails(monkeypatch):
+    def fail_processing(_conn, _cfg, _photo_id, _detector):
+        raise RuntimeError("tagger unavailable")
+
+    def fail_status(_conn, _photo_id, status, error=None):
+        if status == "failed":
+            raise RuntimeError("db down")
+
+    monkeypatch.setattr(main, "process_photo", fail_processing)
+    monkeypatch.setattr(main.db, "get_tags_status", lambda _conn, _pid: "queued")
+    monkeypatch.setattr(main.db, "claim_tags_detecting", lambda _conn, _pid: True)
+    monkeypatch.setattr(
+        main.db,
+        "get_processing_settings",
+        lambda _conn: {
+            "faces_enabled": True,
+            "tags_enabled": True,
+            "tag_detector": "ram_plus",
+        },
+    )
+    monkeypatch.setattr(main.db, "set_tags_status", fail_status)
+
+    assert main.handle_photo(object(), object(), "photo-1") is False
+
+
+def test_load_ram_tag_list_has_thousands_of_labels():
+    labels = load_ram_tag_list()
+    assert len(labels) > 4000
+    assert "dog" in {label.lower() for label in labels} or any(
+        "dog" in label.lower() for label in labels
+    )
+
+
+def test_threshold_for_mobileclip_uses_default_when_zero():
+    assert threshold_for("mobileclip_s0", 0.0) == pytest.approx(0.20)
+    assert threshold_for("mobileclip_s1", 0.35) == pytest.approx(0.35)
+    assert threshold_for("ram_plus", 0.0) == pytest.approx(0.0)
