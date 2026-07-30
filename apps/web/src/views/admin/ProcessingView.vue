@@ -35,8 +35,8 @@ const POLL_MS = 5000
 const PER_PAGE = 50
 
 const MEDIA_STATUSES: MediaStatus[] = ['pending', 'converting', 'done', 'failed']
-const FACES_STATUSES: FacesStatus[] = ['pending', 'detecting', 'done', 'failed']
-const TAGS_STATUSES: TagsStatus[] = ['pending', 'detecting', 'done', 'failed']
+const FACES_STATUSES: FacesStatus[] = ['pending', 'queued', 'detecting', 'done', 'failed', 'disabled']
+const TAGS_STATUSES: TagsStatus[] = ['pending', 'queued', 'detecting', 'done', 'failed', 'disabled']
 
 const MEDIA_LABEL: Record<MediaStatus, string> = {
   pending: 'Pendente',
@@ -46,15 +46,19 @@ const MEDIA_LABEL: Record<MediaStatus, string> = {
 }
 const FACE_LABEL: Record<FacesStatus, string> = {
   pending: 'Pendente',
+  queued: 'Na fila',
   detecting: 'Detectando',
   done: 'Concluído',
   failed: 'Falha',
+  disabled: 'Desativado',
 }
 const TAG_LABEL: Record<TagsStatus, string> = {
   pending: 'Pendente',
+  queued: 'Na fila',
   detecting: 'Detectando',
   done: 'Concluído',
   failed: 'Falha',
+  disabled: 'Desativado',
 }
 
 const route = useRoute()
@@ -96,9 +100,10 @@ const canEnqueueSelection = computed(() =>
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function badgeVariantFor(s: string) {
-  if (s === 'done') return 'secondary'
+  if (s === 'done' || s === 'disabled') return 'secondary'
   if (s === 'failed') return 'destructive'
   if (s === 'converting' || s === 'detecting') return 'default'
+  if (s === 'queued') return 'outline'
   return 'outline'
 }
 

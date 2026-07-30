@@ -42,7 +42,7 @@ const router = useRouter()
 const photos = ref<AdminPhotoSummary[]>([])
 const children = ref<AdminAlbum[]>([])
 const albumMeta = ref<AdminAlbumDetail | null>(null)
-const rootAlbums = ref<AdminAlbum[]>([])
+const editingAlbum = ref<AdminAlbumDetail | null>(null)
 const childrenTotal = ref(0)
 const photosTotal = ref(0)
 const childrenPerPage = 24
@@ -60,6 +60,12 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const selectedIds = ref<Set<string>>(new Set())
 const deleting = ref(false)
 const deleteTarget = ref<'selected' | null>(null)
+
+const reorderMode = ref(false)
+const reorderPhotos = ref<AdminPhotoSummary[]>([])
+const reorderSaving = ref(false)
+const reorderLoading = ref(false)
+const dragFromIndex = ref<number | null>(null)
 
 const childrenPage = computed(() => {
   const raw = Number(route.query.childrenPage ?? 1)
@@ -80,23 +86,29 @@ const MEDIA_LABEL: Record<MediaStatus, string> = {
 
 const FACE_LABEL: Record<FacesStatus, string> = {
   pending: 'Rostos pendentes',
+  queued: 'Rostos na fila',
   detecting: 'Detectando rostos',
   done: 'Rostos concluídos',
   failed: 'Falha nos rostos',
+  disabled: 'Rostos desativados',
 }
 
 const TAG_LABEL: Record<TagsStatus, string> = {
   pending: 'Tags pendentes',
+  queued: 'Tags na fila',
   detecting: 'Sugerindo tags',
   done: 'Tags concluídas',
   failed: 'Falha nas tags',
+  disabled: 'Tags desativadas',
 }
 
 function isInFlight(p: AdminPhotoSummary): boolean {
   return (
     p.mediaStatus === 'pending' ||
     p.mediaStatus === 'converting' ||
+    p.facesStatus === 'queued' ||
     p.facesStatus === 'detecting' ||
+    p.tagsStatus === 'queued' ||
     p.tagsStatus === 'detecting'
   )
 }
@@ -145,32 +157,25 @@ const formDialogOpen = computed({
   },
 })
 
-/** Roots for parent select, plus current non-root parent so the value still displays. */
-const parentSelectOptions = computed(() => {
-  const roots = rootAlbums.value.map((album) => ({ id: album.id, title: album.title }))
-  const currentParentId = albumMeta.value?.parentId
-  if (!currentParentId) return roots
-  if (roots.some((album) => album.id === currentParentId)) return roots
-  const parentSummary = albumMeta.value?.parent
-  if (parentSummary && parentSummary.id === currentParentId) {
-    return [...roots, { id: parentSummary.id, title: parentSummary.title }]
-  }
-  return roots
-})
-
 function startCreateChild() {
+  editingAlbum.value = null
   editingId.value = 'new'
 }
 
-async function startEditCurrent() {
+function startEditCurrent() {
   if (!albumMeta.value) return
-  try {
-    const result = await adminApi.listAlbums({ page: 1, perPage: 100 })
-    rootAlbums.value = result.data
-  } catch {
-    rootAlbums.value = []
-  }
+  editingAlbum.value = albumMeta.value
   editingId.value = albumMeta.value.id
+}
+
+async function startEditChild(child: AdminAlbum) {
+  try {
+    editingAlbum.value = await adminApi.getAlbum(child.id)
+    editingId.value = child.id
+  } catch {
+    editingAlbum.value = null
+    editingId.value = null
+  }
 }
 
 function requestDeleteAlbum() {
@@ -346,10 +351,12 @@ watch(
   () => [props.albumId, childrenPage.value, photosPage.value] as const,
   async () => {
     editingId.value = null
+    editingAlbum.value = null
     deletingAlbum.value = false
     selectedIds.value = new Set()
     deleteTarget.value = null
     uploadError.value = null
+    cancelReorderMode()
     if (pollTimer) {
       clearInterval(pollTimer)
       pollTimer = null
@@ -381,7 +388,8 @@ async function onFilesSelected(event: Event) {
   for (const file of files) {
     try {
       const uploaded = await adminApi.uploadPhoto(props.albumId, file)
-      photos.value = [uploaded, ...photos.value]
+      photos.value = [...photos.value, uploaded]
+      photosTotal.value += 1
     } catch (err) {
       uploadError.value =
         err instanceof ApiError ? `Falha ao enviar "${file.name}": ${err.message}` : `Falha ao enviar "${file.name}".`
@@ -393,6 +401,7 @@ async function onFilesSelected(event: Event) {
   if (fileInput.value) {
     fileInput.value.value = ''
   }
+  await load()
   schedulePoll()
 }
 
@@ -507,10 +516,107 @@ async function confirmDelete() {
 }
 
 function badgeVariantFor(status: string) {
-  if (status === 'done') return 'default'
+  if (status === 'done' || status === 'disabled') return 'default'
   if (status === 'failed') return 'destructive'
   if (status === 'pending') return 'secondary'
   return 'outline'
+}
+
+async function fetchAllAlbumPhotos(): Promise<AdminPhotoSummary[]> {
+  const perPage = 100
+  let page = 1
+  const all: AdminPhotoSummary[] = []
+  for (;;) {
+    const result = await adminApi.listAlbumPhotos(props.albumId, { page, perPage })
+    all.push(...result.data)
+    if (all.length >= result.meta.total || result.data.length === 0) {
+      break
+    }
+    page += 1
+  }
+  return all
+}
+
+async function enterReorderMode() {
+  if (reorderLoading.value || photosTotal.value === 0) {
+    return
+  }
+  reorderLoading.value = true
+  error.value = null
+  try {
+    reorderPhotos.value = await fetchAllAlbumPhotos()
+    reorderMode.value = true
+    selectedIds.value = new Set()
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao carregar fotos para reordenar: ${err.message}` : 'Falha ao carregar fotos para reordenar.'
+  } finally {
+    reorderLoading.value = false
+  }
+}
+
+function cancelReorderMode() {
+  reorderMode.value = false
+  reorderPhotos.value = []
+  dragFromIndex.value = null
+}
+
+async function saveReorder() {
+  if (reorderSaving.value || reorderPhotos.value.length === 0) {
+    return
+  }
+  reorderSaving.value = true
+  error.value = null
+  try {
+    await adminApi.reorderAlbumPhotos(
+      props.albumId,
+      reorderPhotos.value.map((p) => p.id),
+    )
+    reorderMode.value = false
+    reorderPhotos.value = []
+    dragFromIndex.value = null
+    await load()
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao salvar ordem: ${err.message}` : 'Falha ao salvar ordem.'
+  } finally {
+    reorderSaving.value = false
+  }
+}
+
+function onReorderDragStart(index: number, event: DragEvent) {
+  dragFromIndex.value = index
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+}
+
+function onReorderDragOver(event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function onReorderDrop(toIndex: number, event: DragEvent) {
+  event.preventDefault()
+  const from = dragFromIndex.value
+  dragFromIndex.value = null
+  if (from === null || from === toIndex) {
+    return
+  }
+  const next = [...reorderPhotos.value]
+  const [moved] = next.splice(from, 1)
+  if (!moved) {
+    return
+  }
+  next.splice(toIndex, 0, moved)
+  reorderPhotos.value = next
+}
+
+function onReorderDragEnd() {
+  dragFromIndex.value = null
 }
 </script>
 
@@ -612,7 +718,15 @@ function badgeVariantFor(status: string) {
                 </p>
               </div>
             </RouterLink>
-            <div class="border-t border-border/60 px-3 py-2">
+            <div class="border-t border-border/60 px-3 py-2 flex flex-wrap gap-x-3 gap-y-1">
+              <button
+                type="button"
+                class="admin-action-link"
+                data-testid="edit-subalbum"
+                @click="startEditChild(child)"
+              >
+                Editar
+              </button>
               <button
                 type="button"
                 class="admin-action-link"
@@ -639,7 +753,7 @@ function badgeVariantFor(status: string) {
       </div>
 
       <div class="admin-panel flex flex-col gap-3 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between">
-        <label class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
+        <label v-if="!reorderMode" class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
           <Checkbox
             :model-value="allSelected"
             :disabled="photos.length === 0 || deleting"
@@ -649,7 +763,32 @@ function badgeVariantFor(status: string) {
           Selecionar todas
           <span v-if="selectedCount > 0" class="text-muted-foreground">({{ selectedCount }})</span>
         </label>
+        <p v-else class="text-sm text-muted-foreground">
+          Arraste as fotos para reordenar. A ordem é salva no álbum inteiro.
+        </p>
         <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <template v-if="reorderMode">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              :disabled="reorderSaving"
+              data-testid="reorder-cancel"
+              @click="cancelReorderMode"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              :disabled="reorderSaving || reorderPhotos.length === 0"
+              data-testid="reorder-save"
+              @click="saveReorder"
+            >
+              {{ reorderSaving ? 'Salvando…' : 'Salvar ordem' }}
+            </Button>
+          </template>
+          <template v-else>
           <Select
             :model-value="reprocessScope"
             :disabled="reprocessingAlbum || deleting"
@@ -681,6 +820,16 @@ function badgeVariantFor(status: string) {
             }}</span>
           </Button>
           <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            :disabled="reorderLoading || deleting || photosTotal === 0"
+            data-testid="reorder-start"
+            @click="enterReorderMode"
+          >
+            {{ reorderLoading ? 'Carregando…' : 'Reordenar' }}
+          </Button>
+          <Button
             v-if="coverPhotoId"
             type="button"
             variant="ghost"
@@ -707,11 +856,12 @@ function badgeVariantFor(status: string) {
                   : 'Excluir selecionadas'
             }}</span>
           </Button>
+          </template>
         </div>
       </div>
 
       <div
-        v-if="photos.length === 0"
+        v-if="(!reorderMode && photos.length === 0) || (reorderMode && reorderPhotos.length === 0)"
         class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
       >
         <template v-if="children.length > 0">
@@ -721,16 +871,27 @@ function badgeVariantFor(status: string) {
           Nenhuma foto neste álbum ainda. Envie algumas acima.
         </template>
       </div>
-      <div v-else class="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div
+        v-else
+        class="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        data-testid="photos-grid"
+        :class="{ 'photos-grid--reorder': reorderMode }"
+      >
         <article
-          v-for="photo in photos"
+          v-for="(photo, index) in reorderMode ? reorderPhotos : photos"
           :key="photo.id"
           data-testid="photo-row"
           class="admin-photo-tile group min-w-0 overflow-hidden rounded-2xl"
           :class="{
-            'admin-photo-tile--selected': selectedIds.has(photo.id),
+            'admin-photo-tile--selected': !reorderMode && selectedIds.has(photo.id),
             'admin-photo-tile--cover': coverPhotoId === photo.id,
+            'admin-photo-tile--dragging': reorderMode && dragFromIndex === index,
           }"
+          :draggable="reorderMode"
+          @dragstart="reorderMode && onReorderDragStart(index, $event)"
+          @dragover="reorderMode && onReorderDragOver($event)"
+          @drop="reorderMode && onReorderDrop(index, $event)"
+          @dragend="reorderMode && onReorderDragEnd()"
         >
           <div class="relative aspect-square bg-muted">
             <img
@@ -738,6 +899,7 @@ function badgeVariantFor(status: string) {
               :src="thumbSrc(photo)!"
               :alt="photo.title ?? 'Foto'"
               class="size-full object-cover transition duration-300 group-hover:scale-[1.03]"
+              :class="{ 'pointer-events-none': reorderMode }"
             />
             <div
               v-else
@@ -746,7 +908,7 @@ function badgeVariantFor(status: string) {
               {{ previewPlaceholder(photo) }}
             </div>
 
-            <div class="absolute left-2 top-2 z-10">
+            <div v-if="!reorderMode" class="absolute left-2 top-2 z-10">
               <Checkbox
                 :model-value="selectedIds.has(photo.id)"
                 :disabled="deleting"
@@ -754,6 +916,13 @@ function badgeVariantFor(status: string) {
                 :aria-label="`Selecionar ${photo.title ?? 'foto'}`"
                 @update:model-value="toggleSelect(photo.id, $event === true)"
               />
+            </div>
+            <div
+              v-else
+              class="absolute left-2 top-2 z-10 rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              data-testid="reorder-handle"
+            >
+              {{ index + 1 }}
             </div>
 
             <span
@@ -765,7 +934,7 @@ function badgeVariantFor(status: string) {
             </span>
 
             <button
-              v-else
+              v-else-if="!reorderMode"
               type="button"
               class="absolute inset-x-0 bottom-0 z-10 bg-background/85 py-1.5 text-center text-[11px] font-medium text-foreground opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :disabled="coverSaving || deleting || !thumbSrc(photo)"
@@ -779,7 +948,7 @@ function badgeVariantFor(status: string) {
           <div class="space-y-2 p-3">
             <div class="min-w-0">
               <p class="truncate text-sm font-medium">{{ photo.title ?? '(sem título)' }}</p>
-              <div class="mt-1.5 flex flex-wrap gap-1">
+              <div v-if="!reorderMode" class="mt-1.5 flex flex-wrap gap-1">
                 <Badge data-testid="status-media" :variant="badgeVariantFor(photo.mediaStatus)" class="text-[10px]">
                   {{ MEDIA_LABEL[photo.mediaStatus] }}
                 </Badge>
@@ -792,12 +961,12 @@ function badgeVariantFor(status: string) {
               </div>
             </div>
             <p
-              v-if="photo.processingError"
+              v-if="!reorderMode && photo.processingError"
               class="line-clamp-2 text-xs text-destructive"
             >
               {{ photo.processingError }}
             </p>
-            <div class="admin-photo-actions">
+            <div v-if="!reorderMode" class="admin-photo-actions">
               <Button
                 as-child
                 size="icon-xs"
@@ -830,6 +999,7 @@ function badgeVariantFor(status: string) {
         </article>
       </div>
       <PaginationBar
+        v-if="!reorderMode"
         :page="photosPage"
         :total="photosTotal"
         :per-page="photosPerPage"
@@ -840,10 +1010,9 @@ function badgeVariantFor(status: string) {
     <AlbumFormDialog
       v-model:open="formDialogOpen"
       :editing-id="editingId"
-      :album="editingId === 'new' ? null : albumMeta"
+      :album="editingId === 'new' ? null : editingAlbum"
       :create-parent-id="props.albumId"
       :show-parent-select="editingId !== 'new'"
-      :parent-options="parentSelectOptions"
       @saved="load"
     />
 

@@ -33,6 +33,13 @@ function makeTag(overrides: Partial<AdminTag> = {}): AdminTag {
   }
 }
 
+function paginated(tags: AdminTag[], total = tags.length) {
+  return {
+    data: tags,
+    meta: { page: 1, perPage: 50, total },
+  }
+}
+
 async function mountView(query: Record<string, string> = {}) {
   document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
 
@@ -54,7 +61,9 @@ async function mountView(query: Record<string, string> = {}) {
 describe('TagsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedApi.searchTags.mockResolvedValue([makeTag(), makeTag({ id: 'tag-2', name: 'beach', slug: 'beach', photoCount: 1 })])
+    mockedApi.searchTags.mockResolvedValue(
+      paginated([makeTag(), makeTag({ id: 'tag-2', name: 'beach', slug: 'beach', photoCount: 1 })]),
+    )
     mockedApi.updateTag.mockResolvedValue(makeTag({ name: 'cachorro' }))
     mockedApi.deleteTag.mockResolvedValue(undefined)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -68,7 +77,12 @@ describe('TagsView', () => {
   it('lists tags with slug and photo count', async () => {
     const { wrapper } = await mountView()
 
-    expect(mockedApi.searchTags).toHaveBeenCalledWith(undefined)
+    expect(mockedApi.searchTags).toHaveBeenCalledWith({
+      q: undefined,
+      page: 1,
+      perPage: 50,
+      sort: 'recent',
+    })
     expect(wrapper.findAll('[data-testid="tag-row"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('dog')
     expect(wrapper.text()).toContain('beach')
@@ -107,9 +121,36 @@ describe('TagsView', () => {
   })
 
   it('shows empty state when no tags', async () => {
-    mockedApi.searchTags.mockResolvedValue([])
+    mockedApi.searchTags.mockResolvedValue(paginated([], 0))
     const { wrapper } = await mountView()
 
     expect(wrapper.find('[data-testid="tags-empty"]').exists()).toBe(true)
+  })
+
+  it('navigates pages while preserving search', async () => {
+    mockedApi.searchTags.mockResolvedValue(paginated([makeTag()], 60))
+    const { wrapper, router } = await mountView({ q: 'dog' })
+
+    await wrapper.find('[data-testid="pagination"] button:last-child').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ q: 'dog', page: '2' })
+    expect(mockedApi.searchTags).toHaveBeenLastCalledWith({
+      q: 'dog',
+      page: 2,
+      perPage: 50,
+      sort: 'recent',
+    })
+  })
+
+  it('requests slug sort from query param', async () => {
+    await mountView({ sort: 'slug' })
+
+    expect(mockedApi.searchTags).toHaveBeenCalledWith({
+      q: undefined,
+      page: 1,
+      perPage: 50,
+      sort: 'slug',
+    })
   })
 })

@@ -8,9 +8,13 @@ import PhotoGrid from '../components/PhotoGrid.vue'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import LocationMap from '../components/LocationMap.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import ViewCount from '../components/ViewCount.vue'
 import { formatAlbumDateRangeLabel } from '../lib/utils'
 
 const props = defineProps<{ slug: string }>()
+const emit = defineEmits<{
+  albumLoaded: [id: string]
+}>()
 const route = useRoute()
 const router = useRouter()
 
@@ -20,7 +24,7 @@ const photos = ref<PhotoSummary[]>([])
 const childrenTotal = ref(0)
 const photosTotal = ref(0)
 const childrenPerPage = 24
-const photosPerPage = 48
+const photosPerPage = computed(() => album.value?.photosPerPage ?? 48)
 const loading = ref(true)
 const notFound = ref(false)
 
@@ -34,21 +38,21 @@ const photosPage = computed(() => {
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1
 })
 
-async function load() {
+async function loadAlbum() {
   loading.value = true
   notFound.value = false
   album.value = null
   try {
-    const [detail, childrenResult, photosResult] = await Promise.all([
-      api.getAlbum(props.slug),
-      api.listAlbumChildren(props.slug, { page: childrenPage.value, perPage: childrenPerPage }),
-      api.listAlbumPhotos(props.slug, { page: photosPage.value, perPage: photosPerPage }),
-    ])
-    album.value = detail
-    children.value = childrenResult.data
-    childrenTotal.value = childrenResult.meta.total
-    photos.value = photosResult.data
-    photosTotal.value = photosResult.meta.total
+    album.value = await api.getAlbum(props.slug)
+    emit('albumLoaded', album.value.id)
+    try {
+      const tracked = await api.recordAlbumView(props.slug)
+      if (album.value?.slug === props.slug) {
+        album.value.viewCount = tracked.viewCount
+      }
+    } catch {
+      // Viewing the album must still work if analytics is unavailable.
+    }
   } catch {
     notFound.value = true
   } finally {
@@ -56,13 +60,57 @@ async function load() {
   }
 }
 
+async function loadChildren() {
+  try {
+    const childrenResult = await api.listAlbumChildren(props.slug, {
+      page: childrenPage.value,
+      perPage: childrenPerPage,
+    })
+    children.value = childrenResult.data
+    childrenTotal.value = childrenResult.meta.total
+  } catch {
+    children.value = []
+    childrenTotal.value = 0
+  }
+}
+
+async function loadPhotos() {
+  try {
+    const photosResult = await api.listAlbumPhotos(props.slug, {
+      page: photosPage.value,
+      perPage: photosPerPage.value,
+    })
+    photos.value = photosResult.data
+    photosTotal.value = photosResult.meta.total
+  } catch {
+    photos.value = []
+    photosTotal.value = 0
+  }
+}
+
 watch(
-  () => [props.slug, childrenPage.value, photosPage.value] as const,
+  () => props.slug,
   () => {
-    void load()
+    void loadAlbum().then(() => {
+      if (!notFound.value) {
+        void Promise.all([loadChildren(), loadPhotos()])
+      }
+    })
   },
   { immediate: true },
 )
+
+watch(childrenPage, () => {
+  if (!notFound.value && album.value) {
+    void loadChildren()
+  }
+})
+
+watch(photosPage, () => {
+  if (!notFound.value && album.value) {
+    void loadPhotos()
+  }
+})
 
 function setChildrenPage(next: number) {
   router.push({
@@ -102,6 +150,9 @@ const hasCoordinates = computed(
     <template v-else-if="album">
       <Breadcrumb :ancestors="album.ancestors" :current="album.title" />
       <h1>{{ album.title }}</h1>
+      <p class="album-views">
+        <ViewCount :count="album.viewCount" />
+      </p>
       <p v-if="album.description" class="album-description">{{ album.description }}</p>
       <p v-if="takenAtLabel" class="album-date">{{ takenAtLabel }}</p>
 
@@ -144,6 +195,11 @@ const hasCoordinates = computed(
 .album-description {
   max-width: 40rem;
   color: #bbb;
+}
+
+.album-views {
+  margin: 0.35rem 0 0;
+  color: #999;
 }
 
 .album-date {

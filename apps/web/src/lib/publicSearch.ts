@@ -1,13 +1,13 @@
-import type { LocationQueryValue } from 'vue-router'
+import type { LocationQuery, LocationQueryValue } from 'vue-router'
 import type { PublicSearchBarState } from '../components/PublicSearchBar.vue'
 import { api } from '../api/client'
 import type { PublicSearchParams } from '../api/types'
 
-function asString(value: LocationQueryValue): string | undefined {
+function asString(value: LocationQueryValue | LocationQueryValue[]): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
-function asStringList(value: LocationQueryValue): string[] {
+function asStringList(value: LocationQueryValue | LocationQueryValue[]): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === 'string' && item !== '')
   }
@@ -15,7 +15,7 @@ function asStringList(value: LocationQueryValue): string[] {
   return []
 }
 
-export function searchStateFromQuery(query: Record<string, LocationQueryValue>): PublicSearchBarState {
+export function searchStateFromQuery(query: LocationQuery): PublicSearchBarState {
   const year = asString(query.year) ?? ''
   const from = asString(query.from) ?? ''
   const to = asString(query.to) ?? ''

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -21,7 +28,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { adminApi } from '../../api/client'
-import type { AdminTag } from '../../api/types'
+import type { AdminTag, TagListSort } from '../../api/types'
+import PaginationBar from '../../components/PaginationBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,15 +39,43 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref('')
 const saving = ref(false)
+const total = ref(0)
+const perPage = 50
+
+const page = computed(() => Math.max(1, Number(route.query.page) || 1))
+
+const sort = computed<TagListSort>(() => {
+  const value = route.query.sort
+  if (value === 'name' || value === 'slug' || value === 'recent') return value
+  return 'recent'
+})
 
 const editing = ref<AdminTag | null>(null)
 const editName = ref('')
+
+function listQuery(overrides: { page?: number; sort?: TagListSort } = {}) {
+  const nextSort = overrides.sort ?? sort.value
+  const nextPage = overrides.page ?? page.value
+
+  return {
+    ...(search.value.trim() ? { q: search.value.trim() } : {}),
+    ...(nextSort !== 'recent' ? { sort: nextSort } : {}),
+    ...(nextPage > 1 ? { page: String(nextPage) } : {}),
+  }
+}
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    tags.value = await adminApi.searchTags(search.value.trim() || undefined)
+    const result = await adminApi.searchTags({
+      q: search.value.trim() || undefined,
+      page: page.value,
+      perPage,
+      sort: sort.value,
+    })
+    tags.value = result.data
+    total.value = result.meta.total
   } catch {
     error.value = 'Falha ao carregar tags.'
   } finally {
@@ -47,25 +83,35 @@ async function load() {
   }
 }
 
-onMounted(() => {
-  search.value = typeof route.query.q === 'string' ? route.query.q : ''
-  void load()
-})
+onMounted(load)
+watch([() => route.query.q, page, sort], load)
 
 watch(
   () => route.query.q,
   (q) => {
     search.value = typeof q === 'string' ? q : ''
-    void load()
   },
+  { immediate: true },
 )
 
 function submitSearch() {
   router.push({
     name: 'admin-tags',
-    query: {
-      ...(search.value.trim() ? { q: search.value.trim() } : {}),
-    },
+    query: listQuery({ page: 1 }),
+  })
+}
+
+function setPage(nextPage: number) {
+  router.push({
+    name: 'admin-tags',
+    query: listQuery({ page: nextPage }),
+  })
+}
+
+function setSort(nextSort: TagListSort) {
+  router.push({
+    name: 'admin-tags',
+    query: listQuery({ sort: nextSort, page: 1 }),
   })
 }
 
@@ -109,6 +155,7 @@ async function removeTag(tag: AdminTag) {
   try {
     await adminApi.deleteTag(tag.id)
     tags.value = tags.value.filter((t) => t.id !== tag.id)
+    total.value = Math.max(0, total.value - 1)
   } catch {
     error.value = 'Falha ao excluir tag.'
   }
@@ -123,16 +170,32 @@ async function removeTag(tag: AdminTag) {
         o slug permanece estável para que novos envios reutilizem a mesma tag.
       </p>
 
-      <form class="flex gap-2" @submit.prevent="submitSearch">
-        <Input
-          v-model="search"
-          type="search"
-          placeholder="Buscar por nome ou slug…"
-          class="w-56"
-          data-testid="tags-search"
-        />
-        <Button type="submit" variant="outline" size="sm">Buscar</Button>
-      </form>
+      <div class="flex flex-wrap items-end gap-2">
+        <div class="space-y-1">
+          <label class="text-xs text-muted-foreground" for="tags-sort">Ordenar por</label>
+          <Select :model-value="sort" @update:model-value="(value) => setSort(value as TagListSort)">
+            <SelectTrigger id="tags-sort" class="w-40" data-testid="tags-sort">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Mais recentes</SelectItem>
+              <SelectItem value="name">Nome</SelectItem>
+              <SelectItem value="slug">Slug</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <form class="flex gap-2" @submit.prevent="submitSearch">
+          <Input
+            v-model="search"
+            type="search"
+            placeholder="Buscar por nome ou slug…"
+            class="w-56"
+            data-testid="tags-search"
+          />
+          <Button type="submit" variant="outline" size="sm">Buscar</Button>
+        </form>
+      </div>
     </div>
 
     <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
@@ -189,12 +252,31 @@ async function removeTag(tag: AdminTag) {
       </Table>
     </div>
 
+    <PaginationBar
+      :page="page"
+      :total="total"
+      :per-page="perPage"
+      @update:page="setPage"
+    />
+
     <div
       v-if="!loading && tags.length === 0"
-      class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
+      class="admin-upload-zone space-y-4 rounded-xl p-16 text-center text-sm text-muted-foreground"
       data-testid="tags-empty"
     >
-      Nenhuma tag ainda. Envie fotos para gerar sugestões ou crie tags ao editar uma foto.
+      <p>
+        {{ search.trim() ? 'Nenhuma tag corresponde a esta busca.' : 'Nenhuma tag ainda. Envie fotos para gerar sugestões ou crie tags ao editar uma foto.' }}
+      </p>
+      <Button
+        v-if="page > 1"
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid="tags-empty-previous"
+        @click="setPage(page - 1)"
+      >
+        Voltar à página anterior
+      </Button>
     </div>
 
     <Dialog :open="editing !== null" @update:open="(open) => !open && closeEdit()">

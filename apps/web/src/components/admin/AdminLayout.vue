@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { ExternalLink, Images, LogOut, LoaderCircle, Menu, Tags, UserCog, Users, X } from '@lucide/vue'
+import { ExternalLink, Images, LogOut, LoaderCircle, Menu, Settings, Tags, UserCog, Users, X } from '@lucide/vue'
 import { adminApi } from '@/api/client'
 
 const route = useRoute()
@@ -22,6 +22,7 @@ const title = computed(() => {
   if (name === 'admin-person-edit') return 'Editar pessoa'
   if (name === 'admin-tags') return 'Tags'
   if (name === 'admin-processing') return 'Processamento'
+  if (name === 'admin-settings') return 'Configurações'
   if (name === 'admin-users') return 'Usuários'
   return 'Admin'
 })
@@ -35,6 +36,7 @@ const subtitle = computed(() => {
   if (name === 'admin-person-edit') return 'Nome, rosto principal, mesclar ou excluir'
   if (name === 'admin-tags') return 'Traduza tags sugeridas automaticamente para visitantes'
   if (name === 'admin-processing') return 'Fila de mídia, rostos e tags'
+  if (name === 'admin-settings') return 'Detectores e etapas de IA'
   if (name === 'admin-users') return 'Contas de administrador com acesso ao painel'
   return ''
 })
@@ -130,6 +132,10 @@ async function logout() {
       <div class="mt-8 px-5">
         <p class="admin-nav-section">Sistema</p>
         <nav class="mt-2 flex flex-col gap-0.5">
+          <RouterLink to="/admin/settings" class="admin-nav-link" data-testid="nav-settings">
+            <Settings class="size-[1.05rem] shrink-0 opacity-60" />
+            Configurações
+          </RouterLink>
           <RouterLink to="/admin/users" class="admin-nav-link" data-testid="nav-users">
             <UserCog class="size-[1.05rem] shrink-0 opacity-60" />
             Usuários

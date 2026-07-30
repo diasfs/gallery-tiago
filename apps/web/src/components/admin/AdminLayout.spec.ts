@@ -48,6 +48,8 @@ describe('AdminLayout', () => {
     expect(wrapper.text()).toContain('Pessoas')
     expect(wrapper.text()).toContain('Usuários')
     expect(wrapper.find('[data-testid="nav-users"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-settings"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Configurações')
     expect(wrapper.find('a[href="/"]').exists() || wrapper.text().includes('Ver site')).toBe(true)
     expect(wrapper.find('[data-testid="admin-logout"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-child"]').exists()).toBe(true)

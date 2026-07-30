@@ -18,15 +18,16 @@ function makePhoto(overrides: Partial<PhotoSummary> = {}): PhotoSummary {
     title: 'Sunset over the bay',
     avifPath: '/media/photos/photo-1.avif',
     thumbPaths: { medium: '/media/thumbs/photo-1-medium.avif' },
+    viewCount: 12,
     ...overrides,
   }
 }
 
 describe('PhotoGrid', () => {
-  it('renders a title for each photo', async () => {
+  it('shows view counts instead of photo titles', async () => {
     const photos = [
-      makePhoto({ id: 'a', title: 'Sunset over the bay' }),
-      makePhoto({ id: 'b', title: 'Morning hike' }),
+      makePhoto({ id: 'a', title: 'Sunset over the bay', viewCount: 12 }),
+      makePhoto({ id: 'b', title: 'Morning hike', viewCount: 0 }),
     ]
 
     const wrapper = mount(PhotoGrid, {
@@ -34,8 +35,13 @@ describe('PhotoGrid', () => {
       global: { plugins: [router] },
     })
 
-    const titles = wrapper.findAll('.photo-grid__title').map((el) => el.text())
-    expect(titles).toEqual(['Sunset over the bay', 'Morning hike'])
+    expect(wrapper.findAll('.photo-grid__title')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('Sunset over the bay')
+    expect(wrapper.text()).not.toContain('Morning hike')
+    const counts = wrapper.findAll('[data-testid="view-count"]').map((el) => el.text())
+    expect(counts[0]).toContain('12')
+    expect(counts[1]).toContain('0')
+    expect(wrapper.find('img').attributes('alt')).toBe('Sunset over the bay')
   })
 
   it('links each photo to its detail route', () => {

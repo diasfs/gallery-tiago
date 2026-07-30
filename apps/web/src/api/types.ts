@@ -30,10 +30,19 @@ export interface AdminTag {
   photoCount: number
 }
 
+export type TagListSort = 'name' | 'slug' | 'recent'
+
 export interface PersonSummary {
   id: string
   name: string | null
   avatarCropPath?: string | null
+}
+
+export interface CoverPhotoSummary {
+  id: string
+  avifPath: string | null
+  thumbPaths: Record<string, string>
+  originalPath?: string | null
 }
 
 export interface AlbumSummary {
@@ -44,10 +53,12 @@ export interface AlbumSummary {
   visibility: 'public' | 'unlisted' | 'private'
   sortOrder: number
   coverPhotoId: string | null
+  coverPhoto?: CoverPhotoSummary | null
   parentSlug: string | null
   takenAt: string | null
   takenAtEnd?: string | null
   location: Location | null
+  viewCount: number
 }
 
 export interface PhotoSummary {
@@ -58,10 +69,12 @@ export interface PhotoSummary {
   thumbPaths: Record<string, string>
   originalPath?: string | null
   tags?: Tag[]
+  viewCount: number
 }
 
 export interface AlbumDetail extends AlbumSummary {
   ancestors: Array<{ slug: string; title: string }>
+  photosPerPage: number
 }
 
 export interface PageMeta {
@@ -111,6 +124,7 @@ export interface PhotoDetail {
   avifPath: string | null
   thumbPaths: Record<string, string>
   originalPath?: string | null
+  viewCount: number
   tags: Tag[]
   people: PersonSummary[]
   prevId: string | null
@@ -134,8 +148,16 @@ export interface AdminUser {
 }
 
 export type MediaStatus = 'pending' | 'converting' | 'done' | 'failed'
-export type FacesStatus = 'pending' | 'detecting' | 'done' | 'failed'
-export type TagsStatus = 'pending' | 'detecting' | 'done' | 'failed'
+export type FacesStatus = 'pending' | 'queued' | 'detecting' | 'done' | 'failed' | 'disabled'
+export type TagsStatus = 'pending' | 'queued' | 'detecting' | 'done' | 'failed' | 'disabled'
+
+export type TagDetector = 'ram_plus' | 'mobileclip_s0' | 'mobileclip_s1'
+
+export interface ProcessingSettings {
+  facesEnabled: boolean
+  tagsEnabled: boolean
+  tagDetector: TagDetector
+}
 
 export type ReprocessScope = 'all' | 'faces' | 'tags'
 
@@ -181,6 +203,7 @@ export interface AdminAlbum {
   description: string | null
   visibility: 'public' | 'unlisted' | 'private'
   sortOrder: number
+  photosPerPage: number
   coverPhotoId: string | null
   cover: AdminAlbumCover | null
   parentId: string | null
@@ -210,6 +233,7 @@ export interface AdminPhotoSummary {
   facesStatus: FacesStatus
   tagsStatus: TagsStatus
   processingError: string | null
+  sortOrder?: number
   createdAt: string
 }
 
@@ -258,6 +282,7 @@ export interface AdminPerson {
 
 export interface AdminPersonDetail extends AdminPerson {
   faces: Face[]
+  hasCustomAvatar?: boolean
 }
 
 export type PeopleScope = 'all' | 'named' | 'unnamed'

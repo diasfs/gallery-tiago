@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { api } from './api/client'
 import { adminDeepLink } from './lib/adminDeepLink'
 
 const route = useRoute()
@@ -10,22 +9,17 @@ const albumAdminId = ref<string | null>(null)
 
 watch(
   () => [route.name, route.params.slug] as const,
-  async ([name, slug]) => {
+  () => {
     albumAdminId.value = null
-    if (name !== 'album' || typeof slug !== 'string') {
-      return
-    }
-    try {
-      const album = await api.getAlbum(slug)
-      if (route.name === 'album' && route.params.slug === slug) {
-        albumAdminId.value = album.id
-      }
-    } catch {
-      // Keep fallback to /admin when the album cannot be resolved.
-    }
   },
   { immediate: true },
 )
+
+function onAlbumLoaded(id: string) {
+  if (route.name === 'album') {
+    albumAdminId.value = id
+  }
+}
 
 const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
 </script>
@@ -35,12 +29,15 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
     <header v-if="!isAdmin" class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
       <div class="app__actions">
+        <RouterLink to="/tags" class="app__nav-link" data-testid="nav-tags">Tags</RouterLink>
         <RouterLink to="/search" class="app__nav-link" data-testid="nav-search">Busca</RouterLink>
         <RouterLink :to="adminTo" class="app__nav-link" data-testid="admin-link">Admin</RouterLink>
       </div>
     </header>
     <main class="app__main" :class="{ 'app__main--flush': isAdmin }">
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <component :is="Component" @album-loaded="onAlbumLoaded" />
+      </RouterView>
     </main>
   </div>
 </template>

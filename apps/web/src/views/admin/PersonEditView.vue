@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -14,21 +14,14 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
 import type { AdminPerson, AdminPersonDetail } from '../../api/types'
+import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
 
 const person = ref<AdminPersonDetail | null>(null)
-const namedPeople = ref<AdminPerson[]>([])
 const loading = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
@@ -38,6 +31,48 @@ const form = reactive({
   name: '',
   mergeTargetId: '',
 })
+
+const {
+  query: mergeQuery,
+  results: mergeResults,
+  loading: mergeLoading,
+  error: mergeSearchError,
+  search: searchMergeTargets,
+  clear: clearMergeSearch,
+} = useAdminPersonSearch(() => props.id)
+let mergeSearchTimer: ReturnType<typeof setTimeout> | null = null
+const mergeSearchOpen = ref(false)
+const mergeSearchRoot = ref<HTMLElement | null>(null)
+
+function onMergeSearchInput(event: Event) {
+  mergeQuery.value = (event.target as HTMLInputElement).value
+  form.mergeTargetId = ''
+  mergeSearchOpen.value = true
+  if (mergeSearchTimer) clearTimeout(mergeSearchTimer)
+  mergeSearchTimer = setTimeout(() => void searchMergeTargets(), 200)
+}
+
+function onMergeSearchFocus() {
+  mergeSearchOpen.value = true
+  if (mergeSearchTimer) clearTimeout(mergeSearchTimer)
+  void searchMergeTargets()
+}
+
+function closeMergeSearch() {
+  mergeSearchOpen.value = false
+}
+
+function onDocumentPointerDown(event: Event) {
+  const root = mergeSearchRoot.value
+  if (root && !root.contains(event.target as Node)) closeMergeSearch()
+}
+
+function selectMergeTarget(candidate: AdminPerson) {
+  form.mergeTargetId = candidate.id
+  mergeQuery.value = candidate.name ?? ''
+  mergeResults.value = []
+  closeMergeSearch()
+}
 
 const title = computed(() => {
   if (!person.value) return 'Pessoa'
@@ -49,13 +84,9 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const [detail, named] = await Promise.all([
-      adminApi.getPerson(props.id),
-      adminApi.searchPeople(),
-    ])
+    const detail = await adminApi.getPerson(props.id)
     person.value = detail
     form.name = detail.name ?? ''
-    namedPeople.value = named.filter((p) => p.id !== props.id)
   } catch {
     error.value = 'Falha ao carregar pessoa.'
     person.value = null
@@ -64,7 +95,20 @@ async function load() {
   }
 }
 
-onMounted(load)
+watch(() => props.id, () => {
+  form.mergeTargetId = ''
+  clearMergeSearch()
+  closeMergeSearch()
+  void load()
+}, { immediate: true })
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+onUnmounted(() => {
+  if (mergeSearchTimer) clearTimeout(mergeSearchTimer)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
 
 function faceSrc(cropPath: string | null): string | null {
   return mediaUrl(cropPath)
@@ -110,6 +154,39 @@ async function clearPrimaryFace() {
   } catch (err) {
     error.value =
       err instanceof ApiError ? `Falha ao remover rosto principal: ${err.message}` : 'Falha ao remover rosto principal.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onAvatarFileChange(event: Event) {
+  if (!person.value) return
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  saving.value = true
+  error.value = null
+  try {
+    person.value = await adminApi.uploadPersonAvatar(person.value.id, file)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao enviar avatar: ${err.message}` : 'Falha ao enviar avatar.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeCustomAvatar() {
+  if (!person.value) return
+  saving.value = true
+  error.value = null
+  try {
+    person.value = await adminApi.deletePersonAvatar(person.value.id)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao remover avatar: ${err.message}` : 'Falha ao remover avatar.'
   } finally {
     saving.value = false
   }
@@ -205,26 +282,102 @@ async function deletePerson() {
           <p class="text-xs text-muted-foreground">Deixe em branco e salve para marcar como sem nome.</p>
         </div>
 
-        <div v-if="namedPeople.length > 0" class="space-y-2 border-t border-border/60 pt-4">
-          <Label>Mesclar com outra pessoa</Label>
-          <div class="flex gap-2">
-            <Select
-              :model-value="form.mergeTargetId"
-              :disabled="saving"
-              @update:model-value="(v) => (form.mergeTargetId = String(v ?? ''))"
+        <div class="space-y-2 border-t border-border/60 pt-4">
+          <Label for="merge-search">Mesclar com outra pessoa</Label>
+          <div class="flex flex-wrap items-center gap-2">
+            <div ref="mergeSearchRoot" class="relative min-w-0 max-w-md flex-1">
+              <Input
+                id="merge-search"
+                v-model="mergeQuery"
+                type="search"
+                placeholder="Buscar pessoa nomeada…"
+                :disabled="saving"
+                autocomplete="off"
+                data-testid="merge-search"
+                @focus="onMergeSearchFocus"
+                @input="onMergeSearchInput"
+                @keydown.esc="closeMergeSearch"
+              />
+              <ul
+                v-if="mergeSearchOpen && mergeResults.length > 0"
+                class="admin-suggestions"
+                data-testid="merge-suggestions"
+              >
+                <li v-for="candidate in mergeResults" :key="candidate.id">
+                  <button
+                    type="button"
+                    class="admin-suggestion"
+                    data-testid="merge-suggestion"
+                    @click="selectMergeTarget(candidate)"
+                  >
+                    {{ candidate.name }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              :disabled="saving || !form.mergeTargetId"
+              data-testid="merge-submit"
+              @click="mergeInto"
             >
-              <SelectTrigger class="max-w-md min-w-0 flex-1" data-testid="merge-target">
-                <SelectValue placeholder="Escolha uma pessoa…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="p in namedPeople" :key="p.id" :value="p.id">
-                  {{ p.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Button type="button" variant="outline" size="sm" :disabled="saving" data-testid="merge-submit" @click="mergeInto">
               Mesclar
             </Button>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            <span v-if="mergeLoading">Buscando…</span>
+            <span v-else>Os rostos desta pessoa passam para a pessoa escolhida.</span>
+          </p>
+          <p v-if="mergeSearchError" class="text-sm text-destructive">
+            {{ mergeSearchError }}
+          </p>
+        </div>
+      </div>
+
+      <div class="admin-panel space-y-4 rounded-xl p-6" data-testid="avatar-section">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-sm font-medium text-foreground">Avatar</h3>
+          <Button
+            v-if="person.hasCustomAvatar"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :disabled="saving"
+            data-testid="remove-custom-avatar"
+            @click="removeCustomAvatar"
+          >
+            Remover avatar customizado
+          </Button>
+        </div>
+        <div class="flex flex-wrap items-center gap-4">
+          <img
+            v-if="faceSrc(person.avatarCropPath)"
+            :src="faceSrc(person.avatarCropPath)!"
+            alt="Avatar"
+            class="h-20 w-20 rounded-full object-cover"
+            data-testid="person-avatar-preview"
+          />
+          <div
+            v-else
+            class="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground"
+            data-testid="person-avatar-preview-empty"
+          >
+            Sem avatar
+          </div>
+          <div class="space-y-2">
+            <Label for="person-avatar-file">Enviar imagem</Label>
+            <Input
+              id="person-avatar-file"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              :disabled="saving"
+              data-testid="avatar-file-input"
+              class="max-w-xs cursor-pointer"
+              @change="onAvatarFileChange"
+            />
+            <p class="text-xs text-muted-foreground">JPEG, PNG ou WebP. Substitui o rosto principal.</p>
           </div>
         </div>
       </div>

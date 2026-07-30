@@ -63,17 +63,20 @@ async function mountView(query: Record<string, string> = {}) {
 describe('PeopleView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedApi.listPeople.mockResolvedValue([
-      makePerson(),
-      makePerson({
-        id: 'cluster-1',
-        name: null,
-        isNamed: false,
-        faceCount: 2,
-        avatarFaceId: null,
-        avatarCropPath: null,
-      }),
-    ])
+    mockedApi.listPeople.mockResolvedValue({
+      data: [
+        makePerson(),
+        makePerson({
+          id: 'cluster-1',
+          name: null,
+          isNamed: false,
+          faceCount: 2,
+          avatarFaceId: null,
+          avatarCropPath: null,
+        }),
+      ],
+      meta: { page: 1, perPage: 50, total: 75 },
+    })
   })
 
   afterEach(() => {
@@ -83,7 +86,12 @@ describe('PeopleView', () => {
   it('lists people with avatars and links to edit', async () => {
     const { wrapper } = await mountView()
 
-    expect(mockedApi.listPeople).toHaveBeenCalledWith('all', undefined)
+    expect(mockedApi.listPeople).toHaveBeenCalledWith({
+      scope: 'all',
+      q: undefined,
+      page: 1,
+      perPage: 50,
+    })
     expect(wrapper.findAll('[data-testid="person-row"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Ada Lovelace')
     expect(wrapper.text()).toContain('Agrupamento sem nome')
@@ -107,13 +115,68 @@ describe('PeopleView', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.query.scope).toBe('unnamed')
-    expect(mockedApi.listPeople).toHaveBeenLastCalledWith('unnamed', undefined)
+    expect(mockedApi.listPeople).toHaveBeenLastCalledWith({
+      scope: 'unnamed',
+      q: undefined,
+      page: 1,
+      perPage: 50,
+    })
   })
 
   it('shows empty state when no people match', async () => {
-    mockedApi.listPeople.mockResolvedValue([])
+    mockedApi.listPeople.mockResolvedValue({
+      data: [],
+      meta: { page: 1, perPage: 50, total: 0 },
+    })
     const { wrapper } = await mountView()
 
     expect(wrapper.find('[data-testid="people-empty"]').exists()).toBe(true)
+  })
+
+  it('navigates pages while preserving scope and search', async () => {
+    const { wrapper, router } = await mountView({ scope: 'named', q: 'ana' })
+
+    await wrapper.find('[data-testid="pagination"] button:last-child').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ scope: 'named', q: 'ana', page: '2' })
+    expect(mockedApi.listPeople).toHaveBeenLastCalledWith({
+      scope: 'named',
+      q: 'ana',
+      page: 2,
+      perPage: 50,
+    })
+  })
+
+  it('resets page when changing scope', async () => {
+    const { wrapper, router } = await mountView({ page: '2', q: 'ana' })
+
+    await wrapper.find('[data-testid="scope-unnamed"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ scope: 'unnamed', q: 'ana' })
+  })
+
+  it('resets page when submitting a search', async () => {
+    const { wrapper, router } = await mountView({ page: '2' })
+
+    await wrapper.find('[data-testid="people-search"]').setValue('grace')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ q: 'grace' })
+  })
+
+  it('allows returning from an empty later page', async () => {
+    mockedApi.listPeople.mockResolvedValue({
+      data: [],
+      meta: { page: 2, perPage: 50, total: 50 },
+    })
+    const { wrapper, router } = await mountView({ page: '2' })
+
+    await wrapper.find('[data-testid="people-empty-previous"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.page).toBeUndefined()
   })
 })

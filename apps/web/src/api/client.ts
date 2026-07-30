@@ -19,6 +19,7 @@ import type {
   PhotoDetail,
   PhotoSummary,
   ProcessingPhotosPage,
+  ProcessingSettings,
   ProcessingStage,
   ProcessingSummary,
   PublicSearchParams,
@@ -26,6 +27,7 @@ import type {
   ReprocessScope,
   Tag,
   TagDetail,
+  TagListSort,
   UnnamedPersonCluster,
 } from './types'
 
@@ -46,6 +48,18 @@ export class ApiError extends Error {
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`)
+  if (!response.ok) {
+    throw new ApiError(`Request to ${path} failed with status ${response.status}`, response.status)
+  }
+  const body = (await response.json()) as { data: T }
+  return body.data
+}
+
+async function postJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+  })
   if (!response.ok) {
     throw new ApiError(`Request to ${path} failed with status ${response.status}`, response.status)
   }
@@ -161,7 +175,7 @@ type PhotoMedia = {
 /** Sorted ascending numeric thumb entries (`"320"` → 320). Named keys like `medium` are ignored. */
 function numericThumbEntries(thumbs: Record<string, string>): Array<[number, string]> {
   return Object.entries(thumbs)
-    .map(([key, path]) => [Number(key), path] as const)
+    .map(([key, path]) => [Number(key), path] as [number, string])
     .filter(([size, path]) => Number.isFinite(size) && size > 0 && !!path)
     .sort((a, b) => a[0] - b[0])
 }
@@ -244,15 +258,20 @@ export const api = {
   listRecentAlbums: (params: { limit?: number } = {}) =>
     getJson<AlbumSummary[]>(`/api/albums/recent${queryString(params)}`),
   getAlbum: (slug: string) => getJson<AlbumDetail>(`/api/albums/${encodeURIComponent(slug)}`),
+  recordAlbumView: (slug: string) =>
+    postJson<{ viewCount: number }>(`/api/albums/${encodeURIComponent(slug)}/view`),
   listAlbumChildren: (slug: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<AlbumSummary>(`/api/albums/${encodeURIComponent(slug)}/children${queryString(params)}`),
   listAlbumPhotos: (slug: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<PhotoSummary>(`/api/albums/${encodeURIComponent(slug)}/photos${queryString(params)}`),
   getPhoto: (id: string) => getJson<PhotoDetail>(`/api/photos/${encodeURIComponent(id)}`),
+  recordPhotoView: (id: string) =>
+    postJson<{ viewCount: number }>(`/api/photos/${encodeURIComponent(id)}/view`),
   search: (params: PublicSearchParams = {}) => getSearchResult(`/api/search${searchQueryString(params)}`),
   searchPeople: (q?: string) =>
     getJson<PersonSummary[]>(`/api/people${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   searchTags: (q?: string) => getJson<Tag[]>(`/api/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  listTags: () => getJson<Tag[]>(`/api/tags?index=1`),
   getPerson: (id: string) => getJson<PersonSummary>(`/api/people/${encodeURIComponent(id)}`),
   getPersonPhotos: (id: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<PhotoSummary>(`/api/people/${encodeURIComponent(id)}/photos${queryString(params)}`),
@@ -272,6 +291,7 @@ export interface AlbumWritePayload {
   description?: string | null
   visibility?: 'public' | 'unlisted' | 'private'
   sortOrder?: number
+  photosPerPage?: number
   parentId?: string | null
   coverPhotoId?: string | null
   takenAt?: string | null
@@ -308,6 +328,10 @@ export const adminApi = {
     location?: string
   } = {}) =>
     adminRequestRaw<Paginated<AdminAlbum>>(`/api/admin/albums${queryString(params)}`),
+  listAlbumParentOptions: (params: { q?: string; exclude?: string; page?: number; perPage?: number } = {}) =>
+    adminRequestRaw<Paginated<{ id: string; title: string; parentId: string | null }>>(
+      `/api/admin/albums/parent-options${queryString(params)}`,
+    ),
   getAlbum: (id: string) => adminRequest<AdminAlbumDetail>(`/api/admin/albums/${encodeURIComponent(id)}`),
   listAlbumChildren: (albumId: string, params: { page?: number; perPage?: number } = {}) =>
     adminRequestRaw<Paginated<AdminAlbum>>(
@@ -323,6 +347,16 @@ export const adminApi = {
     adminRequestRaw<Paginated<AdminPhotoSummary>>(
       `/api/admin/albums/${encodeURIComponent(albumId)}/photos${queryString(params)}`,
     ),
+  reorderAlbumPhotos: (albumId: string, photoIds: string[]) =>
+    adminRequest<AdminPhotoSummary[]>(`/api/admin/albums/${encodeURIComponent(albumId)}/photos/order`, {
+      method: 'PUT',
+      body: { photoIds },
+    }),
+  reorderAlbums: (albumIds: string[]) =>
+    adminRequest<AdminAlbum[]>('/api/admin/albums/order', {
+      method: 'PUT',
+      body: { albumIds },
+    }),
   uploadPhoto: (albumId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -350,10 +384,10 @@ export const adminApi = {
     adminRequest<void>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   bulkDeletePhotos: (ids: string[]) =>
     adminRequest<void>('/api/admin/photos/bulk-delete', { method: 'POST', body: { ids } }),
-  addPersonToPhoto: (photoId: string, personId: string) =>
+  addPersonToPhoto: (photoId: string, payload: { personId?: string; name?: string }) =>
     adminRequest<Face>(`/api/admin/photos/${encodeURIComponent(photoId)}/people`, {
       method: 'POST',
-      body: { personId },
+      body: payload,
     }),
   removePersonFromPhoto: (photoId: string, personId: string) =>
     adminRequest<void>(
@@ -362,18 +396,40 @@ export const adminApi = {
     ),
 
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
-  listPeople: (scope: PeopleScope = 'all', q?: string) => {
-    const params = new URLSearchParams({ scope })
-    if (q) params.set('q', q)
-    return adminRequest<AdminPerson[]>(`/api/admin/people?${params.toString()}`)
-  },
-  searchPeople: (q?: string) =>
-    adminRequest<AdminPerson[]>(`/api/admin/people${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  listPeople: (
+    params: {
+      scope?: PeopleScope
+      q?: string
+      page?: number
+      perPage?: number
+    } = {},
+  ) =>
+    adminRequestRaw<Paginated<AdminPerson>>(
+      `/api/admin/people${queryString({
+        scope: params.scope ?? 'named',
+        q: params.q,
+        page: params.page,
+        perPage: params.perPage,
+      })}`,
+    ),
   getPerson: (id: string) => adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}`),
   updatePerson: (id: string, payload: { name?: string | null; avatarFaceId?: string | null }) =>
     adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: payload,
+    }),
+  uploadPersonAvatar: (id: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}/avatar`, {
+      method: 'POST',
+      body: form,
+      isForm: true,
+    })
+  },
+  deletePersonAvatar: (id: string) =>
+    adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}/avatar`, {
+      method: 'DELETE',
     }),
   namePerson: (id: string, name: string) =>
     adminRequest<AdminPerson>(`/api/admin/people/${encodeURIComponent(id)}/name`, { method: 'POST', body: { name } }),
@@ -394,8 +450,17 @@ export const adminApi = {
     adminRequest<GeocodeSuggestion>(
       `/api/admin/geocode/reverse?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`,
     ),
-  searchTags: (q?: string) =>
-    adminRequest<AdminTag[]>(`/api/admin/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  searchTags: (
+    params: { q?: string; page?: number; perPage?: number; sort?: TagListSort } = {},
+  ) =>
+    adminRequestRaw<Paginated<AdminTag>>(
+      `/api/admin/tags${queryString({
+        q: params.q,
+        page: params.page,
+        perPage: params.perPage,
+        sort: params.sort,
+      })}`,
+    ),
   createTag: (name: string) => adminRequest<AdminTag>('/api/admin/tags', { method: 'POST', body: { name } }),
   updateTag: (id: string, name: string) =>
     adminRequest<AdminTag>(`/api/admin/tags/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } }),
@@ -435,4 +500,8 @@ export const adminApi = {
       method: 'POST',
       body,
     }),
+
+  getSettings: () => adminRequest<ProcessingSettings>('/api/admin/settings'),
+  updateSettings: (payload: Partial<ProcessingSettings>) =>
+    adminRequest<ProcessingSettings>('/api/admin/settings', { method: 'PUT', body: payload }),
 }

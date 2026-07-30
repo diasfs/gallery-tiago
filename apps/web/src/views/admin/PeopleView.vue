@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table'
 import { adminApi, mediaUrl } from '../../api/client'
 import type { AdminPerson, PeopleScope } from '../../api/types'
+import PaginationBar from '../../components/PaginationBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +25,8 @@ const people = ref<AdminPerson[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const search = ref('')
+const total = ref(0)
+const perPage = 50
 
 const scope = computed<PeopleScope>(() => {
   const value = route.query.scope
@@ -31,11 +34,20 @@ const scope = computed<PeopleScope>(() => {
   return 'all'
 })
 
+const page = computed(() => Math.max(1, Number(route.query.page) || 1))
+
 async function load() {
   loading.value = true
   error.value = null
   try {
-    people.value = await adminApi.listPeople(scope.value, search.value.trim() || undefined)
+    const result = await adminApi.listPeople({
+      scope: scope.value,
+      q: search.value.trim() || undefined,
+      page: page.value,
+      perPage,
+    })
+    people.value = result.data
+    total.value = result.meta.total
   } catch {
     error.value = 'Falha ao carregar pessoas.'
   } finally {
@@ -44,7 +56,7 @@ async function load() {
 }
 
 onMounted(load)
-watch([scope, () => route.query.q], load)
+watch([scope, () => route.query.q, page], load)
 
 watch(
   () => route.query.q,
@@ -70,6 +82,17 @@ function submitSearch() {
     query: {
       ...(scope.value !== 'all' ? { scope: scope.value } : {}),
       ...(search.value.trim() ? { q: search.value.trim() } : {}),
+    },
+  })
+}
+
+function setPage(nextPage: number) {
+  router.push({
+    name: 'admin-people',
+    query: {
+      ...(scope.value !== 'all' ? { scope: scope.value } : {}),
+      ...(search.value.trim() ? { q: search.value.trim() } : {}),
+      ...(nextPage > 1 ? { page: String(nextPage) } : {}),
     },
   })
 }
@@ -207,12 +230,29 @@ function avatarSrc(person: AdminPerson): string | null {
       </Table>
     </div>
 
+    <PaginationBar
+      :page="page"
+      :total="total"
+      :per-page="perPage"
+      @update:page="setPage"
+    />
+
     <div
       v-if="!loading && people.length === 0"
-      class="admin-upload-zone rounded-xl p-16 text-center text-sm text-muted-foreground"
+      class="admin-upload-zone space-y-4 rounded-xl p-16 text-center text-sm text-muted-foreground"
       data-testid="people-empty"
     >
-      Nenhuma pessoa corresponde a este filtro.
+      <p>Nenhuma pessoa corresponde a este filtro.</p>
+      <Button
+        v-if="page > 1"
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid="people-empty-previous"
+        @click="setPage(page - 1)"
+      >
+        Voltar à página anterior
+      </Button>
     </div>
   </section>
 </template>

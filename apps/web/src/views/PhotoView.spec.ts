@@ -11,12 +11,14 @@ vi.mock('../api/client', async () => {
     ...actual,
     api: {
       getPhoto: vi.fn(),
+      recordPhotoView: vi.fn(),
     },
   }
 })
 
 const mockedApi = api as unknown as {
   getPhoto: ReturnType<typeof vi.fn>
+  recordPhotoView: ReturnType<typeof vi.fn>
 }
 
 function makePhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
@@ -32,6 +34,7 @@ function makePhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     avifPath: null,
     thumbPaths: { medium: '/media/thumbs/photo-1.jpg' },
     originalPath: null,
+    viewCount: 15,
     tags: [],
     people: [],
     prevId: null,
@@ -42,6 +45,7 @@ function makePhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
 
 async function mountView(photo: PhotoDetail) {
   mockedApi.getPhoto.mockResolvedValue(photo)
+  mockedApi.recordPhotoView.mockResolvedValue({ viewCount: photo.viewCount + 1 })
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -93,6 +97,15 @@ describe('PhotoView', () => {
     expect(rows[1].text()).toContain('Bruno')
     expect(wrapper.find('.photo-detail__people-grid').exists()).toBe(true)
     expect(wrapper.find('.person-card').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('shows the photo view count', async () => {
+    const wrapper = await mountView(makePhoto({ viewCount: 0 }))
+
+    expect(mockedApi.recordPhotoView).toHaveBeenCalledWith('photo-1')
+    expect(wrapper.find('[data-testid="view-count"]').text()).toContain('1')
 
     wrapper.unmount()
   })

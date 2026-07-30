@@ -33,6 +33,11 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/tags',
+      name: 'tags',
+      component: () => import('../views/TagsIndexView.vue'),
+    },
+    {
       path: '/tags/:slug',
       name: 'tag',
       component: () => import('../views/TagView.vue'),
@@ -96,6 +101,11 @@ const router = createRouter({
           path: 'processing',
           name: 'admin-processing',
           component: () => import('../views/admin/ProcessingView.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'admin-settings',
+          component: () => import('../views/admin/SettingsView.vue'),
         },
         {
           path: 'users',

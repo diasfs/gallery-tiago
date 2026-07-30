@@ -323,6 +323,47 @@ button.admin-action-link {
   user-select: none;
 }
 
+.admin-suggestions {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: 0;
+  z-index: 50;
+  max-height: 15rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 0 12px 32px rgb(28 25 23 / 0.12);
+}
+
+button.admin-suggestion {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: none;
+  border-radius: calc(var(--radius) - 6px);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+button.admin-suggestion:hover,
+button.admin-suggestion:focus-visible {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  outline: none;
+}
+
 .admin-people-list {
   overflow: hidden;
   margin: 0;
@@ -717,6 +758,18 @@ button.admin-action-link {
 .admin-photo-tile--cover:not(.admin-photo-tile--selected) {
   border-color: var(--foreground);
   box-shadow: 0 0 0 1px var(--foreground);
+}
+
+.photos-grid--reorder .admin-photo-tile {
+  cursor: grab;
+}
+
+.photos-grid--reorder .admin-photo-tile:active {
+  cursor: grabbing;
+}
+
+.admin-photo-tile--dragging {
+  opacity: 0.55;
 }
 
 .admin-photo-check {

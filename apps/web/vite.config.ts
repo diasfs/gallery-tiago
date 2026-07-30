@@ -47,6 +47,11 @@ export default defineConfig(({ mode }) => {
           target: apiProxyTarget,
           changeOrigin: true,
         },
+        // Custom person avatars (avatars/<xx>/<personId>.jpg).
+        '/avatars': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
         '/originals': {
           target: apiProxyTarget,
           changeOrigin: true,

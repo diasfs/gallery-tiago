@@ -15,7 +15,6 @@ vi.mock('../api/client', async () => {
       searchTags: vi.fn(),
       getPerson: vi.fn(),
       getTag: vi.fn(),
-      getPhoto: vi.fn(),
     },
   }
 })
@@ -26,7 +25,6 @@ const mockedApi = api as unknown as {
   searchTags: ReturnType<typeof vi.fn>
   getPerson: ReturnType<typeof vi.fn>
   getTag: ReturnType<typeof vi.fn>
-  getPhoto: ReturnType<typeof vi.fn>
 }
 
 describe('SearchView', () => {
@@ -34,12 +32,6 @@ describe('SearchView', () => {
     vi.clearAllMocks()
     mockedApi.searchPeople.mockResolvedValue([])
     mockedApi.searchTags.mockResolvedValue([])
-    mockedApi.getPhoto.mockResolvedValue({
-      id: 'p1',
-      avifPath: null,
-      thumbPaths: {},
-      title: null,
-    })
   })
 
   afterEach(() => {
@@ -85,9 +77,11 @@ describe('SearchView', () => {
             visibility: 'public',
             sortOrder: 0,
             coverPhotoId: null,
+            coverPhoto: null,
             parentSlug: null,
             takenAt: null,
             location: null,
+            viewCount: 11,
           },
         ],
         photos: [
@@ -96,6 +90,7 @@ describe('SearchView', () => {
             title: 'Sunset',
             avifPath: 'x.avif',
             thumbPaths: { '320': 't.avif' },
+            viewCount: 8,
           },
         ],
       },
@@ -112,7 +107,9 @@ describe('SearchView', () => {
       expect.objectContaining({ q: 'Summer', year: '2024' }),
     )
     expect(wrapper.find('[data-testid="search-albums"]').text()).toContain('Summer')
-    expect(wrapper.find('[data-testid="search-photos"]').text()).toContain('Sunset')
+    expect(wrapper.find('[data-testid="search-albums"]').text()).toContain('11')
+    expect(wrapper.find('[data-testid="search-photos"]').text()).toContain('8')
+    expect(wrapper.find('[data-testid="search-photos"]').text()).not.toContain('Sunset')
     wrapper.unmount()
   })
 

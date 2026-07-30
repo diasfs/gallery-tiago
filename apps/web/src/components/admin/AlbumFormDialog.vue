@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,7 +21,8 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError, adminApi, type AlbumWritePayload } from '../../api/client'
-import type { AdminAlbum, Location } from '../../api/types'
+import type { AdminAlbum, AdminAlbumDetail, Location } from '../../api/types'
+import { useAdminAlbumParentSearch } from '../../composables/useAdminAlbumParentSearch'
 import LocationPicker from './LocationPicker.vue'
 import { toDateInputValue } from '@/lib/utils'
 
@@ -33,9 +34,8 @@ const props = defineProps<{
   album?: AdminAlbum | null
   /** Fixed parent for create (null = root). Ignored when editing. */
   createParentId?: string | null
-  /** When true (edit only), show parent select limited to these options. */
+  /** When true (edit only), show parent search. */
   showParentSelect?: boolean
-  parentOptions?: Array<{ id: string; title: string }>
 }>()
 
 const emit = defineEmits<{
@@ -49,7 +49,7 @@ const form = reactive<{
   slug: string
   description: string
   visibility: 'public' | 'unlisted' | 'private'
-  sortOrder: number
+  photosPerPage: number
   parentId: string
   takenAt: string
   takenAtEnd: string
@@ -58,7 +58,7 @@ const form = reactive<{
   slug: '',
   description: '',
   visibility: 'private',
-  sortOrder: 0,
+  photosPerPage: 48,
   parentId: '',
   takenAt: '',
   takenAtEnd: '',
@@ -72,17 +72,33 @@ const dialogOpen = computed({
   set: (value: boolean) => emit('update:open', value),
 })
 
+const {
+  query: parentQuery,
+  results: parentResults,
+  loading: parentLoading,
+  error: parentSearchError,
+  search: searchParentAlbums,
+  clear: clearParentSearch,
+} = useAdminAlbumParentSearch(() =>
+  props.editingId && props.editingId !== 'new' ? props.editingId : undefined,
+)
+const parentSearchOpen = ref(false)
+const parentSearchRoot = ref<HTMLElement | null>(null)
+let parentSearchTimer: ReturnType<typeof setTimeout> | null = null
+
 function resetForm() {
   form.title = ''
   form.slug = ''
   form.description = ''
   form.visibility = 'private'
-  form.sortOrder = 0
+  form.photosPerPage = 48
   form.parentId = ''
   form.takenAt = ''
   form.takenAtEnd = ''
   selectedLocation.value = null
   formError.value = null
+  clearParentSearch()
+  closeParentSearch()
 }
 
 function hydrateFromAlbum(album: AdminAlbum) {
@@ -90,11 +106,14 @@ function hydrateFromAlbum(album: AdminAlbum) {
   form.slug = album.slug
   form.description = album.description ?? ''
   form.visibility = album.visibility
-  form.sortOrder = album.sortOrder
+  form.photosPerPage = album.photosPerPage
   form.parentId = album.parentId ?? ''
   form.takenAt = album.takenAt ? toDateInputValue(album.takenAt) : ''
   form.takenAtEnd = album.takenAtEnd ? toDateInputValue(album.takenAtEnd) : ''
   selectedLocation.value = album.location
+
+  const parent = (album as AdminAlbumDetail).parent
+  parentQuery.value = form.parentId === '' ? '(raiz)' : (parent?.title ?? '')
 }
 
 watch(
@@ -116,9 +135,52 @@ function updateVisibility(value: unknown) {
   }
 }
 
-function updateParentId(value: unknown) {
-  form.parentId = value === '__root__' ? '' : String(value ?? '')
+function closeParentSearch() {
+  parentSearchOpen.value = false
 }
+
+function onParentSearchInput(event: Event) {
+  parentQuery.value = (event.target as HTMLInputElement).value
+  parentSearchOpen.value = true
+  if (parentSearchTimer) clearTimeout(parentSearchTimer)
+  parentSearchTimer = setTimeout(() => void searchParentAlbums(), 200)
+}
+
+function onParentSearchFocus() {
+  parentSearchOpen.value = true
+  if (parentSearchTimer) clearTimeout(parentSearchTimer)
+  void searchParentAlbums()
+}
+
+function selectRootParent() {
+  form.parentId = ''
+  parentQuery.value = '(raiz)'
+  parentResults.value = []
+  closeParentSearch()
+}
+
+function selectParentAlbum(option: { id: string; title: string }) {
+  form.parentId = option.id
+  parentQuery.value = option.title
+  parentResults.value = []
+  closeParentSearch()
+}
+
+function onDocumentPointerDown(event: Event) {
+  const root = parentSearchRoot.value
+  if (root && !root.contains(event.target as Node)) {
+    closeParentSearch()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+
+onUnmounted(() => {
+  if (parentSearchTimer) clearTimeout(parentSearchTimer)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
 
 async function submit() {
   formError.value = null
@@ -134,6 +196,10 @@ async function submit() {
     formError.value = 'A data final deve ser igual ou posterior à inicial.'
     return
   }
+  if (!Number.isInteger(form.photosPerPage) || form.photosPerPage < 1) {
+    formError.value = 'Fotos por página deve ser um inteiro maior ou igual a 1.'
+    return
+  }
 
   const parentId = isCreate.value
     ? (props.createParentId ?? null)
@@ -146,7 +212,7 @@ async function submit() {
     slug: form.slug.trim(),
     description: form.description.trim() === '' ? null : form.description.trim(),
     visibility: form.visibility,
-    sortOrder: form.sortOrder,
+    photosPerPage: form.photosPerPage,
     parentId,
     takenAt: form.takenAt === '' ? null : new Date(`${form.takenAt}T00:00:00.000Z`).toISOString(),
     takenAtEnd:
@@ -220,45 +286,78 @@ function cancel() {
 
         <LocationPicker v-model="selectedLocation" />
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div class="grid gap-2">
-            <Label for="album-visibility">Visibilidade</Label>
-            <Select :model-value="form.visibility" @update:model-value="updateVisibility">
-              <SelectTrigger id="album-visibility" class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="public">Público</SelectItem>
-                <SelectItem value="unlisted">Não listado</SelectItem>
-                <SelectItem value="private">Privado</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div class="grid gap-2">
-            <Label for="album-sort-order">Ordem</Label>
-            <Input id="album-sort-order" v-model.number="form.sortOrder" type="number" />
-          </div>
-        </div>
-
-        <div v-if="showParentSelect && !isCreate" class="grid gap-2">
-          <Label for="album-parent">Álbum pai</Label>
-          <Select :model-value="form.parentId || '__root__'" @update:model-value="updateParentId">
-            <SelectTrigger id="album-parent" class="w-full">
+        <div class="grid gap-2">
+          <Label for="album-visibility">Visibilidade</Label>
+          <Select :model-value="form.visibility" @update:model-value="updateVisibility">
+            <SelectTrigger id="album-visibility" class="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__root__">(raiz)</SelectItem>
-              <SelectItem
-                v-for="option in parentOptions ?? []"
-                :key="option.id"
-                :value="option.id"
-                :disabled="option.id === editingId"
-              >
-                {{ option.title }}
-              </SelectItem>
+              <SelectItem value="public">Público</SelectItem>
+              <SelectItem value="unlisted">Não listado</SelectItem>
+              <SelectItem value="private">Privado</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div class="grid gap-2">
+          <Label for="album-photos-per-page">Fotos por página</Label>
+          <Input
+            id="album-photos-per-page"
+            v-model.number="form.photosPerPage"
+            type="number"
+            min="1"
+            step="1"
+            data-testid="album-photos-per-page"
+          />
+        </div>
+
+        <div v-if="showParentSelect && !isCreate" class="grid gap-2">
+          <Label for="album-parent-search">Álbum pai</Label>
+          <div ref="parentSearchRoot" class="relative">
+            <Input
+              id="album-parent-search"
+              v-model="parentQuery"
+              type="search"
+              placeholder="Buscar álbum pai…"
+              autocomplete="off"
+              data-testid="album-parent-search"
+              @focus="onParentSearchFocus"
+              @input="onParentSearchInput"
+              @keydown.esc="closeParentSearch"
+            />
+            <ul
+              v-if="parentSearchOpen && (parentResults.length > 0 || !parentLoading)"
+              class="admin-suggestions"
+              data-testid="album-parent-suggestions"
+            >
+              <li>
+                <button
+                  type="button"
+                  class="admin-suggestion"
+                  data-testid="album-parent-root"
+                  @click="selectRootParent"
+                >
+                  (raiz)
+                </button>
+              </li>
+              <li v-for="option in parentResults" :key="option.id">
+                <button
+                  type="button"
+                  class="admin-suggestion"
+                  data-testid="album-parent-suggestion"
+                  @click="selectParentAlbum(option)"
+                >
+                  {{ option.title }}
+                </button>
+              </li>
+            </ul>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            <span v-if="parentLoading">Buscando…</span>
+            <span v-else>Digite para buscar. Escolha (raiz) para álbum de topo.</span>
+          </p>
+          <p v-if="parentSearchError" class="text-sm text-destructive">{{ parentSearchError }}</p>
         </div>
 
         <p v-if="isCreate" class="text-sm text-muted-foreground">

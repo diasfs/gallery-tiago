@@ -13,7 +13,6 @@ vi.mock('../api/client', async () => {
       ...actual.api,
       listAlbums: vi.fn(),
       listRecentAlbums: vi.fn(),
-      getPhoto: vi.fn(),
     },
   }
 })
@@ -21,7 +20,6 @@ vi.mock('../api/client', async () => {
 const mockedApi = api as unknown as {
   listAlbums: ReturnType<typeof vi.fn>
   listRecentAlbums: ReturnType<typeof vi.fn>
-  getPhoto: ReturnType<typeof vi.fn>
 }
 
 function makeAlbum(overrides: Partial<AlbumSummary> = {}): AlbumSummary {
@@ -33,9 +31,11 @@ function makeAlbum(overrides: Partial<AlbumSummary> = {}): AlbumSummary {
     visibility: 'public',
     sortOrder: 0,
     coverPhotoId: null,
+    coverPhoto: null,
     parentSlug: null,
     takenAt: null,
     location: null,
+    viewCount: 0,
     ...overrides,
   }
 }
@@ -43,12 +43,6 @@ function makeAlbum(overrides: Partial<AlbumSummary> = {}): AlbumSummary {
 describe('HomeView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedApi.getPhoto.mockResolvedValue({
-      id: 'p1',
-      avifPath: null,
-      thumbPaths: {},
-      title: null,
-    })
     mockedApi.listAlbums.mockResolvedValue({
       data: [makeAlbum()],
       meta: { page: 1, perPage: 24, total: 1 },

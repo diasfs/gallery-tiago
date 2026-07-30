@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatAlbumDateRangeLabel } from './utils'
+import { formatAlbumDateRangeLabel, formatDateLabel } from './utils'
+
+describe('formatDateLabel', () => {
+  it('preserves the API calendar day in timezones behind UTC', () => {
+    expect(formatDateLabel('2026-04-30T00:00:00.000Z', 'pt-BR')).toBe('30 de abril de 2026')
+  })
+})
 
 describe('formatAlbumDateRangeLabel', () => {
   it('returns null without a start date', () => {

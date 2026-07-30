@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api, photoDisplayUrl } from '../api/client'
+import { photoDisplayUrl } from '../api/client'
 import type { AlbumSummary } from '../api/types'
 import { formatAlbumDateRangeLabel } from '../lib/utils'
+import ViewCount from './ViewCount.vue'
 
-const props = defineProps<{
+defineProps<{
   albums: AlbumSummary[]
 }>()
 
-const coverThumbs = ref<Record<string, string | null>>({})
-
 function coverThumb(album: AlbumSummary): string | null {
-  return album.coverPhotoId ? (coverThumbs.value[album.coverPhotoId] ?? null) : null
+  return album.coverPhoto ? photoDisplayUrl(album.coverPhoto) : null
 }
 
 function subtitle(album: AlbumSummary): string | null {
@@ -22,30 +20,6 @@ function subtitle(album: AlbumSummary): string | null {
   }
   return formatAlbumDateRangeLabel(album.takenAt, album.takenAtEnd)
 }
-
-async function loadCovers(albums: AlbumSummary[]) {
-  const coverIds = [
-    ...new Set(albums.map((album) => album.coverPhotoId).filter((id): id is string => !!id)),
-  ]
-  const missing = coverIds.filter((id) => !(id in coverThumbs.value))
-  if (missing.length === 0) {
-    return
-  }
-  const covers = await Promise.allSettled(missing.map((id) => api.getPhoto(id)))
-  covers.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      coverThumbs.value[missing[index]] = photoDisplayUrl(result.value)
-    }
-  })
-}
-
-watch(
-  () => props.albums,
-  (albums) => {
-    void loadCovers(albums)
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -67,6 +41,7 @@ watch(
       <div class="album-card__body">
         <h2>{{ album.title }}</h2>
         <p v-if="subtitle(album)">{{ subtitle(album) }}</p>
+        <ViewCount class="album-card__views" :count="album.viewCount" />
       </div>
     </RouterLink>
   </div>
@@ -127,5 +102,10 @@ watch(
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.album-card__views {
+  margin-top: 0.5rem;
+  color: #aaa;
 }
 </style>

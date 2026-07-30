@@ -2,6 +2,7 @@
 import { RouterLink } from 'vue-router'
 import type { PhotoSummary } from '../api/types'
 import { photoDisplayUrl } from '../api/client'
+import ViewCount from './ViewCount.vue'
 
 defineProps<{
   photos: PhotoSummary[]
@@ -28,7 +29,9 @@ function thumbSrc(photo: PhotoSummary): string | null {
         loading="lazy"
       />
       <div v-else class="photo-grid__placeholder">Sem pré-visualização</div>
-      <span v-if="photo.title" class="photo-grid__title">{{ photo.title }}</span>
+      <span class="photo-grid__views">
+        <ViewCount :count="photo.viewCount" />
+      </span>
     </RouterLink>
   </div>
 </template>
@@ -78,7 +81,7 @@ function thumbSrc(photo: PhotoSummary): string | null {
   font-size: 0.85rem;
 }
 
-.photo-grid__title {
+.photo-grid__views {
   position: absolute;
   left: 0;
   right: 0;
@@ -86,9 +89,5 @@ function thumbSrc(photo: PhotoSummary): string | null {
   padding: 0.4rem 0.6rem;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
   color: #fff;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>

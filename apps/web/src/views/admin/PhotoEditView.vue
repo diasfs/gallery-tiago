@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl, photoDisplayUrl } from '../../api/client'
 import type { AdminPerson, AdminPhotoDetail, PersonSummary, Tag } from '../../api/types'
+import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
 const props = defineProps<{ id: string }>()
 
@@ -70,7 +71,13 @@ const tagQuery = ref('')
 const tagResults = ref<Tag[]>([])
 
 async function searchTags() {
-  tagResults.value = await adminApi.searchTags(tagQuery.value || undefined)
+  const response = await adminApi.searchTags({
+    q: tagQuery.value || undefined,
+    page: 1,
+    perPage: 20,
+    sort: 'name',
+  })
+  tagResults.value = response.data
 }
 
 function addTag(tag: Tag) {
@@ -107,12 +114,18 @@ function selectTagResult(value: unknown) {
 
 // --- People --------------------------------------------------------------
 
-const peopleQuery = ref('')
-const peopleResults = ref<AdminPerson[]>([])
+const {
+  query: peopleQuery,
+  results: peopleResults,
+  loading: peopleSearchLoading,
+  search: searchPeople,
+  clear: clearPeopleSearch,
+} = useAdminPersonSearch()
 const peopleBusy = ref(false)
 
-async function searchPeople() {
-  peopleResults.value = await adminApi.searchPeople(peopleQuery.value || undefined)
+function onPeopleSearchInput(event: Event) {
+  peopleQuery.value = (event.target as HTMLInputElement).value
+  void searchPeople()
 }
 
 async function addPerson(person: AdminPerson) {
@@ -121,7 +134,7 @@ async function addPerson(person: AdminPerson) {
   }
   peopleBusy.value = true
   try {
-    await adminApi.addPersonToPhoto(photo.value.id, person.id)
+    await adminApi.addPersonToPhoto(photo.value.id, { personId: person.id })
     if (!photo.value.people.some((p) => p.id === person.id)) {
       photo.value.people.push({
         id: person.id,
@@ -129,10 +142,41 @@ async function addPerson(person: AdminPerson) {
         avatarCropPath: person.avatarCropPath ?? null,
       })
     }
-    peopleQuery.value = ''
-    peopleResults.value = []
+    clearPeopleSearch()
   } catch (err) {
     error.value = err instanceof ApiError ? `Falha ao adicionar pessoa: ${err.message}` : 'Falha ao adicionar pessoa.'
+  } finally {
+    peopleBusy.value = false
+  }
+}
+
+async function createAndAddPerson() {
+  const name = peopleQuery.value.trim()
+  if (name === '' || !photo.value) {
+    return
+  }
+
+  peopleBusy.value = true
+  error.value = null
+  try {
+    const face = await adminApi.addPersonToPhoto(photo.value.id, { name })
+    const personId = face.personId
+    if (!personId) {
+      throw new Error('missing personId')
+    }
+    if (!photo.value.people.some((p) => p.id === personId)) {
+      photo.value.people.push({
+        id: personId,
+        name,
+        avatarCropPath: null,
+      })
+    }
+    clearPeopleSearch()
+  } catch (err) {
+    error.value =
+      err instanceof ApiError
+        ? `Falha ao criar/adicionar pessoa: ${err.message}`
+        : 'Falha ao criar/adicionar pessoa.'
   } finally {
     peopleBusy.value = false
   }
@@ -329,19 +373,33 @@ function personAvatarSrc(person: PersonSummary): string | null {
             :class="photo.people.length > 0 ? 'border-t border-border pt-4' : undefined"
           >
             <Label for="people-search" class="admin-label-sentence">Adicionar pessoa</Label>
-            <Input
-              id="people-search"
-              v-model="peopleQuery"
-              placeholder="Buscar pessoas nomeadas…"
-              @input="searchPeople"
-            />
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="people-search"
+                v-model="peopleQuery"
+                placeholder="Buscar ou criar pelo nome…"
+                class="flex-1"
+                data-testid="people-search"
+                :disabled="peopleBusy || peopleSearchLoading"
+                @input="onPeopleSearchInput"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                :disabled="peopleBusy || peopleQuery.trim() === ''"
+                data-testid="people-create-add"
+                @click="createAndAddPerson"
+              >
+                Adicionar / criar
+              </Button>
+            </div>
           </div>
           <Select
             v-if="peopleResults.length > 0"
             :disabled="peopleBusy"
             @update:model-value="selectPersonResult"
           >
-            <SelectTrigger class="w-full">
+            <SelectTrigger class="w-full" data-testid="people-results">
               <SelectValue placeholder="Escolha uma pessoa correspondente" />
             </SelectTrigger>
             <SelectContent>

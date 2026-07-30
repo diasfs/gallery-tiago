@@ -13,7 +13,7 @@ export function toDateInputValue(iso: string): string {
 
 /** Long date label without time. */
 export function formatDateLabel(iso: string, locale = 'pt-BR'): string {
-  return new Date(iso).toLocaleDateString(locale, { dateStyle: 'long' })
+  return new Date(iso).toLocaleDateString(locale, { dateStyle: 'long', timeZone: 'UTC' })
 }
 
 /** Single day or "start – end" range label. */

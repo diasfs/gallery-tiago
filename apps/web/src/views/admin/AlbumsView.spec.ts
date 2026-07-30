@@ -11,10 +11,13 @@ vi.mock('../../api/client', async () => {
     ...actual,
     adminApi: {
       listAlbums: vi.fn(),
+      listAlbumParentOptions: vi.fn(),
+      getAlbum: vi.fn(),
       listAlbumPhotos: vi.fn(),
       createAlbum: vi.fn(),
       updateAlbum: vi.fn(),
       deleteAlbum: vi.fn(),
+      reorderAlbums: vi.fn(),
       searchLocations: vi.fn(),
       createLocation: vi.fn(),
     },
@@ -23,10 +26,13 @@ vi.mock('../../api/client', async () => {
 
 const mockedApi = adminApi as unknown as {
   listAlbums: ReturnType<typeof vi.fn>
+  listAlbumParentOptions: ReturnType<typeof vi.fn>
+  getAlbum: ReturnType<typeof vi.fn>
   listAlbumPhotos: ReturnType<typeof vi.fn>
   createAlbum: ReturnType<typeof vi.fn>
   updateAlbum: ReturnType<typeof vi.fn>
   deleteAlbum: ReturnType<typeof vi.fn>
+  reorderAlbums: ReturnType<typeof vi.fn>
   searchLocations: ReturnType<typeof vi.fn>
   createLocation: ReturnType<typeof vi.fn>
 }
@@ -39,6 +45,7 @@ function makeAlbum(overrides: Partial<AdminAlbum> = {}): AdminAlbum {
     description: 'Beach photos',
     visibility: 'public',
     sortOrder: 1,
+    photosPerPage: 48,
     coverPhotoId: null,
     cover: null,
     parentId: null,
@@ -198,6 +205,20 @@ describe('AlbumsView', () => {
       return paginated(data, params.page ?? 1, params.perPage ?? 24)
     })
     mockedApi.listAlbumPhotos.mockResolvedValue({ data: [], meta: { page: 1, perPage: 48, total: 0 } })
+    mockedApi.listAlbumParentOptions.mockResolvedValue({
+      data: allAlbums.map((item) => ({ id: item.id, title: item.title, parentId: item.parentId })),
+      meta: { page: 1, perPage: 20, total: allAlbums.length },
+    })
+    mockedApi.getAlbum.mockImplementation(async (id: string) => {
+      const found = allAlbums.find((item) => item.id === id)
+      if (!found) throw new Error('not found')
+      return {
+        ...found,
+        parent: found.parentId
+          ? { id: found.parentId, title: allAlbums.find((item) => item.id === found.parentId)?.title ?? 'Parent' }
+          : null,
+      }
+    })
     mockedApi.deleteAlbum.mockResolvedValue(undefined)
     mockedApi.updateAlbum.mockResolvedValue(album)
   })
@@ -407,12 +428,49 @@ describe('AlbumsView', () => {
     wrapper.unmount()
   })
 
-  it('does not show edit or delete actions on album tiles', async () => {
+  it('opens edit dialog with parent select from album tile', async () => {
     const { wrapper } = await mountView()
 
-    expect(button('Editar')).toBeUndefined()
-    expect(button('Excluir')).toBeUndefined()
-    expect(wrapper.find('[data-testid="album-row"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="edit-album"]')).toHaveLength(4)
+    await wrapper.find('[data-testid="edit-album"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.getAlbum).toHaveBeenCalledWith('album-1')
+    expect(document.querySelector('#album-parent-search')).not.toBeNull()
+    expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain('Editar álbum')
+
+    wrapper.unmount()
+  })
+
+  it('enters reorder mode and saves the new root album order', async () => {
+    const roots = filterAlbums().slice(0, 2)
+    mockedApi.listAlbums.mockImplementation(async () => paginated(roots))
+    mockedApi.reorderAlbums.mockResolvedValue([roots[1]!, roots[0]!])
+    const { wrapper } = await mountView()
+
+    await wrapper.find('[data-testid="reorder-start"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reorder-save"]').exists()).toBe(true)
+    const rows = wrapper.findAll('[data-testid="album-row"]')
+    await rows[0]!.trigger('dragstart', {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    })
+    await rows[1]!.trigger('dragover', {
+      dataTransfer: { dropEffect: 'move' },
+      preventDefault: vi.fn(),
+    })
+    await rows[1]!.trigger('drop', {
+      dataTransfer: { getData: () => '0' },
+      preventDefault: vi.fn(),
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="reorder-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.reorderAlbums).toHaveBeenCalledWith([roots[1]!.id, roots[0]!.id])
+    expect(wrapper.find('[data-testid="reorder-start"]').exists()).toBe(true)
 
     wrapper.unmount()
   })

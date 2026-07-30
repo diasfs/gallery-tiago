@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
 import type { PersonSummary, PhotoDetail } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
+import ViewCount from '../components/ViewCount.vue'
 
 const props = defineProps<{ id: string }>()
 
@@ -17,6 +18,14 @@ async function load(id: string) {
   photo.value = null
   try {
     photo.value = await api.getPhoto(id)
+    try {
+      const tracked = await api.recordPhotoView(id)
+      if (photo.value?.id === id) {
+        photo.value.viewCount = tracked.viewCount
+      }
+    } catch {
+      // Viewing the photo must still work if analytics is unavailable.
+    }
   } catch {
     notFound.value = true
   } finally {
@@ -67,6 +76,10 @@ function personAvatarSrc(person: PersonSummary): string | null {
         />
         <figcaption v-if="photo.title">{{ photo.title }}</figcaption>
       </figure>
+
+      <p class="photo-detail__views">
+        <ViewCount :count="photo.viewCount" />
+      </p>
 
       <div v-if="photo.tags.length > 0" class="photo-detail__tags">
         <RouterLink
@@ -124,15 +137,23 @@ function personAvatarSrc(person: PersonSummary): string | null {
 
 .photo-detail__figure img {
   display: block;
-  width: 100%;
+  width: auto;
   max-width: 100%;
   height: auto;
+  max-height: calc(100vh - 12rem);
+  max-height: calc(100dvh - 12rem);
+  margin-inline: auto;
   object-fit: contain;
   border-radius: 8px;
 }
 
 .photo-detail__figure figcaption {
   margin-top: 0.5rem;
+  color: var(--muted, #888);
+}
+
+.photo-detail__views {
+  margin: 0.75rem 0 0;
   color: var(--muted, #888);
 }
 

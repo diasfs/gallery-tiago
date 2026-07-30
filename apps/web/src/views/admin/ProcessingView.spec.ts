@@ -105,6 +105,21 @@ describe('ProcessingView', () => {
     expect(wrapper.text()).toContain('Stuck shot')
   })
 
+  it('shows queued count separately from detecting', async () => {
+    mockedApi.processingSummary.mockResolvedValue(
+      makeSummary({
+        tags: { pending: 1, queued: 42, detecting: 1, done: 7, failed: 0 },
+        faces: { pending: 1, queued: 3, detecting: 0, done: 7, failed: 0 },
+      }),
+    )
+    const { wrapper } = await mountView({ stage: 'tags', status: 'queued' })
+
+    expect(wrapper.find('[data-testid="summary-tags-queued"]').text()).toContain('Na fila')
+    expect(wrapper.find('[data-testid="summary-tags-queued"]').text()).toContain('42')
+    expect(wrapper.find('[data-testid="summary-tags-detecting"]').text()).toContain('Detectando')
+    expect(wrapper.find('[data-testid="summary-tags-detecting"]').text()).toContain('1')
+  })
+
   it('enqueues all pending with original', async () => {
     const { wrapper } = await mountView()
 

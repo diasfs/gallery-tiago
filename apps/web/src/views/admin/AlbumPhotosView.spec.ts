@@ -13,10 +13,12 @@ vi.mock('../../api/client', async () => {
       listAlbumPhotos: vi.fn(),
       listAlbumChildren: vi.fn(),
       listAlbums: vi.fn(),
+      listAlbumParentOptions: vi.fn(),
       getAlbum: vi.fn(),
       createAlbum: vi.fn(),
       updateAlbum: vi.fn(),
       uploadPhoto: vi.fn(),
+      reorderAlbumPhotos: vi.fn(),
       reprocessPhoto: vi.fn(),
       reprocessAlbum: vi.fn(),
       deletePhoto: vi.fn(),
@@ -32,10 +34,12 @@ const mockedApi = adminApi as unknown as {
   listAlbumPhotos: ReturnType<typeof vi.fn>
   listAlbumChildren: ReturnType<typeof vi.fn>
   listAlbums: ReturnType<typeof vi.fn>
+  listAlbumParentOptions: ReturnType<typeof vi.fn>
   getAlbum: ReturnType<typeof vi.fn>
   createAlbum: ReturnType<typeof vi.fn>
   updateAlbum: ReturnType<typeof vi.fn>
   uploadPhoto: ReturnType<typeof vi.fn>
+  reorderAlbumPhotos: ReturnType<typeof vi.fn>
   reprocessPhoto: ReturnType<typeof vi.fn>
   reprocessAlbum: ReturnType<typeof vi.fn>
   deletePhoto: ReturnType<typeof vi.fn>
@@ -61,6 +65,7 @@ function makeAlbumDetail(overrides: Partial<AdminAlbumDetail> = {}): AdminAlbumD
     description: null,
     visibility: 'public',
     sortOrder: 1,
+    photosPerPage: 48,
     coverPhotoId: null,
     cover: null,
     parentId: null,
@@ -84,6 +89,7 @@ function makeAlbum(overrides: Partial<AdminAlbum> = {}): AdminAlbum {
     description: null,
     visibility: 'public',
     sortOrder: 1,
+    photosPerPage: 48,
     coverPhotoId: null,
     cover: null,
     parentId: null,
@@ -159,6 +165,13 @@ describe('AlbumPhotosView', () => {
       ]),
     )
     mockedApi.listAlbums.mockResolvedValue(paginatedAlbums([makeAlbum()]))
+    mockedApi.listAlbumParentOptions.mockResolvedValue({
+      data: [
+        { id: 'album-1', title: 'Summer 2026', parentId: null },
+        { id: 'album-2', title: 'Other', parentId: null },
+      ],
+      meta: { page: 1, perPage: 20, total: 2 },
+    })
     mockedApi.createAlbum.mockResolvedValue(
       makeAlbum({
         id: 'album-child',
@@ -173,6 +186,7 @@ describe('AlbumPhotosView', () => {
     mockedApi.deletePhoto.mockResolvedValue(undefined)
     mockedApi.bulkDeletePhotos.mockResolvedValue(undefined)
     mockedApi.deleteAlbum.mockResolvedValue(undefined)
+    mockedApi.reorderAlbumPhotos.mockResolvedValue([])
     mockedApi.updateAlbum.mockImplementation(async (_id: string, payload: { coverPhotoId?: string | null }) =>
       makeAlbum({
         coverPhotoId: payload.coverPhotoId ?? null,
@@ -459,14 +473,7 @@ describe('AlbumPhotosView', () => {
     await button('Editar álbum')!.click()
     await flushPromises()
 
-    expect(mockedApi.listAlbums).toHaveBeenCalledTimes(1)
-    expect(mockedApi.listAlbums).toHaveBeenCalledWith({ page: 1, perPage: 100 })
-
-    const dialog = document.querySelector('[data-slot="dialog-content"]')
-    expect(dialog?.textContent).toContain('Editar álbum')
-    expect(dialog?.querySelector('[data-testid="cover-picker"]')).toBeNull()
-    expect(dialog?.querySelector('#album-parent')).not.toBeNull()
-    expect(dialog?.querySelector<HTMLInputElement>('#album-title')?.value).toBe('Summer 2026')
+    expect(document.querySelector('#album-parent-search')).not.toBeNull()
 
     await button('Salvar')!.click()
     await flushPromises()
@@ -476,6 +483,54 @@ describe('AlbumPhotosView', () => {
       expect.objectContaining({ title: 'Summer 2026', parentId: null }),
     )
     expect(mockedApi.updateAlbum.mock.calls.at(-1)?.[1]).not.toHaveProperty('coverPhotoId')
+
+    wrapper.unmount()
+  })
+
+  it('moves a sub-album to another parent from the edit dialog', async () => {
+    const childAlbum = makeAlbum({
+      id: 'album-child',
+      title: 'Beach day',
+      slug: 'beach-day',
+      parentId: 'album-1',
+      photoCount: 0,
+    })
+    mockedApi.listAlbumChildren.mockResolvedValue(paginatedAlbums([childAlbum]))
+    mockedApi.getAlbum.mockImplementation(async (id: string) => {
+      if (id === 'album-child') {
+        return makeAlbumDetail({
+          id: 'album-child',
+          title: 'Beach day',
+          slug: 'beach-day',
+          parentId: 'album-1',
+          parent: { id: 'album-1', title: 'Summer 2026' },
+          photoCount: 0,
+        })
+      }
+      return makeAlbumDetail()
+    })
+    mockedApi.listAlbumParentOptions.mockResolvedValue({
+      data: [
+        { id: 'album-1', title: 'Summer 2026', parentId: null },
+        { id: 'album-2', title: 'Other', parentId: null },
+      ],
+      meta: { page: 1, perPage: 20, total: 2 },
+    })
+
+    const { wrapper } = await mountView()
+    await wrapper.find('[data-testid="edit-subalbum"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.getAlbum).toHaveBeenCalledWith('album-child')
+    expect(document.querySelector('#album-parent-search')).not.toBeNull()
+
+    await button('Salvar')!.click()
+    await flushPromises()
+
+    expect(mockedApi.updateAlbum).toHaveBeenCalledWith(
+      'album-child',
+      expect.objectContaining({ parentId: 'album-1' }),
+    )
 
     wrapper.unmount()
   })
@@ -499,6 +554,47 @@ describe('AlbumPhotosView', () => {
 
     expect(mockedApi.deleteAlbum).toHaveBeenCalledWith('album-1')
     expect(pushSpy).toHaveBeenCalledWith({ name: 'admin-albums' })
+
+    wrapper.unmount()
+  })
+
+  it('enters reorder mode and saves the new photo order', async () => {
+    const photos = [
+      makePhoto({ id: 'photo-1', title: 'A', sortOrder: 0 }),
+      makePhoto({ id: 'photo-2', title: 'B', sortOrder: 1 }),
+    ]
+    mockedApi.listAlbumPhotos.mockResolvedValue(paginatedPhotos(photos))
+    mockedApi.reorderAlbumPhotos.mockResolvedValue([
+      makePhoto({ id: 'photo-2', title: 'B', sortOrder: 0 }),
+      makePhoto({ id: 'photo-1', title: 'A', sortOrder: 1 }),
+    ])
+    const { wrapper } = await mountView()
+
+    await wrapper.find('[data-testid="reorder-start"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="reorder-save"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="photo-row"]')).toHaveLength(2)
+
+    const rows = wrapper.findAll('[data-testid="photo-row"]')
+    await rows[0]!.trigger('dragstart', {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    })
+    await rows[1]!.trigger('dragover', {
+      dataTransfer: { dropEffect: 'move' },
+      preventDefault: vi.fn(),
+    })
+    await rows[1]!.trigger('drop', {
+      dataTransfer: { getData: () => '0' },
+      preventDefault: vi.fn(),
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="reorder-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.reorderAlbumPhotos).toHaveBeenCalledWith('album-1', ['photo-2', 'photo-1'])
+    expect(wrapper.find('[data-testid="reorder-start"]').exists()).toBe(true)
 
     wrapper.unmount()
   })
