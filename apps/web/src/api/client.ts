@@ -165,6 +165,21 @@ export function mediaUrl(path: string | null | undefined): string | null {
   return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`
 }
 
+/** Absolute URL for Open Graph and other off-page consumers. */
+export function absoluteMediaUrl(path: string | null | undefined): string | null {
+  const url = mediaUrl(path)
+  if (!url) {
+    return null
+  }
+  if (/^https?:\/\//.test(url)) {
+    return url
+  }
+  if (typeof window !== 'undefined') {
+    return new URL(url, window.location.origin).href
+  }
+  return url
+}
+
 type PhotoMedia = {
   thumbPaths?: Record<string, string> | null
   avifPath?: string | null
