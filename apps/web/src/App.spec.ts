@@ -75,6 +75,33 @@ describe('App public header', () => {
     wrapper.unmount()
   })
 
+  it('toggles the mobile navigation menu', async () => {
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/search', name: 'search', component: { template: '<div />' } },
+        { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const nav = wrapper.find('[data-testid="app-nav"]')
+    expect(nav.classes()).not.toContain('app__actions--open')
+
+    await wrapper.find('[data-testid="nav-menu-toggle"]').trigger('click')
+    expect(nav.classes()).toContain('app__actions--open')
+
+    wrapper.unmount()
+  })
+
   it('uses the loaded album id for the admin link without fetching the album again', async () => {
     const albumPage = defineComponent({
       emits: ['album-loaded'],

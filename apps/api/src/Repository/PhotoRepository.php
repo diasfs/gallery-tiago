@@ -8,6 +8,7 @@ use App\Enum\AlbumVisibility;
 use App\Enum\MediaStatus;
 use App\Service\SearchText;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
 
@@ -500,6 +501,124 @@ class PhotoRepository extends ServiceEntityRepository
             ->getResult();
 
         return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * Photos from public/unlisted albums whose timeline date (album takenAt or
+     * photo createdAt) falls on the given month/day in years before $beforeYear.
+     *
+     * @return array{items: Photo[], total: int}
+     */
+    public function findPublicOnThisDayPaginated(
+        int $month,
+        int $day,
+        int $beforeYear,
+        int $page,
+        int $perPage,
+    ): array {
+        $conn = $this->getEntityManager()->getConnection();
+        $params = ['month' => $month, 'day' => $day, 'year' => $beforeYear];
+        $types = [
+            'month' => ParameterType::INTEGER,
+            'day' => ParameterType::INTEGER,
+            'year' => ParameterType::INTEGER,
+        ];
+
+        $where = <<<'SQL'
+            a.visibility IN ('public', 'unlisted')
+            AND EXTRACT(MONTH FROM COALESCE(a.taken_at, p.created_at)) = :month
+            AND EXTRACT(DAY FROM COALESCE(a.taken_at, p.created_at)) = :day
+            AND EXTRACT(YEAR FROM COALESCE(a.taken_at, p.created_at)) < :year
+        SQL;
+
+        $total = (int) $conn->fetchOne(
+            "SELECT COUNT(p.id)::int FROM photo p INNER JOIN album a ON a.id = p.album_id WHERE {$where}",
+            $params,
+            $types,
+        );
+
+        $offset = max(0, ($page - 1) * $perPage);
+        $ids = $conn->fetchFirstColumn(
+            <<<SQL
+                SELECT p.id::text
+                FROM photo p
+                INNER JOIN album a ON a.id = p.album_id
+                WHERE {$where}
+                ORDER BY COALESCE(a.taken_at, p.created_at) DESC, p.sort_order ASC
+                LIMIT :limit OFFSET :offset
+            SQL,
+            [...$params, 'limit' => $perPage, 'offset' => $offset],
+            [...$types, 'limit' => ParameterType::INTEGER, 'offset' => ParameterType::INTEGER],
+        );
+
+        return [
+            'items' => $this->loadVisiblePhotosOrdered(array_map(static fn (mixed $id): string => (string) $id, $ids)),
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * @return array{items: Photo[], total: int}
+     */
+    public function findPublicMostViewedPaginated(int $page, int $perPage): array
+    {
+        $base = $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->andWhere('p.viewCount > 0')
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted]);
+
+        $total = (int) (clone $base)
+            ->select('COUNT(p.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $items = (clone $base)
+            ->orderBy('p.viewCount', 'DESC')
+            ->addOrderBy('p.createdAt', 'DESC')
+            ->setFirstResult(max(0, ($page - 1) * $perPage))
+            ->setMaxResults($perPage)
+            ->getQuery()
+            ->getResult();
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * @param list<string> $ids
+     *
+     * @return list<Photo>
+     */
+    private function loadVisiblePhotosOrdered(array $ids): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
+        /** @var list<Photo> $photos */
+        $photos = $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->addSelect('a')
+            ->andWhere('p.id IN (:ids)')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('ids', array_map(static fn (string $id): Uuid => Uuid::fromString($id), $ids))
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->getQuery()
+            ->getResult();
+
+        $byId = [];
+        foreach ($photos as $photo) {
+            $byId[$photo->getId()->toRfc4122()] = $photo;
+        }
+
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+            }
+        }
+
+        return $ordered;
     }
 
     /**

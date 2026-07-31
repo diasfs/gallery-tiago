@@ -31,6 +31,16 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/memories',
+      name: 'memories',
+      component: () => import('../views/MemoriesView.vue'),
+    },
+    {
+      path: '/popular',
+      name: 'popular',
+      component: () => import('../views/PopularView.vue'),
+    },
+    {
       path: '/albums/:slug',
       name: 'album',
       component: () => import('../views/AlbumView.vue'),

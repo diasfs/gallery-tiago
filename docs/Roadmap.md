@@ -33,8 +33,10 @@ Sugestões de features alinhadas ao estado atual do projeto (álbuns hierárquic
 
 ## Descoberta pública
 
-- **“Neste dia” / memórias** — fotos com `taken_at` no dia/mês atual em anos anteriores.
-- **Mais vistos** — ranking por `viewCount` (30d ou all-time).
+| Feature | Status |
+|---------|--------|
+| “Neste dia” / memórias | Feito |
+| Mais vistos | Feito |
 
 ## Compartilhamento / privacidade
 

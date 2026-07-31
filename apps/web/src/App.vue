@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Menu, X } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { adminDeepLink } from './lib/adminDeepLink'
@@ -6,11 +7,13 @@ import { adminDeepLink } from './lib/adminDeepLink'
 const route = useRoute()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
 const albumAdminId = ref<string | null>(null)
+const navOpen = ref(false)
 
 watch(
   () => [route.name, route.params.slug] as const,
   () => {
     albumAdminId.value = null
+    navOpen.value = false
   },
   { immediate: true },
 )
@@ -21,6 +24,10 @@ function onAlbumLoaded(id: string) {
   }
 }
 
+function toggleNav() {
+  navOpen.value = !navOpen.value
+}
+
 const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
 </script>
 
@@ -28,13 +35,32 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
   <div class="app" :class="{ 'app--admin': isAdmin }">
     <header v-if="!isAdmin" class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
-      <div class="app__actions">
+      <button
+        type="button"
+        class="app__menu-toggle"
+        :aria-expanded="navOpen"
+        aria-controls="app-nav"
+        data-testid="nav-menu-toggle"
+        @click="toggleNav"
+      >
+        <X v-if="navOpen" :size="20" aria-hidden="true" />
+        <Menu v-else :size="20" aria-hidden="true" />
+        <span class="sr-only">{{ navOpen ? 'Fechar menu' : 'Abrir menu' }}</span>
+      </button>
+      <nav
+        id="app-nav"
+        class="app__actions"
+        :class="{ 'app__actions--open': navOpen }"
+        data-testid="app-nav"
+      >
         <RouterLink to="/map" class="app__nav-link" data-testid="nav-map">Mapa</RouterLink>
         <RouterLink to="/timeline" class="app__nav-link" data-testid="nav-timeline">Timeline</RouterLink>
+        <RouterLink to="/memories" class="app__nav-link" data-testid="nav-memories">Memórias</RouterLink>
+        <RouterLink to="/popular" class="app__nav-link" data-testid="nav-popular">Populares</RouterLink>
         <RouterLink to="/tags" class="app__nav-link" data-testid="nav-tags">Tags</RouterLink>
         <RouterLink to="/search" class="app__nav-link" data-testid="nav-search">Busca</RouterLink>
         <RouterLink :to="adminTo" class="app__nav-link" data-testid="admin-link">Admin</RouterLink>
-      </div>
+      </nav>
     </header>
     <main class="app__main" :class="{ 'app__main--flush': isAdmin }">
       <RouterView v-slot="{ Component }">
@@ -63,6 +89,21 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.app__menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: 1px solid var(--border, #333);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  width: 2.5rem;
+  height: 2.5rem;
+  cursor: pointer;
 }
 
 .app__actions {
@@ -79,6 +120,57 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
 
 .app__nav-link:hover {
   color: var(--fg, #eee);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 767px) {
+  .app {
+    padding-inline: 1rem;
+  }
+
+  .app__header {
+    padding: 1rem 0;
+  }
+
+  .app__menu-toggle {
+    display: inline-flex;
+  }
+
+  .app__actions {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border, #333);
+  }
+
+  .app__actions--open {
+    display: flex;
+  }
+
+  .app__nav-link {
+    padding: 0.7rem 0;
+    font-size: 0.95rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .app__actions {
+    display: flex !important;
+  }
 }
 
 .app__brand {

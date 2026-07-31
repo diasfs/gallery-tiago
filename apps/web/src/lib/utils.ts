@@ -44,3 +44,23 @@ export function formatTimelineMonthLabel(
     timeZone: 'UTC',
   })
 }
+
+/** Day + month label for on-this-day memories (e.g. "31 de julho"). */
+export function formatOnThisDayHeading(month: number, day: number, locale = 'pt-BR'): string {
+  return new Date(Date.UTC(2000, month - 1, day)).toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  })
+}
+
+export function formatYearsAgo(years: number): string {
+  if (years <= 0) {
+    return 'Este ano'
+  }
+  if (years === 1) {
+    return 'Há 1 ano'
+  }
+
+  return `Há ${years} anos`
+}

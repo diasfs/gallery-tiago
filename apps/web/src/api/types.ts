@@ -94,6 +94,21 @@ export interface TimelineMonth {
   photoCount: number
 }
 
+export interface OnThisDayPhoto extends PhotoSummary {
+  timelineAt: string
+  yearsAgo: number
+}
+
+export interface OnThisDayMeta extends PageMeta {
+  month: number
+  day: number
+  beforeYear: number
+}
+
+export interface MostViewedMeta extends PageMeta {
+  period: 'all'
+}
+
 export interface PublicSearchParams {
   q?: string
   person?: string[]

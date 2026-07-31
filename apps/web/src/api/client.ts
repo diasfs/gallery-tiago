@@ -15,6 +15,9 @@ import type {
   Location,
   LocationDetail,
   MergeSuggestionsResponse,
+  MostViewedMeta,
+  OnThisDayMeta,
+  OnThisDayPhoto,
   Paginated,
   PeopleScope,
   PersonSummary,
@@ -89,12 +92,12 @@ async function postJson<T>(path: string): Promise<T> {
   return body.data
 }
 
-async function getJsonPage<T>(path: string): Promise<Paginated<T>> {
+async function getJsonPage<T, M extends PageMeta = PageMeta>(path: string): Promise<{ data: T[]; meta: M }> {
   const response = await fetch(`${API_BASE_URL}${path}`)
   if (!response.ok) {
     throw new ApiError(`Request to ${path} failed with status ${response.status}`, response.status)
   }
-  return (await response.json()) as Paginated<T>
+  return (await response.json()) as { data: T[]; meta: M }
 }
 
 function queryString(params: Record<string, string | number | undefined | null>): string {
@@ -337,6 +340,12 @@ export const api = {
         perPage: params.perPage,
       })}`,
     ),
+  listOnThisDayPhotos: (params: { month?: number; day?: number; beforeYear?: number; page?: number; perPage?: number } = {}) =>
+    getJsonPage<OnThisDayPhoto, OnThisDayMeta>(`/api/discover/on-this-day${queryString(params)}`),
+  listMostViewedPhotos: (params: { page?: number; perPage?: number } = {}) =>
+    getJsonPage<PhotoSummary, MostViewedMeta>(`/api/discover/most-viewed/photos${queryString(params)}`),
+  listMostViewedAlbums: (params: { page?: number; perPage?: number } = {}) =>
+    getJsonPage<AlbumSummary, MostViewedMeta>(`/api/discover/most-viewed/albums${queryString(params)}`),
 }
 
 export interface AlbumWritePayload {

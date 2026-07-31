@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAlbumDateRangeLabel, formatDateLabel, formatTimelineMonthLabel } from './utils'
+import { formatAlbumDateRangeLabel, formatDateLabel, formatOnThisDayHeading, formatTimelineMonthLabel, formatYearsAgo } from './utils'
 
 describe('formatDateLabel', () => {
   it('preserves the API calendar day in timezones behind UTC', () => {
@@ -38,5 +38,19 @@ describe('formatAlbumDateRangeLabel', () => {
 describe('formatTimelineMonthLabel', () => {
   it('formats month and year in UTC', () => {
     expect(formatTimelineMonthLabel(2024, 6, 'pt-BR')).toBe('junho de 2024')
+  })
+})
+
+describe('formatOnThisDayHeading', () => {
+  it('formats day and month without year', () => {
+    expect(formatOnThisDayHeading(7, 31, 'pt-BR')).toBe('31 de julho')
+  })
+})
+
+describe('formatYearsAgo', () => {
+  it('formats year distance labels', () => {
+    expect(formatYearsAgo(0)).toBe('Este ano')
+    expect(formatYearsAgo(1)).toBe('Há 1 ano')
+    expect(formatYearsAgo(3)).toBe('Há 3 anos')
   })
 })

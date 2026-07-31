@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { AlbumSummary } from '../api/types'
+import type { AlbumSummary, PhotoSummary } from '../api/types'
 import AlbumGrid from '../components/AlbumGrid.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 
 const route = useRoute()
@@ -18,6 +19,11 @@ const error = ref<string | null>(null)
 const recentAlbums = ref<AlbumSummary[]>([])
 const recentLoading = ref(true)
 const recentError = ref<string | null>(null)
+
+const memoryPhotos = ref<PhotoSummary[]>([])
+const memoryLoading = ref(true)
+const popularPhotos = ref<PhotoSummary[]>([])
+const popularLoading = ref(true)
 
 const page = computed(() => {
   const raw = Number(route.query.page ?? 1)
@@ -66,8 +72,28 @@ watch(
   { immediate: true },
 )
 
+async function loadDiscoverTeasers() {
+  memoryLoading.value = true
+  popularLoading.value = true
+  try {
+    const [memories, popular] = await Promise.all([
+      api.listOnThisDayPhotos({ perPage: 6 }),
+      api.listMostViewedPhotos({ perPage: 6 }),
+    ])
+    memoryPhotos.value = memories.data
+    popularPhotos.value = popular.data
+  } catch {
+    memoryPhotos.value = []
+    popularPhotos.value = []
+  } finally {
+    memoryLoading.value = false
+    popularLoading.value = false
+  }
+}
+
 onMounted(() => {
   void loadRecent()
+  void loadDiscoverTeasers()
 })
 </script>
 
@@ -93,6 +119,32 @@ onMounted(() => {
     <p v-else-if="recentError" class="error">{{ recentError }}</p>
     <AlbumGrid v-else :albums="recentAlbums" />
   </section>
+
+  <section
+    v-if="memoryLoading || memoryPhotos.length > 0"
+    class="discover"
+    data-testid="memory-teaser"
+  >
+    <div class="discover__header">
+      <h2>Neste dia</h2>
+      <RouterLink to="/memories">Ver tudo</RouterLink>
+    </div>
+    <p v-if="memoryLoading">Carregando memórias…</p>
+    <PhotoGrid v-else :photos="memoryPhotos" />
+  </section>
+
+  <section
+    v-if="popularLoading || popularPhotos.length > 0"
+    class="discover"
+    data-testid="popular-teaser"
+  >
+    <div class="discover__header">
+      <h2>Mais vistos</h2>
+      <RouterLink to="/popular">Ver tudo</RouterLink>
+    </div>
+    <p v-if="popularLoading">Carregando ranking…</p>
+    <PhotoGrid v-else :photos="popularPhotos" />
+  </section>
 </template>
 
 <style scoped>
@@ -107,6 +159,28 @@ onMounted(() => {
 .recent h2 {
   margin: 0 0 1rem;
   font-size: 1.25rem;
+}
+
+.discover {
+  margin-top: 2.5rem;
+}
+
+.discover__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.discover__header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.discover__header a {
+  color: var(--muted, #888);
+  font-size: 0.9rem;
 }
 
 .error {

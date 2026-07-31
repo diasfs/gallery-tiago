@@ -74,6 +74,32 @@ class AlbumRepository extends ServiceEntityRepository
     }
 
     /**
+     * @return array{items: Album[], total: int}
+     */
+    public function findPublicMostViewedPaginated(int $page, int $perPage): array
+    {
+        $base = $this->createQueryBuilder('a')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->andWhere('a.viewCount > 0')
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted]);
+
+        $total = (int) (clone $base)
+            ->select('COUNT(a.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $items = (clone $base)
+            ->orderBy('a.viewCount', 'DESC')
+            ->addOrderBy('a.createdAt', 'DESC')
+            ->setFirstResult(max(0, ($page - 1) * $perPage))
+            ->setMaxResults($perPage)
+            ->getQuery()
+            ->getResult();
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
      * Public albums (any depth) whose location has latitude and longitude.
      *
      * @return Album[]
