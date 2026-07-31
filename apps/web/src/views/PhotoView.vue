@@ -2,8 +2,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { absoluteMediaUrl, api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
-import type { PersonSummary, PhotoDetail } from '../api/types'
+import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 import ViewCount from '../components/ViewCount.vue'
 import { usePageMeta } from '../composables/usePageMeta'
 
@@ -11,6 +12,7 @@ const props = defineProps<{ id: string }>()
 const router = useRouter()
 
 const photo = ref<PhotoDetail | null>(null)
+const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
 const notFound = ref(false)
 
@@ -20,6 +22,11 @@ async function load(id: string) {
   photo.value = null
   try {
     photo.value = await api.getPhoto(id)
+    try {
+      similarPhotos.value = await api.listSimilarPhotos(id)
+    } catch {
+      similarPhotos.value = []
+    }
     try {
       const tracked = await api.recordPhotoView(id)
       if (photo.value?.id === id) {
@@ -151,6 +158,11 @@ function personAvatarSrc(person: PersonSummary): string | null {
         </div>
       </div>
 
+      <div v-if="similarPhotos.length > 0" class="photo-detail__similar">
+        <h2>Fotos parecidas</h2>
+        <PhotoGrid :photos="similarPhotos" />
+      </div>
+
       <nav class="photo-detail__nav">
         <RouterLink v-if="photo.prevId" :to="{ name: 'photo', params: { id: photo.prevId } }">← Anterior</RouterLink>
         <span v-else />
@@ -209,6 +221,16 @@ function personAvatarSrc(person: PersonSummary): string | null {
 
 .photo-detail__people {
   margin-top: 1.5rem;
+}
+
+.photo-detail__similar {
+  margin-top: 2rem;
+}
+
+.photo-detail__similar h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted, #888);
 }
 
 .photo-detail__people h2 {

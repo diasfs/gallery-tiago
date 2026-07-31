@@ -18,9 +18,11 @@ Sugestões de features alinhadas ao estado atual do projeto (álbuns hierárquic
 
 ## Aproveita pgvector / IA
 
-- **Fotos parecidas** — k-NN em embedding de face ou overlap de tags na `PhotoView`.
-- **Sugestão de merge de pessoas** — clusters unnamed com alta similaridade → fila admin.
-- **Busca por rosto (admin)** — upload de crop → nearest neighbor.
+| Feature | Status |
+|---------|--------|
+| Fotos parecidas | Feito |
+| Sugestão de merge de pessoas | Feito |
+| Busca por rosto (admin) | Feito |
 
 ## Admin / operação
 

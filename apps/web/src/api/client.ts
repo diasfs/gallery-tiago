@@ -10,9 +10,11 @@ import type {
   AlbumDetail,
   AlbumSummary,
   Face,
+  FaceSearchMatch,
   GeocodeSuggestion,
   Location,
   LocationDetail,
+  MergeSuggestion,
   Paginated,
   PeopleScope,
   PersonSummary,
@@ -282,6 +284,8 @@ export const api = {
   listAlbumPhotos: (slug: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<PhotoSummary>(`/api/albums/${encodeURIComponent(slug)}/photos${queryString(params)}`),
   getPhoto: (id: string) => getJson<PhotoDetail>(`/api/photos/${encodeURIComponent(id)}`),
+  listSimilarPhotos: (id: string) =>
+    getJson<PhotoSummary[]>(`/api/photos/${encodeURIComponent(id)}/similar`),
   recordPhotoView: (id: string) =>
     postJson<{ viewCount: number }>(`/api/photos/${encodeURIComponent(id)}/view`),
   search: (params: PublicSearchParams = {}) => getSearchResult(`/api/search${searchQueryString(params)}`),
@@ -425,6 +429,16 @@ export const adminApi = {
     ),
 
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
+  listMergeSuggestions: () => adminRequest<MergeSuggestion[]>('/api/admin/people/merge-suggestions'),
+  searchPeopleByFace: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return adminRequest<FaceSearchMatch[]>('/api/admin/people/search-by-face', {
+      method: 'POST',
+      body: form,
+      isForm: true,
+    })
+  },
   listPeople: (
     params: {
       scope?: PeopleScope

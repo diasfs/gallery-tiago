@@ -292,3 +292,19 @@ export interface AdminPersonDetail extends AdminPerson {
 }
 
 export type PeopleScope = 'all' | 'named' | 'unnamed'
+
+export interface MergeSuggestion {
+  sourcePersonId: string
+  targetPersonId: string
+  distance: number
+  faceCountA: number
+  faceCountB: number
+}
+
+export interface FaceSearchMatch {
+  personId: string
+  isNamed: boolean
+  distance: number
+  name: string | null
+  avatarCropPath: string | null
+}
