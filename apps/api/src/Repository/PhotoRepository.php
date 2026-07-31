@@ -438,4 +438,67 @@ class PhotoRepository extends ServiceEntityRepository
 
         return ['items' => $items, 'total' => $total];
     }
+
+    /**
+     * @return list<array{year: int, month: int, photoCount: int}>
+     */
+    public function findPublicTimelineMonths(): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            <<<'SQL'
+                SELECT
+                    EXTRACT(YEAR FROM COALESCE(a.taken_at, p.created_at))::int AS year,
+                    EXTRACT(MONTH FROM COALESCE(a.taken_at, p.created_at))::int AS month,
+                    COUNT(p.id)::int AS photo_count
+                FROM photo p
+                INNER JOIN album a ON a.id = p.album_id
+                WHERE a.visibility IN ('public', 'unlisted')
+                GROUP BY year, month
+                ORDER BY year DESC, month DESC
+            SQL
+        );
+
+        return array_map(
+            static fn (array $row): array => [
+                'year' => (int) $row['year'],
+                'month' => (int) $row['month'],
+                'photoCount' => (int) $row['photo_count'],
+            ],
+            $rows,
+        );
+    }
+
+    /**
+     * @return array{items: Photo[], total: int}
+     */
+    public function findPublicTimelinePhotosPaginated(int $year, int $month, int $page, int $perPage): array
+    {
+        $from = new \DateTimeImmutable(\sprintf('%04d-%02d-01T00:00:00Z', $year, $month));
+        $to = $from->modify('last day of this month')->setTime(23, 59, 59);
+
+        $base = $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->andWhere('COALESCE(a.takenAt, p.createdAt) >= :from')
+            ->andWhere('COALESCE(a.takenAt, p.createdAt) <= :to')
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->setParameter('from', $from)
+            ->setParameter('to', $to);
+
+        $total = (int) (clone $base)
+            ->select('COUNT(p.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        $items = (clone $base)
+            ->addSelect('COALESCE(a.takenAt, p.createdAt) AS HIDDEN timelineAt')
+            ->orderBy('timelineAt', 'DESC')
+            ->addOrderBy('p.sortOrder', 'ASC')
+            ->setFirstResult(max(0, ($page - 1) * $perPage))
+            ->setMaxResults($perPage)
+            ->getQuery()
+            ->getResult();
+
+        return ['items' => $items, 'total' => $total];
+    }
 }

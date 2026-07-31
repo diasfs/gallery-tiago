@@ -15,6 +15,17 @@ const router = createRouter({
       component: () => import('../views/SearchView.vue'),
     },
     {
+      path: '/timeline',
+      name: 'timeline',
+      component: () => import('../views/TimelineView.vue'),
+    },
+    {
+      path: '/timeline/:year/:month',
+      name: 'timeline-month',
+      component: () => import('../views/TimelineView.vue'),
+      props: true,
+    },
+    {
       path: '/albums/:slug',
       name: 'album',
       component: () => import('../views/AlbumView.vue'),

@@ -4,11 +4,11 @@ Sugestões de features alinhadas ao estado atual do projeto (álbuns hierárquic
 
 ## Em andamento / próximo
 
-| Feature | Descrição | Esforço |
-|---------|-----------|---------|
-| Slideshow / lightbox | Modo tela cheia no álbum com navegação por teclado; reaproveita `prevId`/`nextId` | Baixo |
-| Open Graph / preview social | Meta tags dinâmicas (`og:image`, título, descrição) por foto/álbum | Baixo |
-| Linha do tempo por data | View pública agrupando fotos por mês/ano via `takenAt` | Baixo |
+| Feature | Status |
+|---------|--------|
+| Slideshow / lightbox | Feito |
+| Open Graph / preview social | Feito |
+| Linha do tempo por data | Feito |
 
 ## Alto impacto, pouco código
 

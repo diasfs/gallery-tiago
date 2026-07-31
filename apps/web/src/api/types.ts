@@ -88,6 +88,12 @@ export interface Paginated<T> {
   meta: PageMeta
 }
 
+export interface TimelineMonth {
+  year: number
+  month: number
+  photoCount: number
+}
+
 export interface PublicSearchParams {
   q?: string
   person?: string[]

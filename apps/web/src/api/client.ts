@@ -28,6 +28,7 @@ import type {
   Tag,
   TagDetail,
   TagListSort,
+  TimelineMonth,
   UnnamedPersonCluster,
 } from './types'
 
@@ -297,6 +298,18 @@ export const api = {
   listLocationPhotos: (id: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<PhotoSummary>(
       `/api/locations/${encodeURIComponent(id)}/photos${queryString(params)}`,
+    ),
+  listTimelineMonths: () => getJson<TimelineMonth[]>('/api/timeline/months'),
+  listTimelinePhotos: (
+    params: { year: number; month: number; page?: number; perPage?: number },
+  ) =>
+    getJsonPage<PhotoSummary>(
+      `/api/timeline/photos${queryString({
+        year: params.year,
+        month: params.month,
+        page: params.page,
+        perPage: params.perPage,
+      })}`,
     ),
 }
 

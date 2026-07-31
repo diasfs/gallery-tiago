@@ -31,3 +31,16 @@ export function formatAlbumDateRangeLabel(
   }
   return `${start} – ${formatDateLabel(takenAtEnd, locale)}`
 }
+
+/** Month heading for the public timeline (e.g. "abril de 2024"). */
+export function formatTimelineMonthLabel(
+  year: number,
+  month: number,
+  locale = 'pt-BR',
+): string {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(locale, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
