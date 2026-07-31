@@ -11,12 +11,14 @@ vi.mock('../../api/client', async () => {
     ...actual,
     adminApi: {
       listPeople: vi.fn(),
+      listMergeSuggestions: vi.fn(),
     },
   }
 })
 
 const mockedApi = adminApi as unknown as {
   listPeople: ReturnType<typeof vi.fn>
+  listMergeSuggestions: ReturnType<typeof vi.fn>
 }
 
 function makePerson(overrides: Partial<AdminPerson> = {}): AdminPerson {
@@ -77,6 +79,25 @@ describe('PeopleView', () => {
       ],
       meta: { page: 1, perPage: 50, total: 75 },
     })
+    mockedApi.listMergeSuggestions.mockResolvedValue({
+      data: [
+        {
+          sourcePersonId: 'cluster-1',
+          targetPersonId: 'cluster-2',
+          distance: 0.12,
+          faceCountA: 2,
+          faceCountB: 3,
+          sourceAvatarCropPath: 'faces/aa/source.jpg',
+          targetAvatarCropPath: 'faces/bb/target.jpg',
+        },
+      ],
+      meta: {
+        unnamedClusterCount: 52613,
+        analyzedClusterCount: 500,
+        truncated: true,
+        durationMs: 42,
+      },
+    })
   })
 
   afterEach(() => {
@@ -94,7 +115,7 @@ describe('PeopleView', () => {
     })
     expect(wrapper.findAll('[data-testid="person-row"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Ada Lovelace')
-    expect(wrapper.text()).toContain('Agrupamento sem nome')
+    expect(wrapper.text()).toContain('2 rostos')
     expect(wrapper.find('[data-testid="person-avatar"]').exists()).toBe(true)
   })
 
@@ -121,6 +142,25 @@ describe('PeopleView', () => {
       page: 1,
       perPage: 50,
     })
+    expect(mockedApi.listMergeSuggestions).not.toHaveBeenCalled()
+  })
+
+  it('loads merge suggestions only when analyze is clicked', async () => {
+    const { wrapper } = await mountView({ scope: 'unnamed' })
+
+    expect(mockedApi.listMergeSuggestions).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="merge-suggestions-panel"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="analyze-merge-suggestions"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.listMergeSuggestions).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="merge-suggestions"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="merge-suggestions"] img')).toHaveLength(2)
+    expect(wrapper.text()).toContain('2 rostos')
+    expect(wrapper.text()).toContain('3 rostos')
+    expect(wrapper.text()).toContain('500 de 52613 clusters analisados em 42 ms')
+    expect(wrapper.text()).toContain('limitado aos clusters com mais rostos')
   })
 
   it('shows empty state when no people match', async () => {

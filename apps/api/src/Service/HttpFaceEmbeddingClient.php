@@ -26,8 +26,19 @@ final class HttpFaceEmbeddingClient implements FaceEmbeddingClientInterface
             ],
         ]);
 
-        if ($response->getStatusCode() >= 400) {
-            throw new ServiceUnavailableHttpException('Face embedding request failed.');
+        $statusCode = $response->getStatusCode();
+        if ($statusCode >= 400) {
+            $detail = 'Face embedding request failed.';
+            try {
+                $payload = $response->toArray(false);
+                if (\is_string($payload['error'] ?? null) && '' !== $payload['error']) {
+                    $detail = $payload['error'];
+                }
+            } catch (\Throwable) {
+                // keep generic message
+            }
+
+            throw new \RuntimeException($detail);
         }
 
         $payload = $response->toArray(false);

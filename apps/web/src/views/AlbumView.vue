@@ -5,7 +5,6 @@ import { api } from '../api/client'
 import type { AlbumDetail, AlbumSummary, PhotoSummary } from '../api/types'
 import AlbumGrid from '../components/AlbumGrid.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
-import PhotoLightbox from '../components/PhotoLightbox.vue'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import LocationMap from '../components/LocationMap.vue'
 import PaginationBar from '../components/PaginationBar.vue'
@@ -30,7 +29,6 @@ const childrenPerPage = 24
 const photosPerPage = computed(() => album.value?.photosPerPage ?? 48)
 const loading = ref(true)
 const notFound = ref(false)
-const lightboxPhotoId = ref<string | null>(null)
 
 const childrenPage = computed(() => {
   const raw = Number(route.query.childrenPage ?? 1)
@@ -195,12 +193,7 @@ usePageMeta(
         />
       </div>
 
-      <PhotoGrid :photos="photos" lightbox @select="lightboxPhotoId = $event" />
-      <PhotoLightbox
-        v-if="lightboxPhotoId"
-        :photo-id="lightboxPhotoId"
-        @close="lightboxPhotoId = null"
-      />
+      <PhotoGrid :photos="photos" />
       <PaginationBar
         class="photos-pager"
         :page="photosPage"

@@ -14,7 +14,7 @@ import type {
   GeocodeSuggestion,
   Location,
   LocationDetail,
-  MergeSuggestion,
+  MergeSuggestionsResponse,
   Paginated,
   PeopleScope,
   PersonSummary,
@@ -47,6 +47,25 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
+}
+
+async function readApiErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string; detail?: string; title?: string }
+    if (typeof body.detail === 'string' && body.detail !== '') {
+      return body.detail
+    }
+    if (typeof body.message === 'string' && body.message !== '') {
+      return body.message
+    }
+    if (typeof body.title === 'string' && body.title !== '') {
+      return body.title
+    }
+  } catch {
+    // ignore invalid JSON bodies
+  }
+
+  return fallback
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -119,7 +138,8 @@ async function adminRequest<T>(
   })
 
   if (!response.ok) {
-    throw new ApiError(`Admin request to ${path} failed with status ${response.status}`, response.status)
+    const fallback = `Admin request to ${path} failed with status ${response.status}`
+    throw new ApiError(await readApiErrorMessage(response, fallback), response.status)
   }
 
   if (response.status === 204) {
@@ -151,7 +171,8 @@ async function adminRequestRaw<T>(
   })
 
   if (!response.ok) {
-    throw new ApiError(`Admin request to ${path} failed with status ${response.status}`, response.status)
+    const fallback = `Admin request to ${path} failed with status ${response.status}`
+    throw new ApiError(await readApiErrorMessage(response, fallback), response.status)
   }
 
   return (await response.json()) as T
@@ -429,7 +450,8 @@ export const adminApi = {
     ),
 
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
-  listMergeSuggestions: () => adminRequest<MergeSuggestion[]>('/api/admin/people/merge-suggestions'),
+  listMergeSuggestions: () =>
+    adminRequestRaw<MergeSuggestionsResponse>('/api/admin/people/merge-suggestions'),
   searchPeopleByFace: (file: File) => {
     const form = new FormData()
     form.append('file', file)

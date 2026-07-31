@@ -1,0 +1,43 @@
+# Share preview (Open Graph) for social crawlers
+#
+# Browsers load the SPA (`index.html`). Crawlers on /photos/* and /albums/*
+# are proxied to Symfony, which returns HTML with og:* meta tags.
+#
+# Adjust $api_upstream and $site_root for your deployment.
+# proxy_set_header below lets Symfony build og:url / og:image with the public host.
+
+map $http_user_agent $is_social_crawler {
+    default 0;
+    ~*facebookexternalhit 1;
+    ~*Facebot 1;
+    ~*Twitterbot 1;
+    ~*LinkedInBot 1;
+    ~*WhatsApp 1;
+    ~*TelegramBot 1;
+    ~*Slackbot 1;
+    ~*Discordbot 1;
+    ~*Applebot 1;
+    ~*Pinterest 1;
+}
+
+location ~ ^/photos/[0-9a-f-]{36}/?$ {
+    if ($is_social_crawler) {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://api_upstream;
+        break;
+    }
+    try_files $uri /index.html;
+}
+
+location ~ ^/albums/[^/]+/?$ {
+    if ($is_social_crawler) {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://api_upstream;
+        break;
+    }
+    try_files $uri /index.html;
+}

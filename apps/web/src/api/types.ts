@@ -299,6 +299,20 @@ export interface MergeSuggestion {
   distance: number
   faceCountA: number
   faceCountB: number
+  sourceAvatarCropPath: string | null
+  targetAvatarCropPath: string | null
+}
+
+export interface MergeSuggestionsMeta {
+  unnamedClusterCount: number
+  analyzedClusterCount: number
+  truncated: boolean
+  durationMs: number
+}
+
+export interface MergeSuggestionsResponse {
+  data: MergeSuggestion[]
+  meta: MergeSuggestionsMeta
 }
 
 export interface FaceSearchMatch {

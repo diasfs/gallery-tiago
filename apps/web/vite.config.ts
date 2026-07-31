@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { sharePreviewProxyMiddleware } from './share-preview-proxy'
+import { withPublicHostHeaders } from './vite-proxy-headers'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -16,7 +18,16 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8081'
 
   return {
-    plugins: [vue(), tailwindcss()],
+    plugins: [
+      vue(),
+      tailwindcss(),
+      {
+        name: 'share-preview-proxy',
+        configureServer(server) {
+          server.middlewares.use(sharePreviewProxyMiddleware(apiProxyTarget))
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -31,31 +42,31 @@ export default defineConfig(({ mode }) => {
         // Same-origin proxy so the admin session cookie (set by
         // `POST /api/admin/login`) is sent on subsequent requests without
         // needing CORS at all — see apps/web/src/api/client.ts.
-        '/api': {
+        '/api': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,
-        },
+        }),
         // Converted AVIF/thumb media paths are returned by the API relative
         // (e.g. `converted/ab/<uuid>/master.avif`) and resolved by
         // `mediaUrl()` against the same origin, so proxy those too.
-        '/converted': {
+        '/converted': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,
-        },
+        }),
         // Face crops written by worker-faces (faces/<xx>/<faceId>.jpg).
-        '/faces': {
+        '/faces': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,
-        },
+        }),
         // Custom person avatars (avatars/<xx>/<personId>.jpg).
-        '/avatars': {
+        '/avatars': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,
-        },
-        '/originals': {
+        }),
+        '/originals': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,
-        },
+        }),
       },
     },
     test: {

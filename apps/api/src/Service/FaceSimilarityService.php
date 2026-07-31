@@ -13,6 +13,7 @@ final class FaceSimilarityService
         private readonly FaceRepository $faces,
         private readonly PhotoRepository $photos,
         private readonly float $clusterThreshold,
+        private readonly int $mergeSuggestionsMaxClusters,
     ) {
     }
 
@@ -39,10 +40,20 @@ final class FaceSimilarityService
         return $this->photos->findVisibleByIdsPreservingOrder($ids);
     }
 
-    /** @return list<array{sourcePersonId: string, targetPersonId: string, distance: float, faceCountA: int, faceCountB: int}> */
+    /**
+     * @return array{
+     *     items: list<array{sourcePersonId: string, targetPersonId: string, distance: float, faceCountA: int, faceCountB: int}>,
+     *     analyzedClusterCount: int,
+     *     truncated: bool,
+     * }
+     */
     public function findUnnamedMergeSuggestions(int $limit = 50): array
     {
-        return $this->faces->findUnnamedMergeSuggestions($this->clusterThreshold, $limit);
+        return $this->faces->findUnnamedMergeSuggestions(
+            $this->clusterThreshold,
+            $limit,
+            $this->mergeSuggestionsMaxClusters,
+        );
     }
 
     /** @return list<array{personId: string, isNamed: bool, distance: float, name: ?string, avatarCropPath: ?string}> */

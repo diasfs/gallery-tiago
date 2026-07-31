@@ -5,7 +5,11 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     env(FACES_EMBED_URL): ''
+    env(MERGE_SUGGESTIONS_MAX_CLUSTERS): '500'
+    env(PUBLIC_SITE_URL): 'http://localhost:5173'
     face.cluster_threshold: '%env(float:FACE_CLUSTER_THRESHOLD)%'
+    merge_suggestions.max_clusters: '%env(int:MERGE_SUGGESTIONS_MAX_CLUSTERS)%'
+    public.site_url: '%env(string:PUBLIC_SITE_URL)%'
 
 services:
     # default configuration for services in *this* file
@@ -38,6 +42,11 @@ services:
     App\Service\FaceSimilarityService:
         arguments:
             $clusterThreshold: '%face.cluster_threshold%'
+            $mergeSuggestionsMaxClusters: '%merge_suggestions.max_clusters%'
+
+    App\Service\PublicSiteUrlBuilder:
+        arguments:
+            $siteUrl: '%public.site_url%'
 
 when@test:
     services:

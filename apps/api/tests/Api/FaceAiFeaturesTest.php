@@ -164,13 +164,50 @@ final class FaceAiFeaturesTest extends WebTestCase
         $this->client->request('GET', '/api/admin/people/merge-suggestions');
 
         $this->assertResponseIsSuccessful();
-        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $data = $payload['data'];
         $this->assertCount(1, $data);
+        $this->assertSame(2, $payload['meta']['unnamedClusterCount']);
+        $this->assertSame(2, $payload['meta']['analyzedClusterCount']);
+        $this->assertFalse($payload['meta']['truncated']);
+        $this->assertSame('faces/aa/'.$photo->getId().'.jpg', $data[0]['sourceAvatarCropPath']);
+        $this->assertSame('faces/aa/'.$photo->getId().'.jpg', $data[0]['targetAvatarCropPath']);
         $pair = [$data[0]['sourcePersonId'], $data[0]['targetPersonId']];
         sort($pair);
         $expected = [(string) $left->getId(), (string) $right->getId()];
         sort($expected);
         $this->assertSame($expected, $pair);
+    }
+
+    public function testMergeSuggestionsUsesRepresentativeFace(): void
+    {
+        $album = new Album('Faces', 'faces-merge-rep');
+        $album->setVisibility(AlbumVisibility::Private);
+        $this->em->persist($album);
+        $photoA = new Photo($album, 'originals/aa/a.jpg');
+        $photoB = new Photo($album, 'originals/bb/b.jpg');
+        $this->em->persist($photoA);
+        $this->em->persist($photoB);
+
+        $left = new Person();
+        $right = new Person();
+        $this->em->persist($left);
+        $this->em->persist($right);
+
+        $representative = $this->faceWithEmbedding($photoA, $left, 99);
+        $representative->setConfidence(0.5);
+        $similarSecondary = $this->faceWithEmbedding($photoB, $left, 2);
+        $similarSecondary->setConfidence(0.99);
+        $left->setAvatarFace($representative);
+        $this->faceWithEmbedding($photoA, $right, 2);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people/merge-suggestions');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertCount(0, $data);
     }
 
     public function testSearchByFaceReturnsNearestPeople(): void

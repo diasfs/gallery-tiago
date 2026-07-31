@@ -45,8 +45,18 @@ class PersonController
     #[Route('/api/admin/people/merge-suggestions', name: 'admin_people_merge_suggestions', methods: ['GET'])]
     public function mergeSuggestions(): JsonResponse
     {
+        $unnamedClusterCount = $this->faces->countUnnamedClustersWithEmbeddings();
+        $started = hrtime(true);
+        $result = $this->similarity->findUnnamedMergeSuggestions();
+
         return new JsonResponse([
-            'data' => $this->similarity->findUnnamedMergeSuggestions(),
+            'data' => $result['items'],
+            'meta' => [
+                'unnamedClusterCount' => $unnamedClusterCount,
+                'analyzedClusterCount' => $result['analyzedClusterCount'],
+                'truncated' => $result['truncated'],
+                'durationMs' => (int) ((hrtime(true) - $started) / 1_000_000),
+            ],
         ]);
     }
 

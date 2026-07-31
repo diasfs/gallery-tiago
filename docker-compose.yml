@@ -32,6 +32,8 @@ services:
       # Entrypoint installs pdo_mysql if the image was built without it.
       - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
     env_file: .env
+    environment:
+      FACES_EMBED_URL: ${FACES_EMBED_URL:-http://worker-faces:8090}
     # Host 8080 is often taken (e.g. phpMyAdmin); use 8081 for the gallery API.
     ports: ["8081:80"]
     depends_on:
@@ -112,7 +114,9 @@ services:
 
   frontend:
     build: ./apps/web
-    volumes: [./apps/web:/app]
+    volumes:
+      - ./apps/web:/app
+      - frontend_node_modules:/app/node_modules
     ports: ["5173:5173"]
     env_file: .env
     depends_on: [api]
@@ -124,3 +128,4 @@ networks:
 
 volumes:
   tags_model_cache:
+  frontend_node_modules:

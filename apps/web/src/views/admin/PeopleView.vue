@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { adminApi, mediaUrl } from '../../api/client'
+import { adminApi, ApiError, mediaUrl } from '../../api/client'
 import type { AdminPerson, FaceSearchMatch, MergeSuggestion, PeopleScope } from '../../api/types'
 import PaginationBar from '../../components/PaginationBar.vue'
 
@@ -23,6 +23,15 @@ const router = useRouter()
 
 const people = ref<AdminPerson[]>([])
 const mergeSuggestions = ref<MergeSuggestion[]>([])
+const mergeSuggestionsLoading = ref(false)
+const mergeSuggestionsError = ref<string | null>(null)
+const mergeSuggestionsAnalyzed = ref(false)
+const mergeSuggestionsMeta = ref<{
+  unnamedClusterCount: number
+  analyzedClusterCount: number
+  truncated: boolean
+  durationMs: number
+} | null>(null)
 const faceMatches = ref<FaceSearchMatch[]>([])
 const faceSearchLoading = ref(false)
 const faceSearchError = ref<string | null>(null)
@@ -43,14 +52,35 @@ const page = computed(() => Math.max(1, Number(route.query.page) || 1))
 
 async function loadMergeSuggestions() {
   if (scope.value !== 'unnamed') {
-    mergeSuggestions.value = []
     return
   }
+  mergeSuggestionsLoading.value = true
+  mergeSuggestionsError.value = null
   try {
-    mergeSuggestions.value = await adminApi.listMergeSuggestions()
-  } catch {
+    const result = await adminApi.listMergeSuggestions()
+    mergeSuggestions.value = result.data
+    mergeSuggestionsMeta.value = result.meta
+    mergeSuggestionsAnalyzed.value = true
+  } catch (err) {
     mergeSuggestions.value = []
+    mergeSuggestionsMeta.value = null
+    mergeSuggestionsError.value =
+      err instanceof ApiError ? err.message : 'Não foi possível analisar clusters.'
+  } finally {
+    mergeSuggestionsLoading.value = false
   }
+}
+
+function resetMergeSuggestions() {
+  mergeSuggestions.value = []
+  mergeSuggestionsMeta.value = null
+  mergeSuggestionsError.value = null
+  mergeSuggestionsAnalyzed.value = false
+  mergeSuggestionsLoading.value = false
+}
+
+async function analyzeMergeSuggestions() {
+  await loadMergeSuggestions()
 }
 
 async function load() {
@@ -65,7 +95,6 @@ async function load() {
     })
     people.value = result.data
     total.value = result.meta.total
-    await loadMergeSuggestions()
   } catch {
     error.value = 'Falha ao carregar pessoas.'
   } finally {
@@ -75,6 +104,11 @@ async function load() {
 
 onMounted(load)
 watch([scope, () => route.query.q, page], load)
+watch(scope, (next, previous) => {
+  if (next !== previous) {
+    resetMergeSuggestions()
+  }
+})
 
 watch(
   () => route.query.q,
@@ -116,17 +150,20 @@ function setPage(nextPage: number) {
 }
 
 function displayName(person: AdminPerson): string {
-  return person.isNamed && person.name ? person.name : 'Agrupamento sem nome'
+  if (person.isNamed && person.name) return person.name
+  return person.faceCount === 1 ? '1 rosto' : `${person.faceCount} rostos`
 }
 
 function avatarSrc(person: AdminPerson): string | null {
   return mediaUrl(person.avatarCropPath)
 }
 
-function personLabel(id: string): string {
-  const person = people.value.find((entry) => entry.id === id)
-  if (!person) return id.slice(0, 8)
-  return displayName(person)
+function clusterLabel(faceCount: number): string {
+  return faceCount === 1 ? '1 rosto' : `${faceCount} rostos`
+}
+
+function suggestionAvatar(path: string | null): string | null {
+  return mediaUrl(path)
 }
 
 async function acceptMerge(suggestion: MergeSuggestion) {
@@ -134,8 +171,11 @@ async function acceptMerge(suggestion: MergeSuggestion) {
   try {
     await adminApi.mergePerson(suggestion.sourcePersonId, suggestion.targetPersonId)
     await load()
-  } catch {
-    error.value = 'Falha ao mesclar pessoas.'
+    if (mergeSuggestionsAnalyzed.value) {
+      await loadMergeSuggestions()
+    }
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Falha ao mesclar pessoas.'
   } finally {
     mergeLoadingId.value = null
   }
@@ -152,8 +192,9 @@ async function onFaceSearch(event: Event) {
   faceMatches.value = []
   try {
     faceMatches.value = await adminApi.searchPeopleByFace(file)
-  } catch {
-    faceSearchError.value = 'Não foi possível buscar por rosto.'
+  } catch (err) {
+    faceSearchError.value =
+      err instanceof ApiError ? err.message : 'Não foi possível buscar por rosto.'
   } finally {
     faceSearchLoading.value = false
   }
@@ -248,26 +289,116 @@ async function onFaceSearch(event: Event) {
     </div>
 
     <div
-      v-if="scope === 'unnamed' && mergeSuggestions.length > 0"
+      v-if="scope === 'unnamed'"
       class="admin-panel space-y-3 rounded-xl p-4"
-      data-testid="merge-suggestions"
+      data-testid="merge-suggestions-panel"
     >
-      <div>
-        <h2 class="text-sm font-medium">Sugestões de mesclagem</h2>
-        <p class="text-sm text-muted-foreground">Clusters sem nome com rostos muito parecidos.</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-medium">Sugestões de mesclagem</h2>
+          <p class="text-sm text-muted-foreground">
+            Compare clusters sem nome usando um rosto representativo por agrupamento.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-testid="analyze-merge-suggestions"
+          :disabled="mergeSuggestionsLoading"
+          @click="analyzeMergeSuggestions"
+        >
+          {{ mergeSuggestionsAnalyzed ? 'Analisar novamente' : 'Analisar clusters' }}
+        </Button>
       </div>
-      <ul class="space-y-2">
+
+      <p v-if="mergeSuggestionsLoading" class="text-sm text-muted-foreground">Analisando clusters…</p>
+
+      <Alert v-if="mergeSuggestionsError" variant="destructive">
+        <AlertDescription>{{ mergeSuggestionsError }}</AlertDescription>
+      </Alert>
+
+      <p
+        v-else-if="mergeSuggestionsAnalyzed && mergeSuggestions.length === 0"
+        class="text-sm text-muted-foreground"
+        data-testid="merge-suggestions-empty"
+      >
+        Nenhum par similar encontrado.
+      </p>
+
+      <p
+        v-if="mergeSuggestionsMeta && mergeSuggestionsAnalyzed"
+        class="text-xs text-muted-foreground"
+        data-testid="merge-suggestions-meta"
+      >
+        {{ mergeSuggestionsMeta.analyzedClusterCount }} de
+        {{ mergeSuggestionsMeta.unnamedClusterCount }} clusters analisados em
+        {{ mergeSuggestionsMeta.durationMs }} ms
+        <span v-if="mergeSuggestionsMeta.truncated">
+          (limitado aos clusters com mais rostos)
+        </span>
+      </p>
+
+      <ul
+        v-if="mergeSuggestions.length > 0"
+        class="space-y-2"
+        data-testid="merge-suggestions"
+      >
         <li
           v-for="suggestion in mergeSuggestions"
           :key="`${suggestion.sourcePersonId}-${suggestion.targetPersonId}`"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+          class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border px-3 py-3"
         >
-          <p class="text-sm">
-            {{ personLabel(suggestion.sourcePersonId) }}
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <div class="flex items-center gap-2">
+              <RouterLink
+                :to="{ name: 'admin-person-edit', params: { id: suggestion.sourcePersonId } }"
+                class="flex items-center gap-2 rounded-md hover:opacity-80"
+                data-testid="merge-suggestion-source"
+              >
+                <img
+                  v-if="suggestionAvatar(suggestion.sourceAvatarCropPath)"
+                  :src="suggestionAvatar(suggestion.sourceAvatarCropPath)!"
+                  alt=""
+                  class="size-12 rounded-md object-cover bg-muted"
+                />
+                <div
+                  v-else
+                  class="flex size-12 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                >
+                  —
+                </div>
+                <span class="text-sm font-medium">{{ clusterLabel(suggestion.faceCountA) }}</span>
+              </RouterLink>
+            </div>
+
             <span class="text-muted-foreground">→</span>
-            {{ personLabel(suggestion.targetPersonId) }}
-            <span class="text-muted-foreground">({{ suggestion.distance.toFixed(3) }})</span>
-          </p>
+
+            <div class="flex items-center gap-2">
+              <RouterLink
+                :to="{ name: 'admin-person-edit', params: { id: suggestion.targetPersonId } }"
+                class="flex items-center gap-2 rounded-md hover:opacity-80"
+                data-testid="merge-suggestion-target"
+              >
+                <img
+                  v-if="suggestionAvatar(suggestion.targetAvatarCropPath)"
+                  :src="suggestionAvatar(suggestion.targetAvatarCropPath)!"
+                  alt=""
+                  class="size-12 rounded-md object-cover bg-muted"
+                />
+                <div
+                  v-else
+                  class="flex size-12 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                >
+                  —
+                </div>
+                <span class="text-sm font-medium">{{ clusterLabel(suggestion.faceCountB) }}</span>
+              </RouterLink>
+            </div>
+
+            <span class="text-xs text-muted-foreground">distância {{ suggestion.distance.toFixed(3) }}</span>
+          </div>
+
           <Button
             type="button"
             size="sm"

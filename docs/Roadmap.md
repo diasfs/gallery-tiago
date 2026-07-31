@@ -7,7 +7,7 @@ Sugestões de features alinhadas ao estado atual do projeto (álbuns hierárquic
 | Feature | Status |
 |---------|--------|
 | Slideshow / lightbox | Feito |
-| Open Graph / preview social | Feito |
+| Open Graph / preview social | Feito (HTML para crawlers via API + proxy) |
 | Linha do tempo por data | Feito |
 
 ## Alto impacto, pouco código

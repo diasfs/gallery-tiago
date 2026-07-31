@@ -67,6 +67,7 @@ Copy `.env.example` to `.env` before starting. Key variables:
 | `V3_DATABASE_URL` | Optional MySQL URL for `app:import-v3` (legacy gallery v3) |
 | `VITE_API_BASE_URL` | Frontend → API base URL (browser-facing); leave empty for same-origin requests through the Vite proxy |
 | `VITE_API_PROXY_TARGET` | Where the Vite dev-server proxy forwards `/api` (and media) requests server-side — `http://api` in docker compose, `http://localhost:8081` when running the frontend outside docker |
+| `PUBLIC_SITE_URL` | Public SPA origin for Open Graph (`og:url`, absolute image URLs); default `http://localhost:5173` |
 | `FACE_MATCH_THRESHOLD` / `FACE_CLUSTER_THRESHOLD` | InsightFace clustering thresholds |
 | `FACE_EMBEDDING_DIM` | Embedding size (512 for buffalo_l) |
 | `TAG_MAX_COUNT` | Max tags attached per photo (default 10) |
@@ -79,6 +80,10 @@ Copy `.env.example` to `.env` before starting. Key variables:
 Admin → **Configurações** controls whether faces/tags run and which tag detector to use (`ram_plus`, `mobileclip_s0`, `mobileclip_s1`). Pending Redis jobs read the latest settings when consumed; finished photos are left unchanged. Disabled stages land in status `disabled`. MobileCLIP scores the English RAM++ vocabulary (~4585 tags) and reuses existing DB tags by slug.
 
 `mobileclip_s0` maps to Apple’s **MobileCLIP2-S0** (`dfndr2b`) because OpenCLIP never shipped the original S0 architecture. `mobileclip_s1` maps to **MobileCLIP-S1** (`datacompdr`). The first MobileCLIP run on a machine builds a text-embedding cache under the model volume (can take several minutes on CPU); later photos reuse that cache.
+
+### Social share previews (Open Graph)
+
+The SPA sets meta tags client-side for browser tabs, but social apps need server-rendered HTML. Symfony serves share previews at `/photos/{id}` and `/albums/{slug}` with `og:*` tags. In development, the Vite dev-server proxies crawler user-agents to the API. In production, use the nginx snippet in [`docs/deploy/nginx-share-preview.conf.example`](docs/deploy/nginx-share-preview.conf.example).
 
 ## Compose services
 

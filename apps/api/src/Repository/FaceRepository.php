@@ -121,59 +121,120 @@ class FaceRepository extends ServiceEntityRepository
         );
     }
 
+    public function countUnnamedClustersWithEmbeddings(): int
+    {
+        return (int) $this->getEntityManager()->getConnection()->fetchOne(
+            <<<SQL
+                SELECT COUNT(DISTINCT p.id)::int
+                FROM person p
+                INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true
+                WHERE p.is_named = false
+            SQL,
+        );
+    }
+
     /**
-     * @return list<array{sourcePersonId: string, targetPersonId: string, distance: float, faceCountA: int, faceCountB: int}>
+     * @return array{
+     *     items: list<array{
+     *         sourcePersonId: string,
+     *         targetPersonId: string,
+     *         distance: float,
+     *         faceCountA: int,
+     *         faceCountB: int,
+     *         sourceAvatarCropPath: ?string,
+     *         targetAvatarCropPath: ?string,
+     *     }>,
+     *     analyzedClusterCount: int,
+     *     truncated: bool,
+     * }
      */
-    public function findUnnamedMergeSuggestions(float $maxDistance, int $limit = 50): array
+    public function findUnnamedMergeSuggestions(float $maxDistance, int $limit = 50, int $maxClusters = 500): array
     {
         $limit = max(1, min(200, $limit));
-        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+        $maxClusters = max(1, min(5000, $maxClusters));
+        $totalClusters = $this->countUnnamedClustersWithEmbeddings();
+        $analyzedClusters = min($totalClusters, $maxClusters);
+        $truncated = $totalClusters > $maxClusters;
+
+        if (0 === $analyzedClusters) {
+            return [
+                'items' => [],
+                'analyzedClusterCount' => 0,
+                'truncated' => false,
+            ];
+        }
+
+        $connection = $this->getEntityManager()->getConnection();
+        $connection->executeStatement("SET LOCAL statement_timeout = '30s'");
+        $rows = $connection->fetchAllAssociative(
             <<<SQL
+                WITH ranked_clusters AS (
+                    SELECT f.person_id, COUNT(*)::int AS face_count
+                    FROM face f
+                    INNER JOIN person p ON p.id = f.person_id AND p.is_named = false
+                    WHERE f.has_embedding = true
+                    GROUP BY f.person_id
+                    ORDER BY face_count DESC, f.person_id
+                    LIMIT {$maxClusters}
+                ),
+                reps AS MATERIALIZED (
+                    SELECT DISTINCT ON (p.id)
+                        p.id AS person_id,
+                        f.embedding,
+                        COALESCE(p.avatar_path, avatar_face.crop_path, f.crop_path) AS avatar_crop_path,
+                        rc.face_count
+                    FROM ranked_clusters rc
+                    INNER JOIN person p ON p.id = rc.person_id
+                    INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true
+                    LEFT JOIN face avatar_face ON avatar_face.id = p.avatar_face_id
+                    ORDER BY
+                        p.id,
+                        CASE WHEN f.id = p.avatar_face_id THEN 0 ELSE 1 END,
+                        f.confidence DESC NULLS LAST,
+                        f.id
+                )
                 SELECT
                     pairs.person_a::text AS source_person_id,
                     pairs.person_b::text AS target_person_id,
                     pairs.distance,
-                    counts_a.face_count AS face_count_a,
-                    counts_b.face_count AS face_count_b
+                    pairs.face_count_a,
+                    pairs.face_count_b,
+                    source_rep.avatar_crop_path AS source_avatar_crop_path,
+                    target_rep.avatar_crop_path AS target_avatar_crop_path
                 FROM (
                     SELECT
-                        LEAST(f1.person_id, f2.person_id) AS person_a,
-                        GREATEST(f1.person_id, f2.person_id) AS person_b,
-                        MIN(f1.embedding <=> f2.embedding) AS distance
-                    FROM face f1
-                    INNER JOIN face f2 ON f2.person_id > f1.person_id
-                    INNER JOIN person p1 ON p1.id = f1.person_id AND p1.is_named = false
-                    INNER JOIN person p2 ON p2.id = f2.person_id AND p2.is_named = false
-                    WHERE f1.has_embedding = true
-                      AND f2.has_embedding = true
-                    GROUP BY person_a, person_b
-                    HAVING MIN(f1.embedding <=> f2.embedding) <= :maxDistance
+                        LEAST(r1.person_id, r2.person_id) AS person_a,
+                        GREATEST(r1.person_id, r2.person_id) AS person_b,
+                        (r1.embedding <=> r2.embedding) AS distance,
+                        r1.face_count AS face_count_a,
+                        r2.face_count AS face_count_b
+                    FROM reps r1
+                    INNER JOIN reps r2 ON r2.person_id > r1.person_id
+                    WHERE (r1.embedding <=> r2.embedding) <= :maxDistance
                     ORDER BY distance ASC
                     LIMIT {$limit}
                 ) pairs
-                INNER JOIN (
-                    SELECT person_id, COUNT(*)::int AS face_count
-                    FROM face
-                    GROUP BY person_id
-                ) counts_a ON counts_a.person_id = pairs.person_a
-                INNER JOIN (
-                    SELECT person_id, COUNT(*)::int AS face_count
-                    FROM face
-                    GROUP BY person_id
-                ) counts_b ON counts_b.person_id = pairs.person_b
+                INNER JOIN reps source_rep ON source_rep.person_id = pairs.person_a
+                INNER JOIN reps target_rep ON target_rep.person_id = pairs.person_b
             SQL,
             ['maxDistance' => $maxDistance],
         );
 
-        return array_map(
-            static fn (array $row): array => [
-                'sourcePersonId' => (string) $row['source_person_id'],
-                'targetPersonId' => (string) $row['target_person_id'],
-                'distance' => (float) $row['distance'],
-                'faceCountA' => (int) $row['face_count_a'],
-                'faceCountB' => (int) $row['face_count_b'],
-            ],
-            $rows,
-        );
+        return [
+            'items' => array_map(
+                static fn (array $row): array => [
+                    'sourcePersonId' => (string) $row['source_person_id'],
+                    'targetPersonId' => (string) $row['target_person_id'],
+                    'distance' => (float) $row['distance'],
+                    'faceCountA' => (int) $row['face_count_a'],
+                    'faceCountB' => (int) $row['face_count_b'],
+                    'sourceAvatarCropPath' => $row['source_avatar_crop_path'] ?: null,
+                    'targetAvatarCropPath' => $row['target_avatar_crop_path'] ?: null,
+                ],
+                $rows,
+            ),
+            'analyzedClusterCount' => $analyzedClusters,
+            'truncated' => $truncated,
+        ];
     }
 }
