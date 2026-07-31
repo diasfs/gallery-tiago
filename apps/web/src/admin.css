@@ -127,6 +127,16 @@
   background: var(--muted);
 }
 
+.admin-mobile-only {
+  display: inline-flex;
+}
+
+@media (min-width: 768px) {
+  .admin-mobile-only {
+    display: none !important;
+  }
+}
+
 .admin-sidebar-backdrop {
   display: none;
 }

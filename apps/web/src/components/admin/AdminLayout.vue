@@ -91,7 +91,7 @@ async function logout() {
         </div>
         <button
           type="button"
-          class="admin-icon-btn md:hidden"
+          class="admin-icon-btn admin-mobile-only"
           aria-label="Fechar menu"
           data-testid="admin-sidebar-close"
           @click="closeSidebar"
@@ -165,7 +165,7 @@ async function logout() {
         <div class="admin-topbar-inner mx-auto flex max-w-5xl items-start gap-3">
           <button
             type="button"
-            class="admin-icon-btn mt-1 md:hidden"
+            class="admin-icon-btn admin-mobile-only mt-1"
             aria-label="Abrir menu"
             aria-controls="admin-sidebar"
             :aria-expanded="sidebarOpen"
