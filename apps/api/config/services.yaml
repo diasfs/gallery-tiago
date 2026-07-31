@@ -4,6 +4,8 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    env(FACES_EMBED_URL): ''
+    face.cluster_threshold: '%env(float:FACE_CLUSTER_THRESHOLD)%'
 
 services:
     # default configuration for services in *this* file
@@ -27,6 +29,15 @@ services:
     App\Service\TagQueuePublisherInterface: '@App\Service\RedisTagQueuePublisher'
     App\Service\GeocoderInterface: '@App\Service\NominatimGeocoder'
     App\Service\ViewDeduplicatorInterface: '@App\Service\RedisViewDeduplicator'
+    App\Service\FaceEmbeddingClientInterface: '@App\Service\HttpFaceEmbeddingClient'
+
+    App\Service\HttpFaceEmbeddingClient:
+        arguments:
+            $embedUrl: '%env(default::FACES_EMBED_URL)%'
+
+    App\Service\FaceSimilarityService:
+        arguments:
+            $clusterThreshold: '%face.cluster_threshold%'
 
 when@test:
     services:
@@ -45,3 +56,8 @@ when@test:
         App\Tests\Fake\InMemoryViewDeduplicator:
             public: true
         App\Service\ViewDeduplicatorInterface: '@App\Tests\Fake\InMemoryViewDeduplicator'
+        App\Tests\Fake\FakeFaceEmbeddingClient:
+            public: true
+        App\Service\FaceEmbeddingClientInterface:
+            alias: App\Tests\Fake\FakeFaceEmbeddingClient
+            public: true

@@ -178,6 +178,11 @@ def handle_photo(conn, cfg: Config, photo_id: str) -> bool:
 
 def main() -> None:
     cfg = Config()
+    embed_port = os.environ.get("FACES_EMBED_PORT")
+    if embed_port:
+        from embed_server import start_background_server
+
+        start_background_server(port=int(embed_port))
     conn = db.connect(cfg.database_url)
     r = redis.Redis.from_url(cfg.redis_url)
 

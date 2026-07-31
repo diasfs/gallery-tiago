@@ -7,6 +7,7 @@ use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Enum\AlbumVisibility;
 use App\Repository\PhotoRepository;
+use App\Service\FaceSimilarityService;
 use App\Service\ViewDeduplicatorInterface;
 use App\Service\ViewVisitorIdentifier;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -22,9 +23,31 @@ class PhotoController
 {
     public function __construct(
         private readonly PhotoRepository $photos,
+        private readonly FaceSimilarityService $similarity,
         private readonly ViewDeduplicatorInterface $viewDeduplicator,
         private readonly ViewVisitorIdentifier $viewVisitor,
     ) {
+    }
+
+    #[Route('/{id}/similar', name: 'public_photos_similar', methods: ['GET'], priority: 10)]
+    public function similar(string $id): JsonResponse
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $photo = $this->photos->findVisibleById($uuid);
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $similar = $this->similarity->findSimilarVisiblePhotos($photo);
+
+        return new JsonResponse([
+            'data' => array_map($this->normalizeSimilarPhoto(...), $similar),
+        ]);
     }
 
     #[Route('/{id}', name: 'public_photos_show', methods: ['GET'])]
@@ -165,6 +188,19 @@ class PhotoController
         }
 
         return $people;
+    }
+
+    /** @return array<string, mixed> */
+    private function normalizeSimilarPhoto(Photo $photo): array
+    {
+        return [
+            'id' => (string) $photo->getId(),
+            'title' => $photo->getTitle(),
+            'avifPath' => $photo->getAvifPath(),
+            'thumbPaths' => $photo->getThumbPaths(),
+            'originalPath' => $photo->getOriginalPath(),
+            'viewCount' => $photo->getViewCount(),
+        ];
     }
 
     /** @return array<string, mixed> */

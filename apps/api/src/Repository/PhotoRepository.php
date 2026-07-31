@@ -501,4 +501,77 @@ class PhotoRepository extends ServiceEntityRepository
 
         return ['items' => $items, 'total' => $total];
     }
+
+    /**
+     * @param list<string> $excludeIds
+     *
+     * @return list<string>
+     */
+    public function findSimilarVisiblePhotoIdsByTags(Uuid $photoId, int $limit, array $excludeIds = []): array
+    {
+        $limit = max(1, min(100, $limit));
+        $excludeIds = array_values(array_filter($excludeIds, static fn (string $id): bool => '' !== $id));
+        $conn = $this->getEntityManager()->getConnection();
+        $excludeClause = '';
+        if ([] !== $excludeIds) {
+            $quoted = array_map(static fn (string $id): string => $conn->quote($id), $excludeIds);
+            $excludeClause = 'AND p.id NOT IN ('.implode(',', $quoted).')';
+        }
+
+        $rows = $conn->fetchAllAssociative(
+            <<<SQL
+                SELECT p.id::text AS photo_id, COUNT(shared.tag_id)::int AS shared_tags
+                FROM photo source_photo
+                INNER JOIN photo_tag source_tag ON source_tag.photo_id = source_photo.id
+                INNER JOIN photo_tag shared ON shared.tag_id = source_tag.tag_id AND shared.photo_id <> source_photo.id
+                INNER JOIN photo p ON p.id = shared.photo_id
+                INNER JOIN album a ON a.id = p.album_id
+                WHERE source_photo.id = :photoId
+                  AND a.visibility IN ('public', 'unlisted')
+                  {$excludeClause}
+                GROUP BY p.id
+                ORDER BY shared_tags DESC, p.created_at DESC
+                LIMIT {$limit}
+            SQL,
+            ['photoId' => $photoId->toRfc4122()],
+        );
+
+        return array_map(static fn (array $row): string => (string) $row['photo_id'], $rows);
+    }
+
+    /**
+     * @param list<string> $ids
+     *
+     * @return Photo[]
+     */
+    public function findVisibleByIdsPreservingOrder(array $ids): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
+        $uuidIds = array_map(static fn (string $id): Uuid => Uuid::fromString($id), $ids);
+        $photos = $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('p.id IN (:ids)')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('ids', $uuidIds)
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->getQuery()
+            ->getResult();
+
+        $byId = [];
+        foreach ($photos as $photo) {
+            $byId[$photo->getId()->toRfc4122()] = $photo;
+        }
+
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+            }
+        }
+
+        return $ordered;
+    }
 }

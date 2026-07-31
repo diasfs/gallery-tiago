@@ -8,6 +8,8 @@ use App\Http\Pagination;
 use App\Repository\FaceRepository;
 use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
+use App\Service\FaceEmbeddingClientInterface;
+use App\Service\FaceSimilarityService;
 use App\Service\MediaStorage;
 use App\Service\PersonDeleter;
 use App\Service\PersonMerger;
@@ -33,9 +35,44 @@ class PersonController
         private readonly FaceRepository $faces,
         private readonly PersonMerger $merger,
         private readonly PersonDeleter $personDeleter,
+        private readonly FaceSimilarityService $similarity,
+        private readonly FaceEmbeddingClientInterface $embeddingClient,
         private readonly MediaStorage $storage,
         private readonly EntityManagerInterface $em,
     ) {
+    }
+
+    #[Route('/api/admin/people/merge-suggestions', name: 'admin_people_merge_suggestions', methods: ['GET'])]
+    public function mergeSuggestions(): JsonResponse
+    {
+        return new JsonResponse([
+            'data' => $this->similarity->findUnnamedMergeSuggestions(),
+        ]);
+    }
+
+    #[Route('/api/admin/people/search-by-face', name: 'admin_people_search_by_face', methods: ['POST'])]
+    public function searchByFace(Request $request): JsonResponse
+    {
+        $file = $request->files->get('file');
+        if (!$file instanceof UploadedFile) {
+            throw new BadRequestHttpException('A "file" upload is required.');
+        }
+        if (!$file->isValid()) {
+            throw new BadRequestHttpException('Upload failed: '.$file->getErrorMessage());
+        }
+        if (!\in_array($file->getMimeType(), self::ALLOWED_AVATAR_MIME_TYPES, true)) {
+            throw new BadRequestHttpException('Unsupported file type; expected JPEG, PNG, or WebP.');
+        }
+
+        try {
+            $embedding = $this->embeddingClient->embedUpload($file);
+        } catch (\RuntimeException $e) {
+            throw new BadRequestHttpException($e->getMessage());
+        }
+
+        return new JsonResponse([
+            'data' => $this->similarity->searchPeopleByEmbedding($embedding),
+        ]);
     }
 
     #[Route('/api/admin/people/unnamed', name: 'admin_people_unnamed', methods: ['GET'])]

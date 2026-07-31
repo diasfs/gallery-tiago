@@ -86,6 +86,8 @@ services:
   worker-faces:
     build: ./apps/worker-faces
     restart: unless-stopped
+    environment:
+      FACES_EMBED_PORT: "8090"
     volumes:
       - ./apps/worker-faces:/app
       - ./volumes/media_data:/var/gallery/media
