@@ -434,6 +434,7 @@ final class V3Importer
             $album->setParent($parent);
             $album->setTakenAt($takenAt);
             $album->setTakenAtEnd($takenAtEnd);
+            $this->applyAlbumCreatedAt($album, $row);
             $this->em->persist($album);
             $this->em->flush();
             $map->setAlbumUuid($legacyId, (string) $album->getId());
@@ -456,6 +457,7 @@ final class V3Importer
         $album->setParent($parent);
         $album->setTakenAt($takenAt);
         $album->setTakenAtEnd($takenAtEnd);
+        $this->applyAlbumCreatedAt($album, $row);
         $album->touch();
         $map->setAlbumUuid($legacyId, (string) $album->getId());
 
@@ -544,9 +546,20 @@ final class V3Importer
         return null;
     }
 
+    /**
+     * @param array{data_cadastro?: ?string} $row
+     */
+    private function applyAlbumCreatedAt(Album $album, array $row): void
+    {
+        $createdAt = $this->parseTakenAt($row['data_cadastro'] ?? null);
+        if (null !== $createdAt) {
+            $album->setCreatedAt($createdAt);
+        }
+    }
+
     private function parseTakenAt(?string $data): ?\DateTimeImmutable
     {
-        if (null === $data || '' === $data || '0000-00-00' === $data) {
+        if (null === $data || '' === $data || '0000-00-00' === $data || str_starts_with($data, '0000-00-00')) {
             return null;
         }
 

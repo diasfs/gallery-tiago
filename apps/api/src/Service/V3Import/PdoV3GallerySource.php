@@ -16,6 +16,8 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
 
     private readonly bool $hasAlbumRegsColumn;
 
+    private readonly bool $hasAlbumDataCadastroColumn;
+
     public function __construct(
         private readonly string $dsn,
         private readonly string $user,
@@ -24,6 +26,7 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
         $this->pdo = $this->connect();
         $this->hasAlbumDataColumn = $this->columnExists('album', 'data');
         $this->hasAlbumRegsColumn = $this->columnExists('album', 'regs');
+        $this->hasAlbumDataCadastroColumn = $this->columnExists('album', 'data_cadastro');
     }
 
     public static function fromDatabaseUrl(string $databaseUrl): self
@@ -56,9 +59,10 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
     public function fetchAlbums(): array
     {
         $dataSelect = $this->hasAlbumDataColumn ? 'a.`data`' : 'NULL AS `data`';
+        $dataCadastroSelect = $this->hasAlbumDataCadastroColumn ? 'a.`data_cadastro`' : 'NULL AS `data_cadastro`';
         $regsSelect = $this->hasAlbumRegsColumn ? 'a.`regs`' : 'NULL AS `regs`';
         $sql = <<<SQL
-            SELECT a.id_album, a.id_pai, a.titulo, a.descricao, a.url, a.ativo, a.ordem, {$dataSelect}, a.visit, {$regsSelect}
+            SELECT a.id_album, a.id_pai, a.titulo, a.descricao, a.url, a.ativo, a.ordem, {$dataSelect}, {$dataCadastroSelect}, a.visit, {$regsSelect}
             FROM album a
             ORDER BY a.id_album ASC
             SQL;
@@ -77,6 +81,7 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
                 'ativo' => (string) $row['ativo'],
                 'ordem' => (int) $row['ordem'],
                 'data' => null !== $row['data'] && '' !== $row['data'] ? (string) $row['data'] : null,
+                'data_cadastro' => null !== $row['data_cadastro'] && '' !== $row['data_cadastro'] ? (string) $row['data_cadastro'] : null,
                 'visit' => (int) ($row['visit'] ?? 0),
                 'regs' => $regs >= 1 ? $regs : 48,
             ];

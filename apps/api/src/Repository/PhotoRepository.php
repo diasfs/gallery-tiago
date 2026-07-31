@@ -448,8 +448,8 @@ class PhotoRepository extends ServiceEntityRepository
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
             <<<'SQL'
                 SELECT
-                    EXTRACT(YEAR FROM COALESCE(a.taken_at, p.created_at))::int AS year,
-                    EXTRACT(MONTH FROM COALESCE(a.taken_at, p.created_at))::int AS month,
+                    EXTRACT(YEAR FROM COALESCE(a.taken_at, a.created_at, p.created_at))::int AS year,
+                    EXTRACT(MONTH FROM COALESCE(a.taken_at, a.created_at, p.created_at))::int AS month,
                     COUNT(p.id)::int AS photo_count
                 FROM photo p
                 INNER JOIN album a ON a.id = p.album_id
@@ -480,8 +480,8 @@ class PhotoRepository extends ServiceEntityRepository
         $base = $this->createQueryBuilder('p')
             ->join('p.album', 'a')
             ->andWhere('a.visibility IN (:visibilities)')
-            ->andWhere('COALESCE(a.takenAt, p.createdAt) >= :from')
-            ->andWhere('COALESCE(a.takenAt, p.createdAt) <= :to')
+            ->andWhere('COALESCE(a.takenAt, a.createdAt, p.createdAt) >= :from')
+            ->andWhere('COALESCE(a.takenAt, a.createdAt, p.createdAt) <= :to')
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
             ->setParameter('from', $from)
             ->setParameter('to', $to);
@@ -492,7 +492,7 @@ class PhotoRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         $items = (clone $base)
-            ->addSelect('COALESCE(a.takenAt, p.createdAt) AS HIDDEN timelineAt')
+            ->addSelect('COALESCE(a.takenAt, a.createdAt, p.createdAt) AS HIDDEN timelineAt')
             ->orderBy('timelineAt', 'DESC')
             ->addOrderBy('p.sortOrder', 'ASC')
             ->setFirstResult(max(0, ($page - 1) * $perPage))
@@ -504,8 +504,8 @@ class PhotoRepository extends ServiceEntityRepository
     }
 
     /**
-     * Photos from public/unlisted albums whose timeline date (album takenAt or
-     * photo createdAt) falls on the given month/day in years before $beforeYear.
+     * Photos from public/unlisted albums whose timeline date (album takenAt,
+     * album createdAt, or photo createdAt) falls on the given month/day in years before $beforeYear.
      *
      * @return array{items: Photo[], total: int}
      */
@@ -526,9 +526,9 @@ class PhotoRepository extends ServiceEntityRepository
 
         $where = <<<'SQL'
             a.visibility IN ('public', 'unlisted')
-            AND EXTRACT(MONTH FROM COALESCE(a.taken_at, p.created_at)) = :month
-            AND EXTRACT(DAY FROM COALESCE(a.taken_at, p.created_at)) = :day
-            AND EXTRACT(YEAR FROM COALESCE(a.taken_at, p.created_at)) < :year
+            AND EXTRACT(MONTH FROM COALESCE(a.taken_at, a.created_at, p.created_at)) = :month
+            AND EXTRACT(DAY FROM COALESCE(a.taken_at, a.created_at, p.created_at)) = :day
+            AND EXTRACT(YEAR FROM COALESCE(a.taken_at, a.created_at, p.created_at)) < :year
         SQL;
 
         $total = (int) $conn->fetchOne(
@@ -544,7 +544,7 @@ class PhotoRepository extends ServiceEntityRepository
                 FROM photo p
                 INNER JOIN album a ON a.id = p.album_id
                 WHERE {$where}
-                ORDER BY COALESCE(a.taken_at, p.created_at) DESC, p.sort_order ASC
+                ORDER BY COALESCE(a.taken_at, a.created_at, p.created_at) DESC, p.sort_order ASC
                 LIMIT :limit OFFSET :offset
             SQL,
             [...$params, 'limit' => $perPage, 'offset' => $offset],

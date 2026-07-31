@@ -45,6 +45,7 @@ final class ArrayV3GallerySource implements V3GallerySourceInterface
             return $row + [
                 'visit' => (int) ($row['visit'] ?? 0),
                 'regs' => $regs >= 1 ? $regs : 48,
+                'data_cadastro' => $row['data_cadastro'] ?? null,
             ];
         }, $this->albums);
     }

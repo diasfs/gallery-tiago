@@ -122,7 +122,9 @@ class DiscoverController
 
     private function photoTimelineAt(Photo $photo): \DateTimeImmutable
     {
-        return $photo->getAlbum()->getTakenAt() ?? $photo->getCreatedAt();
+        return $photo->getAlbum()->getTakenAt()
+            ?? $photo->getAlbum()->getCreatedAt()
+            ?? $photo->getCreatedAt();
     }
 
     /** @return array<string, mixed> */

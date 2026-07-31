@@ -260,6 +260,79 @@ final class V3ImporterTest extends KernelTestCase
         ));
     }
 
+    public function testImportsAlbumCreatedAtFromDataCadastro(): void
+    {
+        $source = new ArrayV3GallerySource(
+            albums: [
+                [
+                    'id_album' => 60,
+                    'id_pai' => 0,
+                    'titulo' => 'Undated',
+                    'descricao' => 'No album date',
+                    'url' => 'undated-album',
+                    'ativo' => 'S',
+                    'ordem' => 1,
+                    'data' => '0000-00-00',
+                    'data_cadastro' => '2018-03-15 14:22:00',
+                ],
+            ],
+        );
+
+        $this->importer->import($source, $this->options());
+
+        $album = $this->em->getRepository(Album::class)->findOneBySlug('undated-album');
+        $this->assertNotNull($album);
+        $this->assertNull($album->getTakenAt());
+        $this->assertSame('2018-03-15T14:22:00+00:00', $album->getCreatedAt()->format(\DATE_ATOM));
+    }
+
+    public function testReimportBackfillsAlbumCreatedAt(): void
+    {
+        $source = new ArrayV3GallerySource(
+            albums: [
+                [
+                    'id_album' => 61,
+                    'id_pai' => 0,
+                    'titulo' => 'Undated',
+                    'descricao' => null,
+                    'url' => 'backfill-album',
+                    'ativo' => 'S',
+                    'ordem' => 1,
+                    'data' => null,
+                ],
+            ],
+        );
+
+        $this->importer->import($source, $this->options());
+        $album = $this->em->getRepository(Album::class)->findOneBySlug('backfill-album');
+        $this->assertNotNull($album);
+        $importStamp = $album->getCreatedAt();
+
+        $sourceWithDate = new ArrayV3GallerySource(
+            albums: [
+                [
+                    'id_album' => 61,
+                    'id_pai' => 0,
+                    'titulo' => 'Undated',
+                    'descricao' => null,
+                    'url' => 'backfill-album',
+                    'ativo' => 'S',
+                    'ordem' => 1,
+                    'data' => null,
+                    'data_cadastro' => '2015-11-20 09:00:00',
+                ],
+            ],
+        );
+
+        $this->importer->import($sourceWithDate, $this->options());
+        $this->em->clear();
+
+        $album = $this->em->getRepository(Album::class)->findOneBySlug('backfill-album');
+        $this->assertNotNull($album);
+        $this->assertNotSame($importStamp->format(\DATE_ATOM), $album->getCreatedAt()->format(\DATE_ATOM));
+        $this->assertSame('2015-11-20T09:00:00+00:00', $album->getCreatedAt()->format(\DATE_ATOM));
+    }
+
     public function testDryRunDoesNotPersist(): void
     {
         $stats = $this->importer->import($this->fixtureSource(), $this->options(dryRun: true));

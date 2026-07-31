@@ -17,6 +17,7 @@ interface V3GallerySourceInterface
      *     ativo: string,
      *     ordem: int,
      *     data: ?string,
+     *     data_cadastro: ?string,
      *     visit: int,
      *     regs: int
      * }>
