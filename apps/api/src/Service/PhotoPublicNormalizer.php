@@ -29,6 +29,8 @@ final class PhotoPublicNormalizer
             'avifPath' => $photo->getAvifPath(),
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),
+            'width' => $photo->getWidth(),
+            'height' => $photo->getHeight(),
             'viewCount' => $photo->getViewCount(),
         ];
     }

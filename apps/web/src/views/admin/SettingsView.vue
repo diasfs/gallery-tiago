@@ -13,12 +13,26 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ApiError, adminApi } from '../../api/client'
-import type { ProcessingSettings, TagDetector } from '../../api/types'
+import type { AlbumPhotoLayout, ProcessingSettings, TagDetector } from '../../api/types'
 
 const DETECTOR_OPTIONS: { value: TagDetector; label: string; hint: string }[] = [
   { value: 'ram_plus', label: 'RAM++ (Swin-Large)', hint: 'Mais preciso, mais lento e pesado' },
   { value: 'mobileclip_s0', label: 'MobileCLIP2-S0', hint: 'Mais leve e rápido' },
   { value: 'mobileclip_s1', label: 'MobileCLIP-S1', hint: 'Equilíbrio entre velocidade e precisão' },
+]
+
+const LAYOUT_OPTIONS: { value: AlbumPhotoLayout; label: string; hint: string }[] = [
+  { value: 'grid', label: 'Grade quadrada', hint: 'Tiles uniformes com recorte centralizado (padrão atual)' },
+  {
+    value: 'masonry_vertical',
+    label: 'Masonry vertical',
+    hint: 'Colunas com alturas variadas, preservando a proporção de cada foto',
+  },
+  {
+    value: 'masonry_horizontal',
+    label: 'Masonry horizontal',
+    hint: 'Linhas justificadas com altura uniforme e larguras proporcionais',
+  },
 ]
 
 const loading = ref(true)
@@ -29,6 +43,7 @@ const saved = ref(false)
 const facesEnabled = ref(true)
 const tagsEnabled = ref(true)
 const tagDetector = ref<TagDetector>('ram_plus')
+const albumPhotoLayout = ref<AlbumPhotoLayout>('grid')
 
 async function load() {
   loading.value = true
@@ -48,6 +63,7 @@ function applySettings(settings: ProcessingSettings) {
   facesEnabled.value = settings.facesEnabled
   tagsEnabled.value = settings.tagsEnabled
   tagDetector.value = settings.tagDetector
+  albumPhotoLayout.value = settings.albumPhotoLayout
 }
 
 async function save() {
@@ -59,6 +75,7 @@ async function save() {
       facesEnabled: facesEnabled.value,
       tagsEnabled: tagsEnabled.value,
       tagDetector: tagDetector.value,
+      albumPhotoLayout: albumPhotoLayout.value,
     })
     applySettings(updated)
     saved.value = true
@@ -82,23 +99,23 @@ onMounted(load)
       <AlertDescription>{{ error }}</AlertDescription>
     </Alert>
     <Alert v-else-if="saved" data-testid="settings-saved">
-      <AlertDescription>Configurações salvas. Jobs ainda na fila usam os valores atuais.</AlertDescription>
+      <AlertDescription>Configurações salvas.</AlertDescription>
     </Alert>
 
-    <Card>
-      <CardHeader>
-        <CardTitle>Processamento de IA</CardTitle>
-        <CardDescription>
-          Escolha o detector de tags e ative ou desative rostos e tags. Mudanças
-          valem para novos processamentos e para jobs ainda pendentes na fila.
-          Fotos já concluídas não são alteradas automaticamente.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="flex flex-col gap-6">
-        <div v-if="loading" class="text-sm text-muted-foreground" data-testid="settings-loading">
-          Carregando…
-        </div>
-        <template v-else>
+    <div v-if="loading" class="text-sm text-muted-foreground" data-testid="settings-loading">
+      Carregando…
+    </div>
+    <template v-else>
+      <Card>
+        <CardHeader>
+          <CardTitle>Processamento de IA</CardTitle>
+          <CardDescription>
+            Escolha o detector de tags e ative ou desative rostos e tags. Mudanças
+            valem para novos processamentos e para jobs ainda pendentes na fila.
+            Fotos já concluídas não são alteradas automaticamente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="flex flex-col gap-6">
           <div class="flex flex-col gap-3">
             <label class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
               <Checkbox
@@ -149,14 +166,52 @@ onMounted(load)
               cache de embeddings textuais (pode demorar alguns minutos em CPU).
             </p>
           </div>
+        </CardContent>
+      </Card>
 
-          <div class="flex justify-end">
-            <Button type="button" :disabled="saving" data-testid="settings-save" @click="save">
-              {{ saving ? 'Salvando…' : 'Salvar' }}
-            </Button>
-          </div>
-        </template>
-      </CardContent>
-    </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Exibição de álbuns</CardTitle>
+          <CardDescription>
+            Define como as fotos são apresentadas nas páginas públicas de álbuns.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="flex flex-col gap-2">
+          <Label for="album-photo-layout">Layout das fotos</Label>
+          <Select
+            :model-value="albumPhotoLayout"
+            :disabled="saving"
+            @update:model-value="(v) => (albumPhotoLayout = v as AlbumPhotoLayout)"
+          >
+            <SelectTrigger
+              id="album-photo-layout"
+              class="w-full"
+              data-testid="settings-album-photo-layout"
+            >
+              <SelectValue placeholder="Selecione o layout" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="option in LAYOUT_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+                :data-testid="`layout-${option.value}`"
+              >
+                {{ option.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p class="text-xs text-muted-foreground">
+            {{ LAYOUT_OPTIONS.find((o) => o.value === albumPhotoLayout)?.hint }}
+          </p>
+        </CardContent>
+      </Card>
+
+      <div class="flex justify-end">
+        <Button type="button" :disabled="saving" data-testid="settings-save" @click="save">
+          {{ saving ? 'Salvando…' : 'Salvar' }}
+        </Button>
+      </div>
+    </template>
   </div>
 </template>

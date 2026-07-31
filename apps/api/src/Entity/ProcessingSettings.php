@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use App\Enum\AlbumPhotoLayout;
 use App\Enum\TagDetector;
 use App\Repository\ProcessingSettingsRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -27,6 +28,9 @@ class ProcessingSettings
 
     #[ORM\Column(length: 32, enumType: TagDetector::class, options: ['default' => 'ram_plus'])]
     private TagDetector $tagDetector = TagDetector::RamPlus;
+
+    #[ORM\Column(length: 32, enumType: AlbumPhotoLayout::class, options: ['default' => 'grid'])]
+    private AlbumPhotoLayout $albumPhotoLayout = AlbumPhotoLayout::Grid;
 
     public static function defaults(): self
     {
@@ -70,6 +74,18 @@ class ProcessingSettings
     public function setTagDetector(TagDetector $tagDetector): static
     {
         $this->tagDetector = $tagDetector;
+
+        return $this;
+    }
+
+    public function getAlbumPhotoLayout(): AlbumPhotoLayout
+    {
+        return $this->albumPhotoLayout;
+    }
+
+    public function setAlbumPhotoLayout(AlbumPhotoLayout $albumPhotoLayout): static
+    {
+        $this->albumPhotoLayout = $albumPhotoLayout;
 
         return $this;
     }

@@ -24,6 +24,7 @@ const defaults: ProcessingSettings = {
   facesEnabled: true,
   tagsEnabled: true,
   tagDetector: 'ram_plus',
+  albumPhotoLayout: 'grid',
 }
 
 describe('SettingsView', () => {
@@ -34,6 +35,7 @@ describe('SettingsView', () => {
       facesEnabled: false,
       tagsEnabled: true,
       tagDetector: 'mobileclip_s0',
+      albumPhotoLayout: 'grid',
     })
   })
 
@@ -53,6 +55,7 @@ describe('SettingsView', () => {
     expect(mockedApi.getSettings).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="settings-faces-enabled"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-tags-enabled"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="settings-album-photo-layout"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('RAM++')
 
     wrapper.unmount()
@@ -69,6 +72,7 @@ describe('SettingsView', () => {
       facesEnabled: false,
       tagsEnabled: true,
       tagDetector: 'ram_plus',
+      albumPhotoLayout: 'grid',
     })
     expect(wrapper.find('[data-testid="settings-saved"]').exists()).toBe(true)
 

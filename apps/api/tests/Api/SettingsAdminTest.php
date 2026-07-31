@@ -4,6 +4,7 @@ namespace App\Tests\Api;
 
 use App\Entity\AdminUser;
 use App\Entity\ProcessingSettings;
+use App\Enum\AlbumPhotoLayout;
 use App\Enum\TagDetector;
 use App\Repository\ProcessingSettingsRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -50,6 +51,7 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertTrue($data['facesEnabled']);
         $this->assertTrue($data['tagsEnabled']);
         $this->assertSame('ram_plus', $data['tagDetector']);
+        $this->assertSame('grid', $data['albumPhotoLayout']);
     }
 
     public function testUpdatePersistsSettings(): void
@@ -90,6 +92,30 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertResponseStatusCodeSame(400);
     }
 
+    public function testUpdatePersistsAlbumPhotoLayout(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'albumPhotoLayout' => 'masonry_vertical',
+        ]);
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('masonry_vertical', $data['albumPhotoLayout']);
+
+        $row = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $this->assertSame(AlbumPhotoLayout::MasonryVertical, $row->getAlbumPhotoLayout());
+    }
+
+    public function testUpdateRejectsInvalidAlbumPhotoLayout(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'albumPhotoLayout' => 'carousel',
+        ]);
+        $this->assertResponseStatusCodeSame(400);
+    }
+
     private function loginAsAdmin(): void
     {
         $this->client->jsonRequest('POST', '/api/admin/login', [
@@ -123,6 +149,7 @@ final class SettingsAdminTest extends WebTestCase
             $row->setFacesEnabled(true);
             $row->setTagsEnabled(true);
             $row->setTagDetector(TagDetector::RamPlus);
+            $row->setAlbumPhotoLayout(AlbumPhotoLayout::Grid);
         }
         $this->em->flush();
     }

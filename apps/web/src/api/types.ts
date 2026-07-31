@@ -70,6 +70,8 @@ export interface PhotoSummary {
   avifPath: string | null
   thumbPaths: Record<string, string>
   originalPath?: string | null
+  width?: number | null
+  height?: number | null
   tags?: Tag[]
   viewCount: number
 }
@@ -179,10 +181,17 @@ export type TagsStatus = 'pending' | 'queued' | 'detecting' | 'done' | 'failed' 
 
 export type TagDetector = 'ram_plus' | 'mobileclip_s0' | 'mobileclip_s1'
 
+export type AlbumPhotoLayout = 'grid' | 'masonry_vertical' | 'masonry_horizontal'
+
+export interface SiteConfig {
+  albumPhotoLayout: AlbumPhotoLayout
+}
+
 export interface ProcessingSettings {
   facesEnabled: boolean
   tagsEnabled: boolean
   tagDetector: TagDetector
+  albumPhotoLayout: AlbumPhotoLayout
 }
 
 export type ReprocessScope = 'all' | 'faces' | 'tags'

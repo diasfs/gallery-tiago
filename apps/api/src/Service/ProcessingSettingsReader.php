@@ -3,6 +3,7 @@
 namespace App\Service;
 
 use App\Entity\ProcessingSettings;
+use App\Enum\AlbumPhotoLayout;
 use App\Enum\TagDetector;
 use App\Repository\ProcessingSettingsRepository;
 
@@ -34,5 +35,10 @@ final class ProcessingSettingsReader
     public function getTagDetector(): TagDetector
     {
         return $this->get()->getTagDetector();
+    }
+
+    public function getAlbumPhotoLayout(): AlbumPhotoLayout
+    {
+        return $this->get()->getAlbumPhotoLayout();
     }
 }

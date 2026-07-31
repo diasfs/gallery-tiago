@@ -3,6 +3,7 @@
 namespace App\Controller\Api\Admin;
 
 use App\Entity\ProcessingSettings;
+use App\Enum\AlbumPhotoLayout;
 use App\Enum\TagDetector;
 use App\Repository\ProcessingSettingsRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -61,6 +62,19 @@ final class SettingsController
             $row->setTagDetector($resolved);
         }
 
+        if (\array_key_exists('albumPhotoLayout', $payload)) {
+            $layout = $payload['albumPhotoLayout'];
+            if (!\is_string($layout)) {
+                throw new BadRequestHttpException('albumPhotoLayout must be a string.');
+            }
+            $resolved = AlbumPhotoLayout::tryFrom($layout);
+            if (null === $resolved) {
+                $allowed = implode(', ', array_map(static fn (AlbumPhotoLayout $c) => $c->value, AlbumPhotoLayout::cases()));
+                throw new BadRequestHttpException(\sprintf('albumPhotoLayout must be one of: %s.', $allowed));
+            }
+            $row->setAlbumPhotoLayout($resolved);
+        }
+
         $this->em->flush();
 
         return new JsonResponse(['data' => $this->normalize($row)]);
@@ -73,6 +87,7 @@ final class SettingsController
             'facesEnabled' => $settings->isFacesEnabled(),
             'tagsEnabled' => $settings->isTagsEnabled(),
             'tagDetector' => $settings->getTagDetector()->value,
+            'albumPhotoLayout' => $settings->getAlbumPhotoLayout()->value,
         ];
     }
 

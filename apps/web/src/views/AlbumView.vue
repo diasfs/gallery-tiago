@@ -9,6 +9,7 @@ import Breadcrumb from '../components/Breadcrumb.vue'
 import LocationMap from '../components/LocationMap.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ViewCount from '../components/ViewCount.vue'
+import { useSiteConfig } from '../composables/useSiteConfig'
 import { usePageMeta } from '../composables/usePageMeta'
 import { absoluteMediaUrl, photoDisplayUrl } from '../api/client'
 import { formatAlbumDateRangeLabel } from '../lib/utils'
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 }>()
 const route = useRoute()
 const router = useRouter()
+const { albumPhotoLayout } = useSiteConfig()
 
 const album = ref<AlbumDetail | null>(null)
 const children = ref<AlbumSummary[]>([])
@@ -193,7 +195,7 @@ usePageMeta(
         />
       </div>
 
-      <PhotoGrid :photos="photos" />
+      <PhotoGrid :photos="photos" :layout="albumPhotoLayout" />
       <PaginationBar
         class="photos-pager"
         :page="photosPage"

@@ -97,6 +97,30 @@ describe('PhotoGrid', () => {
     expect(wrapper.text()).toContain('Nenhuma foto ainda.')
   })
 
+  it('uses the default square grid layout', () => {
+    const wrapper = mount(PhotoGrid, {
+      props: { photos: [makePhoto()] },
+      global: { plugins: [router] },
+    })
+
+    expect(wrapper.find('.photo-grid').classes()).not.toContain('photo-grid--masonry-vertical')
+    expect(wrapper.find('.photo-grid').classes()).not.toContain('photo-grid--masonry-horizontal')
+  })
+
+  it('applies masonry layout classes from the layout prop', () => {
+    const vertical = mount(PhotoGrid, {
+      props: { photos: [makePhoto()], layout: 'masonry_vertical' },
+      global: { plugins: [router] },
+    })
+    expect(vertical.find('.photo-grid').classes()).toContain('photo-grid--masonry-vertical')
+
+    const horizontal = mount(PhotoGrid, {
+      props: { photos: [makePhoto()], layout: 'masonry_horizontal' },
+      global: { plugins: [router] },
+    })
+    expect(horizontal.find('.photo-grid').classes()).toContain('photo-grid--masonry-horizontal')
+  })
+
   it('uses original path when avif and thumbs are missing', () => {
     const photos = [
       makePhoto({

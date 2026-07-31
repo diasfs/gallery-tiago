@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import AlbumView from './AlbumView.vue'
 import { api } from '../api/client'
 import type { AlbumDetail, AlbumSummary, PhotoSummary } from '../api/types'
+import { resetSiteConfigCache } from '../composables/useSiteConfig'
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
@@ -12,6 +13,7 @@ vi.mock('../api/client', async () => {
     api: {
       ...actual.api,
       getAlbum: vi.fn(),
+      getSiteConfig: vi.fn(),
       recordAlbumView: vi.fn(),
       listAlbumChildren: vi.fn(),
       listAlbumPhotos: vi.fn(),
@@ -21,6 +23,7 @@ vi.mock('../api/client', async () => {
 
 const mockedApi = api as unknown as {
   getAlbum: ReturnType<typeof vi.fn>
+  getSiteConfig: ReturnType<typeof vi.fn>
   recordAlbumView: ReturnType<typeof vi.fn>
   listAlbumChildren: ReturnType<typeof vi.fn>
   listAlbumPhotos: ReturnType<typeof vi.fn>
@@ -82,6 +85,7 @@ async function mountView(
   query: Record<string, string> = {},
 ) {
   mockedApi.getAlbum.mockResolvedValue(album)
+  mockedApi.getSiteConfig.mockResolvedValue({ albumPhotoLayout: 'masonry_vertical' })
   mockedApi.recordAlbumView.mockResolvedValue({ viewCount: album.viewCount + 1 })
   mockedApi.listAlbumChildren.mockResolvedValue({
     data: children,
@@ -115,6 +119,7 @@ async function mountView(
 describe('AlbumView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSiteConfigCache()
   })
 
   afterEach(() => {
@@ -166,6 +171,15 @@ describe('AlbumView', () => {
       page: 1,
       perPage: 30,
     })
+
+    wrapper.unmount()
+  })
+
+  it('passes the site album photo layout to PhotoGrid', async () => {
+    const { wrapper } = await mountView(makeAlbum(), [], [makePhoto()])
+
+    expect(mockedApi.getSiteConfig).toHaveBeenCalled()
+    expect(wrapper.find('.photo-grid').classes()).toContain('photo-grid--masonry-vertical')
 
     wrapper.unmount()
   })

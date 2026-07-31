@@ -30,6 +30,7 @@ import type {
   PublicSearchParams,
   PublicSearchResult,
   ReprocessScope,
+  SiteConfig,
   Tag,
   TagDetail,
   TagListSort,
@@ -350,6 +351,7 @@ export const api = {
     getJsonPage<PhotoSummary, MostViewedMeta>(`/api/discover/most-viewed/photos${queryString(params)}`),
   listMostViewedAlbums: (params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<AlbumSummary, MostViewedMeta>(`/api/discover/most-viewed/albums${queryString(params)}`),
+  getSiteConfig: () => getJson<SiteConfig>('/api/site-config'),
 }
 
 export interface AlbumWritePayload {
