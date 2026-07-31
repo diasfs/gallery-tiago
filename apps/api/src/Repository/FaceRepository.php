@@ -50,20 +50,28 @@ class FaceRepository extends ServiceEntityRepository
     public function findSimilarVisiblePhotoIds(Uuid $photoId, int $limit = 12, float $maxDistance = 0.45): array
     {
         $limit = max(1, min(100, $limit));
+        $perFaceLimit = max(50, $limit * 5);
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
             <<<SQL
                 SELECT ranked.photo_id
                 FROM (
-                    SELECT p.id::text AS photo_id, MIN(f2.embedding <=> f.embedding) AS dist
-                    FROM face f
-                    INNER JOIN face f2 ON f2.has_embedding = true AND f2.photo_id <> f.photo_id
-                    INNER JOIN photo p ON p.id = f2.photo_id
+                    SELECT p.id::text AS photo_id, MIN(n.dist) AS dist
+                    FROM face sf
+                    CROSS JOIN LATERAL (
+                        SELECT f2.photo_id, (f2.embedding <=> sf.embedding) AS dist
+                        FROM face f2
+                        WHERE f2.has_embedding = true
+                          AND f2.photo_id <> sf.photo_id
+                        ORDER BY f2.embedding <=> sf.embedding
+                        LIMIT {$perFaceLimit}
+                    ) n
+                    INNER JOIN photo p ON p.id = n.photo_id
                     INNER JOIN album a ON a.id = p.album_id
-                    WHERE f.photo_id = :photoId
-                      AND f.has_embedding = true
+                    WHERE sf.photo_id = :photoId
+                      AND sf.has_embedding = true
                       AND a.visibility IN ('public', 'unlisted')
                     GROUP BY p.id
-                    HAVING MIN(f2.embedding <=> f.embedding) <= :maxDistance
+                    HAVING MIN(n.dist) <= :maxDistance
                     ORDER BY dist ASC
                     LIMIT {$limit}
                 ) ranked

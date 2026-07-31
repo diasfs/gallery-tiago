@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PhotoView from './PhotoView.vue'
 import { api } from '../api/client'
-import type { PhotoDetail } from '../api/types'
+import type { PhotoDetail, PhotoSummary } from '../api/types'
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
@@ -177,6 +177,52 @@ describe('PhotoView', () => {
 
     expect(mockedApi.getPhotoByPath).toHaveBeenCalledWith('summer', 'beach.jpg')
     expect(mockedApi.getPhoto).not.toHaveBeenCalled()
+  })
+
+  it('shows the photo before similar photos finish loading', async () => {
+    let resolveSimilar: (value: PhotoSummary[]) => void = () => {}
+    mockedApi.getPhoto.mockResolvedValue(makePhoto())
+    mockedApi.listSimilarPhotos.mockReturnValue(
+      new Promise<PhotoSummary[]>((resolve) => {
+        resolveSimilar = resolve
+      }),
+    )
+    mockedApi.recordPhotoView.mockResolvedValue({ viewCount: 16 })
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: photoRoutes(),
+    })
+    await router.push({ name: 'photo-legacy', params: { id: 'photo-1' } })
+    await router.isReady()
+
+    const wrapper = mount(PhotoView, {
+      props: { id: 'photo-1' },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Carregando foto…')
+    expect(wrapper.find('[data-testid="photo-detail-image"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Carregando fotos parecidas…')
+
+    resolveSimilar([
+      {
+        id: 'photo-2',
+        albumSlug: 'summer',
+        filename: 'other.jpg',
+        title: 'Other',
+        avifPath: null,
+        thumbPaths: {},
+        viewCount: 3,
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Carregando fotos parecidas…')
+    expect(wrapper.find('.photo-detail__similar .photo-grid').exists()).toBe(true)
+
+    wrapper.unmount()
   })
 
   it('navigates with arrow keys using root filenames when available', async () => {

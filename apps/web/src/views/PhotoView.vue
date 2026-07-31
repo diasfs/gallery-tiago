@@ -24,7 +24,10 @@ const router = useRouter()
 const photo = ref<PhotoDetail | null>(null)
 const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
+const similarLoading = ref(false)
 const notFound = ref(false)
+
+let loadGeneration = 0
 
 function photoNavTarget(detail: PhotoDetail, direction: 'prev' | 'next'): RouteLocationRaw | null {
   const filename = direction === 'prev' ? detail.prevFilename : detail.nextFilename
@@ -43,10 +46,34 @@ function photoNavTarget(detail: PhotoDetail, direction: 'prev' | 'next'): RouteL
 const prevTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'prev') : null))
 const nextTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'next') : null))
 
+async function loadSecondary(generation: number, photoId: string) {
+  similarLoading.value = true
+  similarPhotos.value = []
+
+  const similarPromise = api.listSimilarPhotos(photoId).catch(() => [] as PhotoSummary[])
+  const viewPromise = api.recordPhotoView(photoId).catch(() => null)
+
+  const similar = await similarPromise
+  if (generation !== loadGeneration) {
+    return
+  }
+  similarPhotos.value = similar
+  similarLoading.value = false
+
+  const tracked = await viewPromise
+  if (generation !== loadGeneration || !photo.value || photo.value.id !== photoId || !tracked) {
+    return
+  }
+  photo.value.viewCount = tracked.viewCount
+}
+
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
   notFound.value = false
   photo.value = null
+  similarPhotos.value = []
+  similarLoading.value = false
 
   try {
     if (props.id) {
@@ -58,25 +85,19 @@ async function load() {
       return
     }
 
-    emit('photoLoaded', photo.value.id)
+    if (generation !== loadGeneration) {
+      return
+    }
 
-    try {
-      similarPhotos.value = await api.listSimilarPhotos(photo.value.id)
-    } catch {
-      similarPhotos.value = []
-    }
-    try {
-      const tracked = await api.recordPhotoView(photo.value.id)
-      if (photo.value) {
-        photo.value.viewCount = tracked.viewCount
-      }
-    } catch {
-      // Viewing the photo must still work if analytics is unavailable.
-    }
-  } catch {
-    notFound.value = true
-  } finally {
+    emit('photoLoaded', photo.value.id)
     loading.value = false
+    void loadSecondary(generation, photo.value.id)
+  } catch {
+    if (generation === loadGeneration) {
+      notFound.value = true
+      loading.value = false
+      similarLoading.value = false
+    }
   }
 }
 
@@ -201,9 +222,10 @@ function personAvatarSrc(person: PersonSummary): string | null {
         </div>
       </div>
 
-      <div v-if="similarPhotos.length > 0" class="photo-detail__similar">
+      <div v-if="similarLoading || similarPhotos.length > 0" class="photo-detail__similar">
         <h2>Fotos parecidas</h2>
-        <PhotoGrid :photos="similarPhotos" />
+        <p v-if="similarLoading" class="photo-detail__similar-status">Carregando fotos parecidas…</p>
+        <PhotoGrid v-else :photos="similarPhotos" />
       </div>
 
       <nav class="photo-detail__nav">
@@ -274,6 +296,12 @@ function personAvatarSrc(person: PersonSummary): string | null {
   font-size: 0.95rem;
   margin: 0 0 0.75rem;
   color: var(--muted, #888);
+}
+
+.photo-detail__similar-status {
+  margin: 0;
+  color: var(--muted, #888);
+  font-size: 0.9rem;
 }
 
 .photo-detail__people h2 {
