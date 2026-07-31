@@ -2,6 +2,7 @@
 import { RouterLink } from 'vue-router'
 import type { PhotoSummary } from '../api/types'
 import { photoDisplayUrl } from '../api/client'
+import { photoPath } from '../lib/publicPaths'
 import ViewCount from './ViewCount.vue'
 
 const props = defineProps<{
@@ -12,6 +13,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [id: string]
 }>()
+
+function photoLink(photo: PhotoSummary) {
+  if (photo.albumSlug && photo.filename) {
+    return photoPath({ albumSlug: photo.albumSlug, filename: photo.filename })
+  }
+
+  return { name: 'photo-legacy', params: { id: photo.id } }
+}
 
 function onPhotoClick(photo: PhotoSummary, event: MouseEvent) {
   if (!props.lightbox) return
@@ -31,7 +40,7 @@ function thumbSrc(photo: PhotoSummary): string | null {
       :is="lightbox ? 'button' : RouterLink"
       v-for="photo in photos"
       :key="photo.id"
-      :to="lightbox ? undefined : { name: 'photo', params: { id: photo.id } }"
+      :to="lightbox ? undefined : photoLink(photo)"
       :type="lightbox ? 'button' : undefined"
       class="photo-grid__item"
       :data-testid="lightbox ? 'photo-grid-lightbox-trigger' : undefined"

@@ -53,7 +53,7 @@ describe('MemoriesView', () => {
       history: createWebHistory(),
       routes: [
         { path: '/memories', name: 'memories', component: MemoriesView },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push('/memories')

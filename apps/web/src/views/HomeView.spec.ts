@@ -61,7 +61,7 @@ describe('HomeView', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'home', component: HomeView },
-        { path: '/albums/:slug', name: 'album', component: { template: '<div />' } },
+        { path: '/:slug', name: 'album', component: { template: '<div />' } },
       ],
     })
     await router.push({ name: 'home' })

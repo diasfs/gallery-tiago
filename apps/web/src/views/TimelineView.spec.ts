@@ -46,7 +46,7 @@ describe('TimelineView', () => {
           component: TimelineView,
           props: true,
         },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push({ name: 'timeline' })
@@ -89,7 +89,7 @@ describe('TimelineView', () => {
           component: TimelineView,
           props: true,
         },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push({ name: 'timeline-month', params: { year: '2024', month: '6' } })

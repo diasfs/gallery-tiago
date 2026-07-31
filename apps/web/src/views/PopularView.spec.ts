@@ -39,7 +39,7 @@ describe('PopularView', () => {
       history: createWebHistory(),
       routes: [
         { path: '/popular', name: 'popular', component: PopularView },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push('/popular')
@@ -57,7 +57,7 @@ describe('PopularView', () => {
       history: createWebHistory(),
       routes: [
         { path: '/popular', name: 'popular', component: PopularView },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push('/popular')

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
 import type { PhotoDetail } from '../api/types'
+import { photoPath } from '../lib/publicPaths'
 
 const props = defineProps<{ photoId: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -133,7 +134,16 @@ onUnmounted(() => {
         </button>
 
         <RouterLink
-          :to="{ name: 'photo', params: { id: photo.id } }"
+          v-if="photo.albumSlug && photo.filename"
+          :to="photoPath({ albumSlug: photo.albumSlug, filename: photo.filename })"
+          class="photo-lightbox__open"
+          data-testid="lightbox-open-page"
+        >
+          Abrir página
+        </RouterLink>
+        <RouterLink
+          v-else
+          :to="{ name: 'photo-legacy', params: { id: photo.id } }"
           class="photo-lightbox__open"
           data-testid="lightbox-open-page"
         >

@@ -3,7 +3,18 @@ import type { Connect } from 'vite'
 const CRAWLER_USER_AGENT =
   /facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Slackbot|Discordbot|Applebot|Pinterest|Googlebot|bingbot/i
 
-const SHARE_PREVIEW_PATH = /^\/(photos\/[0-9a-f-]{36}|albums\/[^/?]+)\/?$/i
+const RESERVED_ALBUM_SLUGS =
+  'search|map|timeline|memories|popular|albums|photos|people|tags|locations|admin|api|converted|originals|faces|avatars'
+
+const SHARE_PREVIEW_PATH = new RegExp(
+  `^(?:` +
+    `/photos/[0-9a-f-]{36}` +
+    `|/albums/[^/?]+` +
+    `|/(?!${RESERVED_ALBUM_SLUGS})[^/?]+/[^/?]+\\.[a-z0-9]{2,5}` +
+    `|/(?!${RESERVED_ALBUM_SLUGS})[^/?]+` +
+    `)/?$`,
+  'i',
+)
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -60,3 +71,5 @@ export function sharePreviewProxyMiddleware(apiTarget: string): Connect.NextHand
       .catch(() => next())
   }
 }
+
+export { SHARE_PREVIEW_PATH }

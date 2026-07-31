@@ -116,7 +116,7 @@ watch(photosPage, () => {
 
 function setChildrenPage(next: number) {
   router.push({
-    name: 'album',
+    name: route.name ?? 'album',
     params: { slug: props.slug },
     query: {
       ...route.query,
@@ -127,7 +127,7 @@ function setChildrenPage(next: number) {
 
 function setPhotosPage(next: number) {
   router.push({
-    name: 'album',
+    name: route.name ?? 'album',
     params: { slug: props.slug },
     query: {
       ...route.query,

@@ -96,8 +96,9 @@ async function mountView(
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
-      { path: '/albums/:slug', name: 'album', component: AlbumView },
-      { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+      { path: '/:slug', name: 'album', component: AlbumView },
+      { path: '/albums/:slug', name: 'album-legacy', component: AlbumView },
+      { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
     ],
   })
   await router.push({ name: 'album', params: { slug: album.slug }, query })

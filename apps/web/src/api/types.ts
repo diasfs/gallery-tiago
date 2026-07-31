@@ -64,6 +64,8 @@ export interface AlbumSummary {
 export interface PhotoSummary {
   id: string
   albumId?: string
+  albumSlug?: string
+  filename?: string | null
   title: string | null
   avifPath: string | null
   thumbPaths: Record<string, string>
@@ -137,6 +139,7 @@ export interface PhotoDetail {
   id: string
   albumId: string
   albumSlug: string
+  filename: string | null
   albumTitle: string
   albumAncestors: Array<{ slug: string; title: string }>
   title: string | null
@@ -150,6 +153,8 @@ export interface PhotoDetail {
   people: PersonSummary[]
   prevId: string | null
   nextId: string | null
+  prevFilename: string | null
+  nextFilename: string | null
 }
 
 export interface TagDetail {

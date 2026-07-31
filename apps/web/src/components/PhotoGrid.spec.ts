@@ -8,7 +8,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: { template: '<div />' } },
-    { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+    { path: '/:albumSlug/:filename', name: 'photo', component: { template: '<div />' } },
+    { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
   ],
 })
 
@@ -57,7 +58,25 @@ describe('PhotoGrid', () => {
     expect(wrapper.find('a').exists()).toBe(false)
   })
 
-  it('links each photo to its detail route', () => {
+  it('links each photo to its root detail route when filename is known', () => {
+    const photos = [
+      makePhoto({
+        id: 'photo-42',
+        albumSlug: 'summer',
+        filename: 'DSC_0001.jpg',
+      }),
+    ]
+
+    const wrapper = mount(PhotoGrid, {
+      props: { photos },
+      global: { plugins: [router] },
+    })
+
+    const link = wrapper.find('a')
+    expect(link.attributes('href')).toBe('/summer/DSC_0001.jpg')
+  })
+
+  it('falls back to legacy uuid route when filename is missing', () => {
     const photos = [makePhoto({ id: 'photo-42' })]
 
     const wrapper = mount(PhotoGrid, {

@@ -7,20 +7,28 @@ import { adminDeepLink } from './lib/adminDeepLink'
 const route = useRoute()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
 const albumAdminId = ref<string | null>(null)
+const photoAdminId = ref<string | null>(null)
 const navOpen = ref(false)
 
 watch(
-  () => [route.name, route.params.slug] as const,
+  () => [route.name, route.params.slug, route.params.id, route.params.albumSlug] as const,
   () => {
     albumAdminId.value = null
+    photoAdminId.value = null
     navOpen.value = false
   },
   { immediate: true },
 )
 
 function onAlbumLoaded(id: string) {
-  if (route.name === 'album') {
+  if (route.name === 'album' || route.name === 'album-legacy') {
     albumAdminId.value = id
+  }
+}
+
+function onPhotoLoaded(id: string) {
+  if (route.name === 'photo' || route.name === 'photo-legacy') {
+    photoAdminId.value = id
   }
 }
 
@@ -28,7 +36,9 @@ function toggleNav() {
   navOpen.value = !navOpen.value
 }
 
-const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
+const adminTo = computed(() =>
+  adminDeepLink(route, { albumId: albumAdminId.value, photoId: photoAdminId.value }),
+)
 </script>
 
 <template>
@@ -64,7 +74,7 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
     </header>
     <main class="app__main" :class="{ 'app__main--flush': isAdmin }">
       <RouterView v-slot="{ Component }">
-        <component :is="Component" @album-loaded="onAlbumLoaded" />
+        <component :is="Component" @album-loaded="onAlbumLoaded" @photo-loaded="onPhotoLoaded" />
       </RouterView>
     </main>
   </div>

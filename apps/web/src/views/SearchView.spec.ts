@@ -45,7 +45,7 @@ describe('SearchView', () => {
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/search', name: 'search', component: SearchView },
         { path: '/albums/:slug', name: 'album', component: { template: '<div />' } },
-        { path: '/photos/:id', name: 'photo', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
     await router.push({ name: 'search', query })

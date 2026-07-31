@@ -41,16 +41,25 @@ const router = createRouter({
       component: () => import('../views/PopularView.vue'),
     },
     {
+      path: '/:albumSlug/:filename(.*\\.[a-zA-Z0-9]{2,5})',
+      name: 'photo',
+      component: () => import('../views/PhotoView.vue'),
+      props: (route) => ({
+        albumSlug: String(route.params.albumSlug),
+        filename: String(route.params.filename),
+      }),
+    },
+    {
       path: '/albums/:slug',
-      name: 'album',
+      name: 'album-legacy',
       component: () => import('../views/AlbumView.vue'),
       props: true,
     },
     {
       path: '/photos/:id',
-      name: 'photo',
+      name: 'photo-legacy',
       component: () => import('../views/PhotoView.vue'),
-      props: true,
+      props: (route) => ({ id: String(route.params.id) }),
     },
     {
       path: '/people/:id',
@@ -139,6 +148,12 @@ const router = createRouter({
           component: () => import('../views/admin/UsersView.vue'),
         },
       ],
+    },
+    {
+      path: '/:slug',
+      name: 'album',
+      component: () => import('../views/AlbumView.vue'),
+      props: true,
     },
     {
       path: '/:pathMatch(.*)*',

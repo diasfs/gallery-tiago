@@ -308,6 +308,10 @@ export const api = {
   listAlbumPhotos: (slug: string, params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<PhotoSummary>(`/api/albums/${encodeURIComponent(slug)}/photos${queryString(params)}`),
   getPhoto: (id: string) => getJson<PhotoDetail>(`/api/photos/${encodeURIComponent(id)}`),
+  getPhotoByPath: (albumSlug: string, filename: string) =>
+    getJson<PhotoDetail>(
+      `/api/albums/${encodeURIComponent(albumSlug)}/photos/${encodeURIComponent(filename)}`,
+    ),
   listSimilarPhotos: (id: string) =>
     getJson<PhotoSummary[]>(`/api/photos/${encodeURIComponent(id)}/similar`),
   recordPhotoView: (id: string) =>

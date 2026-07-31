@@ -1,14 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRouter, type RouteLocationRaw } from 'vue-router'
 import { absoluteMediaUrl, api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
 import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import ViewCount from '../components/ViewCount.vue'
 import { usePageMeta } from '../composables/usePageMeta'
+import { photoPath } from '../lib/publicPaths'
 
-const props = defineProps<{ id: string }>()
+const props = defineProps<{
+  id?: string
+  albumSlug?: string
+  filename?: string
+}>()
+
+const emit = defineEmits<{
+  photoLoaded: [id: string]
+}>()
+
 const router = useRouter()
 
 const photo = ref<PhotoDetail | null>(null)
@@ -16,20 +26,48 @@ const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
 const notFound = ref(false)
 
-async function load(id: string) {
+function photoNavTarget(detail: PhotoDetail, direction: 'prev' | 'next'): RouteLocationRaw | null {
+  const filename = direction === 'prev' ? detail.prevFilename : detail.nextFilename
+  if (detail.albumSlug && filename) {
+    return photoPath({ albumSlug: detail.albumSlug, filename })
+  }
+
+  const id = direction === 'prev' ? detail.prevId : detail.nextId
+  if (id) {
+    return { name: 'photo-legacy', params: { id } }
+  }
+
+  return null
+}
+
+const prevTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'prev') : null))
+const nextTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'next') : null))
+
+async function load() {
   loading.value = true
   notFound.value = false
   photo.value = null
+
   try {
-    photo.value = await api.getPhoto(id)
+    if (props.id) {
+      photo.value = await api.getPhoto(props.id)
+    } else if (props.albumSlug && props.filename) {
+      photo.value = await api.getPhotoByPath(props.albumSlug, props.filename)
+    } else {
+      notFound.value = true
+      return
+    }
+
+    emit('photoLoaded', photo.value.id)
+
     try {
-      similarPhotos.value = await api.listSimilarPhotos(id)
+      similarPhotos.value = await api.listSimilarPhotos(photo.value.id)
     } catch {
       similarPhotos.value = []
     }
     try {
-      const tracked = await api.recordPhotoView(id)
-      if (photo.value?.id === id) {
+      const tracked = await api.recordPhotoView(photo.value.id)
+      if (photo.value) {
         photo.value.viewCount = tracked.viewCount
       }
     } catch {
@@ -42,8 +80,13 @@ async function load(id: string) {
   }
 }
 
-onMounted(() => load(props.id))
-watch(() => props.id, load)
+watch(
+  () => [props.id, props.albumSlug, props.filename] as const,
+  () => {
+    void load()
+  },
+  { immediate: true },
+)
 
 const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
 const srcSet = computed(() => (photo.value ? photoSrcSet(photo.value) : null))
@@ -74,13 +117,13 @@ usePageMeta(
 
 function onKeydown(event: KeyboardEvent) {
   if (!photo.value) return
-  if (event.key === 'ArrowLeft' && photo.value.prevId) {
+  if (event.key === 'ArrowLeft' && prevTarget.value) {
     event.preventDefault()
-    void router.push({ name: 'photo', params: { id: photo.value.prevId } })
+    void router.push(prevTarget.value)
   }
-  if (event.key === 'ArrowRight' && photo.value.nextId) {
+  if (event.key === 'ArrowRight' && nextTarget.value) {
     event.preventDefault()
-    void router.push({ name: 'photo', params: { id: photo.value.nextId } })
+    void router.push(nextTarget.value)
   }
 }
 
@@ -164,9 +207,9 @@ function personAvatarSrc(person: PersonSummary): string | null {
       </div>
 
       <nav class="photo-detail__nav">
-        <RouterLink v-if="photo.prevId" :to="{ name: 'photo', params: { id: photo.prevId } }">← Anterior</RouterLink>
+        <RouterLink v-if="prevTarget" :to="prevTarget">← Anterior</RouterLink>
         <span v-else />
-        <RouterLink v-if="photo.nextId" :to="{ name: 'photo', params: { id: photo.nextId } }">Próxima →</RouterLink>
+        <RouterLink v-if="nextTarget" :to="nextTarget">Próxima →</RouterLink>
       </nav>
     </template>
   </section>

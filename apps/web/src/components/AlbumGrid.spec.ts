@@ -32,7 +32,7 @@ async function mountGrid(albums: AlbumSummary[]) {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
-      { path: '/albums/:slug', name: 'album', component: { template: '<div />' } },
+      { path: '/:slug', name: 'album', component: { template: '<div />' } },
     ],
   })
   await router.push('/')
@@ -66,7 +66,7 @@ describe('AlbumGrid', () => {
     expect(wrapper.text()).toContain('Beach days')
     expect(wrapper.find('[data-testid="view-count"]').text()).toContain('7')
     expect(wrapper.find('img').attributes('src')).toContain('/media/thumbs/photo-1.jpg')
-    expect(wrapper.find('a').attributes('href')).toBe('/albums/day-one')
+    expect(wrapper.find('a').attributes('href')).toBe('/day-one')
 
     wrapper.unmount()
   })

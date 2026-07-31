@@ -117,7 +117,8 @@ describe('App public header', () => {
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/tags', name: 'tags', component: { template: '<div />' } },
         { path: '/search', name: 'search', component: { template: '<div />' } },
-        { path: '/albums/:slug', name: 'album', component: albumPage },
+        { path: '/summer', name: 'album', component: albumPage },
+        { path: '/albums/:slug', name: 'album-legacy', component: albumPage },
         { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
         {
           path: '/admin/albums/:albumId/photos',
@@ -126,7 +127,7 @@ describe('App public header', () => {
         },
       ],
     })
-    await router.push('/albums/summer')
+    await router.push('/summer')
     await router.isReady()
 
     const wrapper = mount(App, {

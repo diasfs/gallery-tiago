@@ -8,6 +8,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
+import { albumHref } from '../lib/publicPaths'
 
 // Leaflet's prototype _getIconUrl overrides mergeOptions in bundled apps.
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl
@@ -60,11 +61,10 @@ function albumCoverHtml(album: AlbumMapAlbum): string {
 
 function singleAlbumPopup(album: AlbumMapAlbum, label: string | null | undefined): string {
   const title = escapeHtml(album.title)
-  const slug = encodeURIComponent(album.slug)
   const labelHtml = label
     ? `<div class="album-map-popup__label">${escapeHtml(label)}</div>`
     : ''
-  return `<a class="album-map-popup" href="/albums/${slug}">
+  return `<a class="album-map-popup" href="${albumHref(album.slug)}">
     ${albumCoverHtml(album)}
     <div class="album-map-popup__body">
       <strong>${title}</strong>
@@ -82,8 +82,7 @@ function multiAlbumPopup(marker: AlbumMapMarker): string {
   const items = marker.albums
     .map((album) => {
       const title = escapeHtml(album.title)
-      const slug = encodeURIComponent(album.slug)
-      return `<a class="album-map-popup-list__item" href="/albums/${slug}">
+      return `<a class="album-map-popup-list__item" href="${albumHref(album.slug)}">
         <div class="album-map-popup-list__thumb">${albumCoverHtml(album)}</div>
         <strong>${title}</strong>
       </a>`
