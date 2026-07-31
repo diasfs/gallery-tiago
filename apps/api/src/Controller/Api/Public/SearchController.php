@@ -9,6 +9,7 @@ use App\Enum\AlbumVisibility;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -25,6 +26,7 @@ class SearchController
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -53,7 +55,7 @@ class SearchController
         return new JsonResponse([
             'data' => [
                 'albums' => array_map($this->normalizeAlbum(...), $albumResult['items']),
-                'photos' => array_map($this->normalizePhoto(...), $photoResult['items']),
+                'photos' => array_map($this->photoNormalizer->summary(...), $photoResult['items']),
             ],
             'meta' => [
                 'albums' => Pagination::meta($albumPage, $albumPerPage, $albumResult['total']),
@@ -164,20 +166,6 @@ class SearchController
             'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
             'viewCount' => $album->getViewCount(),
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function normalizePhoto(Photo $photo): array
-    {
-        return [
-            'id' => (string) $photo->getId(),
-            'albumId' => (string) $photo->getAlbum()->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
         ];
     }
 

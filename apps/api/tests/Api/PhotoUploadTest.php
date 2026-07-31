@@ -130,6 +130,7 @@ final class PhotoUploadTest extends WebTestCase
         $this->assertSame('pending', $photo->getFacesStatus()->value);
         $this->assertSame('pending', $photo->getTagsStatus()->value);
         $this->assertSame('holiday-sunset', $photo->getTitle());
+        $this->assertSame('holiday-sunset.jpg', $photo->getFilename());
         $this->assertNotSame('', $photo->getOriginalPath());
         $this->assertSame(0, $photo->getSortOrder());
         $this->assertSame(0, $data['sortOrder']);
@@ -209,6 +210,23 @@ final class PhotoUploadTest extends WebTestCase
             ['photoIds' => [(string) $a->getId()]],
         );
         $this->assertResponseStatusCodeSame(400);
+    }
+
+    public function testUploadRejectsDuplicateFilenameInAlbum(): void
+    {
+        $this->loginAsAdmin();
+
+        $existing = new Photo($this->album, 'originals/ab/existing.jpg');
+        $existing->setFilename('duplicate.jpg');
+        $this->em->persist($existing);
+        $this->em->flush();
+
+        $this->client->request('POST', \sprintf('/api/admin/albums/%s/photos', $this->album->getId()), [], [
+            'file' => $this->fixtureUpload('duplicate.jpg'),
+        ]);
+
+        $this->assertResponseStatusCodeSame(409);
+        $this->assertCount(0, $this->convertTransport()->getSent());
     }
 
     public function testUploadRejectsUnsupportedFileType(): void

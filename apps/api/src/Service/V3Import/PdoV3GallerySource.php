@@ -171,6 +171,39 @@ final class PdoV3GallerySource implements V3GallerySourceInterface
     }
 
     /**
+     * @param list<int> $legacyPhotoIds
+     *
+     * @return array<int, string> legacy id_foto => v3 filename (foto.foto)
+     */
+    public function fetchFilenamesForPhotoIds(array $legacyPhotoIds): array
+    {
+        if ([] === $legacyPhotoIds) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, \count($legacyPhotoIds), '?'));
+        $sql = \sprintf('SELECT id_foto, foto FROM foto WHERE id_foto IN (%s)', $placeholders);
+
+        $rows = $this->run(function () use ($sql, $legacyPhotoIds): array {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute(array_values($legacyPhotoIds));
+
+            return $stmt->fetchAll();
+        });
+
+        $filenames = [];
+        foreach ($rows as $row) {
+            $filename = trim((string) ($row['foto'] ?? ''));
+            if ('' === $filename) {
+                continue;
+            }
+            $filenames[(int) $row['id_foto']] = $filename;
+        }
+
+        return $filenames;
+    }
+
+    /**
      * @template T
      *
      * @param callable(): T $operation

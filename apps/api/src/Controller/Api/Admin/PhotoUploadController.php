@@ -95,10 +95,15 @@ class PhotoUploadController
         }
 
         $photo = new Photo($album);
-        $title = pathinfo($file->getClientOriginalName(), \PATHINFO_FILENAME);
+        $originalName = $file->getClientOriginalName();
+        $title = pathinfo($originalName, \PATHINFO_FILENAME);
         if (\is_string($title) && '' !== $title) {
             $photo->setTitle($title);
         }
+        if ($this->photos->existsFilenameInAlbum($album, $originalName)) {
+            throw new ConflictHttpException(\sprintf('A photo named "%s" already exists in this album.', $originalName));
+        }
+        $photo->setFilename($originalName);
         $photo->setSortOrder($this->photos->nextSortOrderForAlbum($album));
         $this->em->persist($photo);
         $this->em->flush();

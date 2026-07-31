@@ -7,6 +7,7 @@ use App\Entity\Photo;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -22,6 +23,7 @@ class DiscoverController
     public function __construct(
         private readonly PhotoRepository $photos,
         private readonly AlbumRepository $albums,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -52,7 +54,7 @@ class DiscoverController
         $result = $this->photos->findPublicMostViewedPaginated($page, $perPage);
 
         return new JsonResponse([
-            'data' => array_map($this->normalizePhoto(...), $result['items']),
+            'data' => array_map($this->photoNormalizer->summary(...), $result['items']),
             'meta' => [
                 ...Pagination::meta($page, $perPage, $result['total']),
                 'period' => 'all',
@@ -96,25 +98,12 @@ class DiscoverController
     }
 
     /** @return array<string, mixed> */
-    private function normalizePhoto(Photo $photo): array
-    {
-        return [
-            'id' => (string) $photo->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
-        ];
-    }
-
-    /** @return array<string, mixed> */
     private function normalizeOnThisDayPhoto(Photo $photo): array
     {
         $timelineAt = $this->photoTimelineAt($photo);
 
         return [
-            ...$this->normalizePhoto($photo),
+            ...$this->photoNormalizer->summary($photo),
             'timelineAt' => $timelineAt->format(\DATE_ATOM),
             'yearsAgo' => max(0, (int) (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y') - (int) $timelineAt->format('Y')),
         ];

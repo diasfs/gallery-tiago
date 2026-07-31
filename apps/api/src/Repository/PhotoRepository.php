@@ -34,6 +34,37 @@ class PhotoRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
+    public function findVisibleByAlbumSlugAndFilename(string $albumSlug, string $filename): ?Photo
+    {
+        return $this->createQueryBuilder('p')
+            ->join('p.album', 'a')
+            ->andWhere('a.slug = :slug')
+            ->andWhere('p.filename = :filename')
+            ->andWhere('a.visibility IN (:visibilities)')
+            ->setParameter('slug', $albumSlug)
+            ->setParameter('filename', $filename)
+            ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted])
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    public function existsFilenameInAlbum(Album $album, string $filename, ?Uuid $excludePhotoId = null): bool
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->select('1')
+            ->andWhere('p.album = :album')
+            ->andWhere('p.filename = :filename')
+            ->setParameter('album', $album)
+            ->setParameter('filename', $filename)
+            ->setMaxResults(1);
+
+        if (null !== $excludePhotoId) {
+            $qb->andWhere('p.id != :exclude')->setParameter('exclude', $excludePhotoId, 'uuid');
+        }
+
+        return null !== $qb->getQuery()->getOneOrNullResult();
+    }
+
     /**
      * Atomically increments and returns the new view_count.
      * Safe under concurrent detail-page loads.

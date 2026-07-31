@@ -125,6 +125,7 @@ final class V3Importer
                         if ($existing instanceof Photo) {
                             $existing->setSortOrder((int) $displayIndex);
                             $existing->setViewCount((int) ($foto['visit'] ?? 0));
+                            $this->applyPhotoFilename($existing, (string) $foto['foto']);
                             ++$stats->photosSortUpdated;
                             ++$sinceClear;
                             if ($sinceClear >= self::EM_CLEAR_EVERY) {
@@ -172,6 +173,7 @@ final class V3Importer
                 }
                 $photo->setSortOrder((int) $displayIndex);
                 $photo->setViewCount((int) ($foto['visit'] ?? 0));
+                $this->applyPhotoFilename($photo, (string) $foto['foto']);
                 $this->em->persist($photo);
                 $this->em->flush();
 
@@ -544,6 +546,13 @@ final class V3Importer
         }
 
         return null;
+    }
+
+    private function applyPhotoFilename(Photo $photo, string $filename): void
+    {
+        if ('' !== $filename) {
+            $photo->setFilename($filename);
+        }
     }
 
     /**

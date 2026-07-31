@@ -1,6 +1,6 @@
 # Share preview (Open Graph) for social crawlers
 #
-# Browsers load the SPA (`index.html`). Crawlers on /photos/* and /albums/*
+# Browsers load the SPA (`index.html`). Crawlers on public album/photo URLs
 # are proxied to Symfony, which returns HTML with og:* meta tags.
 #
 # Adjust $api_upstream and $site_root for your deployment.
@@ -20,6 +20,9 @@ map $http_user_agent $is_social_crawler {
     ~*Pinterest 1;
 }
 
+# Reserved SPA paths — not root album slugs (see ReservedAlbumSlugs in the API).
+set $reserved_album_slug "search|map|timeline|memories|popular|albums|photos|people|tags|locations|admin|api|converted|originals|faces|avatars";
+
 location ~ ^/photos/[0-9a-f-]{36}/?$ {
     if ($is_social_crawler) {
         proxy_set_header Host $host;
@@ -32,6 +35,30 @@ location ~ ^/photos/[0-9a-f-]{36}/?$ {
 }
 
 location ~ ^/albums/[^/]+/?$ {
+    if ($is_social_crawler) {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://api_upstream;
+        break;
+    }
+    try_files $uri /index.html;
+}
+
+# Root photo URL: /{albumSlug}/{filename.ext}
+location ~ ^/[^/]+/[^/]+\.[a-z0-9]{2,5}/?$ {
+    if ($is_social_crawler) {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://api_upstream;
+        break;
+    }
+    try_files $uri /index.html;
+}
+
+# Root album URL: /{slug} (excluding reserved slugs)
+location ~ ^/(?!$reserved_album_slug)[^/]+/?$ {
     if ($is_social_crawler) {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Host $host;

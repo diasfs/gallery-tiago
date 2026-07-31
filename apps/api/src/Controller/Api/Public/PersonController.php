@@ -7,6 +7,7 @@ use App\Entity\Tag;
 use App\Http\Pagination;
 use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -23,6 +24,7 @@ class PersonController
     public function __construct(
         private readonly PersonRepository $people,
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -95,16 +97,9 @@ class PersonController
      */
     private function normalize(Photo $photo): array
     {
-        return [
-            'id' => (string) $photo->getId(),
-            'albumId' => (string) $photo->getAlbum()->getId(),
-            'title' => $photo->getTitle(),
+        return $this->photoNormalizer->summary($photo) + [
             'width' => $photo->getWidth(),
             'height' => $photo->getHeight(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
         ];
     }

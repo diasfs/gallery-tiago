@@ -2,9 +2,9 @@
 
 namespace App\Controller\Api\Public;
 
-use App\Entity\Photo;
 use App\Http\Pagination;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -19,6 +19,7 @@ class TimelineController
 
     public function __construct(
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -44,21 +45,8 @@ class TimelineController
         $result = $this->photos->findPublicTimelinePhotosPaginated($year, $month, $page, $perPage);
 
         return new JsonResponse([
-            'data' => array_map($this->normalizePhoto(...), $result['items']),
+            'data' => array_map($this->photoNormalizer->summary(...), $result['items']),
             'meta' => Pagination::meta($page, $perPage, $result['total']),
         ]);
-    }
-
-    /** @return array<string, mixed> */
-    private function normalizePhoto(Photo $photo): array
-    {
-        return [
-            'id' => (string) $photo->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
-        ];
     }
 }

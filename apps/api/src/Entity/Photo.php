@@ -30,6 +30,10 @@ class Photo
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $title = null;
 
+    /** Legacy v3 `foto.foto` / upload original name — public URL segment. */
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $filename = null;
+
     #[ORM\Column(nullable: true)]
     private ?int $width = null;
 
@@ -111,6 +115,18 @@ class Photo
     public function setTitle(?string $title): static
     {
         $this->title = $title;
+
+        return $this;
+    }
+
+    public function getFilename(): ?string
+    {
+        return $this->filename;
+    }
+
+    public function setFilename(string $filename): static
+    {
+        $this->filename = $filename;
 
         return $this;
     }

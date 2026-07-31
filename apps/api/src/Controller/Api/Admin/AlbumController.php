@@ -10,6 +10,7 @@ use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
+use App\Support\ReservedAlbumSlugs;
 use App\Service\AlbumDeleter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -142,6 +143,7 @@ class AlbumController
         if (!\is_string($title) || '' === $title || !\is_string($slug) || '' === $slug) {
             throw new BadRequestHttpException('title and slug are required.');
         }
+        $this->assertSlugAllowed($slug);
 
         $album = new Album($title, $slug);
         $this->applyPayload($album, $payload);
@@ -222,6 +224,7 @@ class AlbumController
             if (!\is_string($payload['slug']) || '' === $payload['slug']) {
                 throw new BadRequestHttpException('slug must be a non-empty string.');
             }
+            $this->assertSlugAllowed($payload['slug']);
             $album->setSlug($payload['slug']);
         }
 
@@ -527,5 +530,12 @@ class AlbumController
             'thumbPaths' => $photo->getThumbPaths(),
             'originalPath' => $photo->getOriginalPath(),
         ];
+    }
+
+    private function assertSlugAllowed(string $slug): void
+    {
+        if (ReservedAlbumSlugs::isReserved($slug)) {
+            throw new BadRequestHttpException(\sprintf('slug "%s" is reserved.', $slug));
+        }
     }
 }

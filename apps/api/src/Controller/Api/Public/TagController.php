@@ -2,11 +2,11 @@
 
 namespace App\Controller\Api\Public;
 
-use App\Entity\Photo;
 use App\Entity\Tag;
 use App\Http\Pagination;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -22,6 +22,7 @@ class TagController
     public function __construct(
         private readonly TagRepository $tags,
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -60,7 +61,7 @@ class TagController
         $result = $this->photos->findVisibleByTagSlugPaginated($tag->getSlug(), $page, $perPage);
 
         return new JsonResponse([
-            'data' => array_map($this->normalizePhoto(...), $result['items']),
+            'data' => array_map($this->photoNormalizer->summary(...), $result['items']),
             'meta' => Pagination::meta($page, $perPage, $result['total']),
         ]);
     }
@@ -98,24 +99,6 @@ class TagController
             'id' => (string) $tag->getId(),
             'name' => $tag->getName(),
             'slug' => $tag->getSlug(),
-        ];
-    }
-
-    /**
-     * Media-relative paths only. Never absolute filesystem paths.
-     *
-     * @return array<string, mixed>
-     */
-    private function normalizePhoto(Photo $photo): array
-    {
-        return [
-            'id' => (string) $photo->getId(),
-            'albumId' => (string) $photo->getAlbum()->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
         ];
     }
 }

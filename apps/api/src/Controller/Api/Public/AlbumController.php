@@ -9,6 +9,7 @@ use App\Enum\AlbumVisibility;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use App\Service\ViewDeduplicatorInterface;
 use App\Service\ViewVisitorIdentifier;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -28,6 +29,7 @@ class AlbumController
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
         private readonly ViewDeduplicatorInterface $viewDeduplicator,
         private readonly ViewVisitorIdentifier $viewVisitor,
     ) {
@@ -82,6 +84,17 @@ class AlbumController
         ]);
     }
 
+    #[Route('/{slug}/photos/{filename}', name: 'public_albums_photo_show', methods: ['GET'], requirements: ['filename' => '.+'])]
+    public function photoShow(string $slug, string $filename): JsonResponse
+    {
+        $photo = $this->photos->findVisibleByAlbumSlugAndFilename($slug, rawurldecode($filename));
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        return new JsonResponse(['data' => $this->photoNormalizer->detail($photo)]);
+    }
+
     #[Route('/{slug}/photos', name: 'public_albums_photos', methods: ['GET'])]
     public function photos(string $slug, Request $request): JsonResponse
     {
@@ -92,7 +105,7 @@ class AlbumController
         $result = $this->photos->findByAlbumPaginated($album, $page, $perPage);
 
         return new JsonResponse([
-            'data' => array_map($this->normalizePhoto(...), $result['items']),
+            'data' => array_map($this->photoNormalizer->summary(...), $result['items']),
             'meta' => Pagination::meta($page, $perPage, $result['total']),
         ]);
     }
@@ -192,19 +205,6 @@ class AlbumController
     private function isVisible(?Album $album): bool
     {
         return null !== $album && AlbumVisibility::Private !== $album->getVisibility();
-    }
-
-    /** @return array<string, mixed> */
-    private function normalizePhoto(Photo $photo): array
-    {
-        return [
-            'id' => (string) $photo->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
-        ];
     }
 
     /**

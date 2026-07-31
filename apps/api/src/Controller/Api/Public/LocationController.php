@@ -8,6 +8,7 @@ use App\Entity\Tag;
 use App\Http\Pagination;
 use App\Repository\LocationRepository;
 use App\Repository\PhotoRepository;
+use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -24,6 +25,7 @@ class LocationController
     public function __construct(
         private readonly LocationRepository $locations,
         private readonly PhotoRepository $photos,
+        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -93,14 +95,7 @@ class LocationController
      */
     private function normalizePhoto(Photo $photo): array
     {
-        return [
-            'id' => (string) $photo->getId(),
-            'albumId' => (string) $photo->getAlbum()->getId(),
-            'title' => $photo->getTitle(),
-            'avifPath' => $photo->getAvifPath(),
-            'thumbPaths' => $photo->getThumbPaths(),
-            'originalPath' => $photo->getOriginalPath(),
-            'viewCount' => $photo->getViewCount(),
+        return $this->photoNormalizer->summary($photo) + [
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
         ];
     }

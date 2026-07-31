@@ -11,6 +11,7 @@ use App\Service\PublicSiteUrlBuilder;
 use App\Service\SharePreview;
 use App\Service\SharePreviewRenderer;
 use App\Service\SocialCrawlerDetector;
+use App\Support\ReservedAlbumSlugs;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -29,6 +30,47 @@ final class SharePreviewController
         private readonly PublicSiteUrlBuilder $siteUrls,
         private readonly SharePreviewRenderer $renderer,
     ) {
+    }
+
+    #[Route(
+        '/{albumSlug}/{filename}',
+        name: 'share_preview_photo_root',
+        methods: ['GET'],
+        requirements: [
+            'albumSlug' => ReservedAlbumSlugs::ROUTE_SLUG_PATTERN,
+            'filename' => ReservedAlbumSlugs::FILENAME_PATTERN,
+        ],
+        priority: 20,
+    )]
+    public function photoRoot(Request $request, string $albumSlug, string $filename): Response
+    {
+        $photo = $this->photos->findVisibleByAlbumSlugAndFilename($albumSlug, rawurldecode($filename));
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        return $this->respond($request, $this->previewForPhoto($photo, $request));
+    }
+
+    #[Route(
+        '/{slug}',
+        name: 'share_preview_album_root',
+        methods: ['GET'],
+        requirements: ['slug' => ReservedAlbumSlugs::ROUTE_SLUG_PATTERN],
+        priority: 10,
+    )]
+    public function albumRoot(Request $request, string $slug): Response
+    {
+        if (ReservedAlbumSlugs::isReserved($slug)) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        $album = $this->albums->findVisibleBySlug($slug);
+        if (null === $album) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        return $this->respond($request, $this->previewForAlbum($album, $request));
     }
 
     #[Route('/photos/{id}', name: 'share_preview_photo', methods: ['GET'])]
@@ -81,11 +123,13 @@ final class SharePreviewController
         }
 
         $image = $this->previewImageMeta($photo, $request);
+        $filename = $photo->getFilename() ?? 'photo';
+        $canonical = $this->siteUrls->page($album->getSlug().'/'.rawurlencode($filename), $request);
 
         return new SharePreview(
             title: sprintf('%s · Gallery', $title),
             description: sprintf('%s — %s', $title, $album->getTitle()),
-            canonicalUrl: $this->siteUrls->page('photos/'.$photo->getId()->toRfc4122(), $request),
+            canonicalUrl: $canonical,
             imageUrl: $image['imageUrl'],
             imageType: $image['imageType'],
             imageWidth: $image['imageWidth'],
@@ -106,7 +150,7 @@ final class SharePreviewController
         return new SharePreview(
             title: sprintf('%s · Gallery', $album->getTitle()),
             description: $description,
-            canonicalUrl: $this->siteUrls->page('albums/'.$album->getSlug(), $request),
+            canonicalUrl: $this->siteUrls->page($album->getSlug(), $request),
             imageUrl: $image['imageUrl'] ?? null,
             imageType: $image['imageType'] ?? null,
             imageWidth: $image['imageWidth'] ?? null,

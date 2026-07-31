@@ -300,6 +300,19 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->assertSame('public', $data['visibility']);
     }
 
+    public function testAdminCreateAlbumRejectsReservedSlug(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->jsonRequest('POST', '/api/admin/albums', [
+            'title' => 'Search Album',
+            'slug' => 'search',
+            'visibility' => 'public',
+        ]);
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
     public function testAdminCreateAlbumRejectsInvalidVisibility(): void
     {
         $this->loginAsAdmin();
