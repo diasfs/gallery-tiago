@@ -77,13 +77,22 @@ Copy `.env.example` to `.env` before starting. Key variables:
 | `RAM_CHECKPOINT` | Optional local path to RAM++ weights (otherwise downloaded to `~/.cache`) |
 | `APP_SECRET` | Symfony secret — change in production |
 
-Admin → **Configurações** controls whether faces/tags run and which tag detector to use (`ram_plus`, `mobileclip_s0`, `mobileclip_s1`). Pending Redis jobs read the latest settings when consumed; finished photos are left unchanged. Disabled stages land in status `disabled`. MobileCLIP scores the English RAM++ vocabulary (~4585 tags) and reuses existing DB tags by slug.
+Admin → **Configurações** controls whether faces/tags run, which tag detector to use (`ram_plus`, `mobileclip_s0`, `mobileclip_s1`), and the public album photo layout (`grid`, `masonry_vertical`, `masonry_horizontal`). The SPA reads display settings from `GET /api/site-config`. Pending Redis jobs read the latest processing settings when consumed; finished photos are left unchanged. Disabled stages land in status `disabled`. MobileCLIP scores the English RAM++ vocabulary (~4585 tags) and reuses existing DB tags by slug.
 
 `mobileclip_s0` maps to Apple’s **MobileCLIP2-S0** (`dfndr2b`) because OpenCLIP never shipped the original S0 architecture. `mobileclip_s1` maps to **MobileCLIP-S1** (`datacompdr`). The first MobileCLIP run on a machine builds a text-embedding cache under the model volume (can take several minutes on CPU); later photos reuse that cache.
 
+### Public URLs
+
+| Resource | Canonical path | Legacy path (still works) |
+|----------|----------------|---------------------------|
+| Album | `/{slug}` | `/albums/{slug}` |
+| Photo | `/{albumSlug}/{filename}` | `/photos/{uuid}` |
+
+Photo `filename` is set on upload and during v3 import. Existing databases upgraded from v3 should run the filename backfill commands listed below after migrations.
+
 ### Social share previews (Open Graph)
 
-The SPA sets meta tags client-side for browser tabs, but social apps need server-rendered HTML. Symfony serves share previews at `/photos/{id}` and `/albums/{slug}` with `og:*` tags. In development, the Vite dev-server proxies crawler user-agents to the API. In production, use the nginx snippet in [`docs/deploy/nginx-share-preview.conf.example`](docs/deploy/nginx-share-preview.conf.example).
+The SPA sets meta tags client-side for browser tabs, but social apps need server-rendered HTML. Symfony serves share previews for public album and photo URLs (root paths above, plus legacy `/albums/{slug}` and `/photos/{id}`) with `og:*` tags. In development, the Vite dev-server proxies crawler user-agents to the API. In production, use the nginx snippet in [`docs/deploy/nginx-share-preview.conf.example`](docs/deploy/nginx-share-preview.conf.example).
 
 ## Compose services
 
@@ -137,6 +146,8 @@ Re-run `app:reconcile-queued-processing` if `--batch` (default 500) left remaini
 |---------|---------|
 | `gallery:admin:create <email> <password>` | Create an admin user |
 | `app:import-v3` | Import albums/photos/people/tags from gallery v3 (requires `V3_DATABASE_URL`). Re-run with an existing map to backfill photo `sortOrder` from legacy `ordem`. |
+| `app:backfill-photo-filenames` | Populate `photo.filename` from the v3 MySQL `foto` table (via import map legacy ids). Run after migrations when upgrading an existing v3 import. |
+| `app:reconcile-photo-filename-duplicates` | When multiple photos share the same album filename, keep the winner (highest `view_count`) and delete the rest. |
 | `app:backfill-album-date-ranges` | Extract album dates from descriptions (`dd/mm/yyyy` or ranges) |
 | `app:convert-photo <id>` | Re-run AVIF conversion for one photo |
 | `app:purge-originals` | Remove retained original files from disk |
@@ -150,10 +161,23 @@ Run through this after `docker compose up --build` to confirm the full stack end
 - [ ] **Create admin** — `docker compose exec api php bin/console gallery:admin:create you@example.com secret`; log in at http://localhost:5173/admin/login
 - [ ] **Create albums** — In admin, create three albums with visibility `public`, `unlisted`, and `private`
 - [ ] **Upload photos** — In admin, open the public album and upload at least two JPEG/PNG files; wait until media, faces, and tags badges all show **done** (or **disabled** if those stages were turned off under Configurações)
-- [ ] **AI settings** — Admin → **Configurações**; toggle faces/tags and switch detector; confirm pending jobs pick up the new choice
+- [ ] **AI settings** — Admin → **Configurações**; toggle faces/tags, switch detector, and try an album photo layout (grid / masonry); confirm pending jobs pick up processing changes
 - [ ] **AVIF in public UI** — Open a photo on the public site; in DevTools → Network, confirm image URLs use **`.avif`** (not the original upload format)
 - [ ] **Name a person** — Admin → **People** → unnamed filter; name one cluster; visit the public person page at `/people/{id}` and confirm photos appear
 - [ ] **Private album hidden** — While logged out, open the private album slug in a new window/incognito; expect **404** (not a login prompt)
+- [ ] **Root photo URL** — Open a public photo via `/{albumSlug}/{filename}`; confirm it loads and share-preview nginx rules match your deploy if you use them
+
+### Upgrading an existing v3 database
+
+After pulling changes that add `photo.filename` or album layout settings:
+
+```bash
+docker compose exec api php bin/console doctrine:migrations:migrate --no-interaction
+docker compose exec api php bin/console app:backfill-photo-filenames
+docker compose exec api php bin/console app:reconcile-photo-filename-duplicates
+```
+
+Fresh installs that only use `app:import-v3` get filenames during import; the backfill commands are mainly for databases imported before that column existed.
 
 ## Running tests (optional)
 
