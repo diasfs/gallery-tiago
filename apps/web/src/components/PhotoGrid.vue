@@ -4,9 +4,20 @@ import type { PhotoSummary } from '../api/types'
 import { photoDisplayUrl } from '../api/client'
 import ViewCount from './ViewCount.vue'
 
-defineProps<{
+const props = defineProps<{
   photos: PhotoSummary[]
+  lightbox?: boolean
 }>()
+
+const emit = defineEmits<{
+  select: [id: string]
+}>()
+
+function onPhotoClick(photo: PhotoSummary, event: MouseEvent) {
+  if (!props.lightbox) return
+  event.preventDefault()
+  emit('select', photo.id)
+}
 
 function thumbSrc(photo: PhotoSummary): string | null {
   return photoDisplayUrl(photo)
@@ -16,11 +27,15 @@ function thumbSrc(photo: PhotoSummary): string | null {
 <template>
   <div class="photo-grid">
     <p v-if="photos.length === 0" class="photo-grid__empty">Nenhuma foto ainda.</p>
-    <RouterLink
+    <component
+      :is="lightbox ? 'button' : RouterLink"
       v-for="photo in photos"
       :key="photo.id"
-      :to="{ name: 'photo', params: { id: photo.id } }"
+      :to="lightbox ? undefined : { name: 'photo', params: { id: photo.id } }"
+      :type="lightbox ? 'button' : undefined"
       class="photo-grid__item"
+      :data-testid="lightbox ? 'photo-grid-lightbox-trigger' : undefined"
+      @click="onPhotoClick(photo, $event)"
     >
       <img
         v-if="thumbSrc(photo)"
@@ -32,7 +47,7 @@ function thumbSrc(photo: PhotoSummary): string | null {
       <span class="photo-grid__views">
         <ViewCount :count="photo.viewCount" />
       </span>
-    </RouterLink>
+    </component>
   </div>
 </template>
 
@@ -51,6 +66,12 @@ function thumbSrc(photo: PhotoSummary): string | null {
 .photo-grid__item {
   position: relative;
   display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: inherit;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   border-radius: 8px;

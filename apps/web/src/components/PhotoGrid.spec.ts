@@ -44,6 +44,19 @@ describe('PhotoGrid', () => {
     expect(wrapper.find('img').attributes('alt')).toBe('Sunset over the bay')
   })
 
+  it('emits select in lightbox mode instead of linking', async () => {
+    const photos = [makePhoto({ id: 'photo-42' })]
+
+    const wrapper = mount(PhotoGrid, {
+      props: { photos, lightbox: true },
+      global: { plugins: [router] },
+    })
+
+    await wrapper.find('[data-testid="photo-grid-lightbox-trigger"]').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([['photo-42']])
+    expect(wrapper.find('a').exists()).toBe(false)
+  })
+
   it('links each photo to its detail route', () => {
     const photos = [makePhoto({ id: 'photo-42' })]
 

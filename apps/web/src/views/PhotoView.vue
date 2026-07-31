@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
-import { api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
+import { absoluteMediaUrl, api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
 import type { PersonSummary, PhotoDetail } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import ViewCount from '../components/ViewCount.vue'
+import { usePageMeta } from '../composables/usePageMeta'
 
 const props = defineProps<{ id: string }>()
+const router = useRouter()
 
 const photo = ref<PhotoDetail | null>(null)
 const loading = ref(true)
@@ -51,6 +53,33 @@ const breadcrumbAncestors = computed(() => {
 
 const breadcrumbCurrent = computed(() => photo.value?.title?.trim() || 'Sem título')
 
+usePageMeta(
+  computed(() => {
+    if (!photo.value) return null
+    const title = photo.value.title?.trim() || 'Foto sem título'
+    return {
+      title: `${title} · Gallery`,
+      description: `${title} — ${photo.value.albumTitle}`,
+      image: absoluteMediaUrl(photoDisplayUrl(photo.value)),
+    }
+  }),
+)
+
+function onKeydown(event: KeyboardEvent) {
+  if (!photo.value) return
+  if (event.key === 'ArrowLeft' && photo.value.prevId) {
+    event.preventDefault()
+    void router.push({ name: 'photo', params: { id: photo.value.prevId } })
+  }
+  if (event.key === 'ArrowRight' && photo.value.nextId) {
+    event.preventDefault()
+    void router.push({ name: 'photo', params: { id: photo.value.nextId } })
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
 function personAvatarSrc(person: PersonSummary): string | null {
   return mediaUrl(person.avatarCropPath)
 }
@@ -73,6 +102,7 @@ function personAvatarSrc(person: PersonSummary): string | null {
           :height="photo.height ?? undefined"
           :alt="photo.title ?? 'Foto sem título'"
           data-testid="photo-detail-image"
+          tabindex="0"
         />
         <figcaption v-if="photo.title">{{ photo.title }}</figcaption>
       </figure>

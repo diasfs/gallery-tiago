@@ -175,4 +175,37 @@ describe('PhotoView', () => {
 
     wrapper.unmount()
   })
+
+  it('navigates with arrow keys when siblings exist', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/photos/:id', name: 'photo', component: PhotoView },
+        { path: '/albums/:slug', name: 'album', component: { template: '<div />' } },
+      ],
+    })
+    await router.push({ name: 'photo', params: { id: 'photo-1' } })
+    await router.isReady()
+
+    mockedApi.getPhoto.mockResolvedValue(
+      makePhoto({ id: 'photo-1', prevId: 'photo-prev', nextId: 'photo-next' }),
+    )
+    mockedApi.recordPhotoView.mockResolvedValue({ viewCount: 16 })
+
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = mount(PhotoView, {
+      props: { id: 'photo-1' },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'photo', params: { id: 'photo-next' } })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(pushSpy).toHaveBeenCalledWith({ name: 'photo', params: { id: 'photo-prev' } })
+
+    wrapper.unmount()
+  })
 })

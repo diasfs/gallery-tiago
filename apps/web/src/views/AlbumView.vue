@@ -5,10 +5,13 @@ import { api } from '../api/client'
 import type { AlbumDetail, AlbumSummary, PhotoSummary } from '../api/types'
 import AlbumGrid from '../components/AlbumGrid.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
+import PhotoLightbox from '../components/PhotoLightbox.vue'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import LocationMap from '../components/LocationMap.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import ViewCount from '../components/ViewCount.vue'
+import { usePageMeta } from '../composables/usePageMeta'
+import { absoluteMediaUrl, photoDisplayUrl } from '../api/client'
 import { formatAlbumDateRangeLabel } from '../lib/utils'
 
 const props = defineProps<{ slug: string }>()
@@ -27,6 +30,7 @@ const childrenPerPage = 24
 const photosPerPage = computed(() => album.value?.photosPerPage ?? 48)
 const loading = ref(true)
 const notFound = ref(false)
+const lightboxPhotoId = ref<string | null>(null)
 
 const childrenPage = computed(() => {
   const raw = Number(route.query.childrenPage ?? 1)
@@ -141,6 +145,18 @@ const takenAtLabel = computed(() =>
 const hasCoordinates = computed(
   () => album.value?.location?.latitude != null && album.value?.location?.longitude != null,
 )
+
+usePageMeta(
+  computed(() => {
+    if (!album.value) return null
+    const description = album.value.description?.trim() || takenAtLabel.value || album.value.title
+    return {
+      title: `${album.value.title} · Gallery`,
+      description,
+      image: album.value.coverPhoto ? absoluteMediaUrl(photoDisplayUrl(album.value.coverPhoto)) : null,
+    }
+  }),
+)
 </script>
 
 <template>
@@ -179,7 +195,12 @@ const hasCoordinates = computed(
         />
       </div>
 
-      <PhotoGrid :photos="photos" />
+      <PhotoGrid :photos="photos" lightbox @select="lightboxPhotoId = $event" />
+      <PhotoLightbox
+        v-if="lightboxPhotoId"
+        :photo-id="lightboxPhotoId"
+        @close="lightboxPhotoId = null"
+      />
       <PaginationBar
         class="photos-pager"
         :page="photosPage"
