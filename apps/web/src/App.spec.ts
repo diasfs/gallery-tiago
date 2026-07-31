@@ -75,6 +75,59 @@ describe('App public header', () => {
     wrapper.unmount()
   })
 
+  it('marks the active public navigation link for the current route', async () => {
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/timeline', name: 'timeline', component: { template: '<div />' } },
+        { path: '/search', name: 'search', component: { template: '<div />' } },
+        { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/timeline')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="nav-timeline"]').classes()).toContain('router-link-active')
+    expect(wrapper.find('[data-testid="nav-search"]').classes()).not.toContain('router-link-active')
+
+    wrapper.unmount()
+  })
+
+  it('marks Timeline active on month detail routes', async () => {
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/timeline', name: 'timeline', component: { template: '<div />' } },
+        {
+          path: '/timeline/:year/:month',
+          name: 'timeline-month',
+          component: { template: '<div />' },
+        },
+        { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/timeline/2024/7')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="nav-timeline"]').classes()).toContain('router-link-active')
+
+    wrapper.unmount()
+  })
+
   it('toggles the mobile navigation menu', async () => {
     const router = createRouter({
       history: createWebHistory(),

@@ -39,6 +39,15 @@ function toggleNav() {
 const adminTo = computed(() =>
   adminDeepLink(route, { albumId: albumAdminId.value, photoId: photoAdminId.value }),
 )
+
+const mapNavActive = computed(() => route.name === 'map')
+const timelineNavActive = computed(
+  () => route.name === 'timeline' || route.name === 'timeline-month',
+)
+const memoriesNavActive = computed(() => route.name === 'memories')
+const popularNavActive = computed(() => route.name === 'popular')
+const tagsNavActive = computed(() => route.name === 'tags' || route.name === 'tag')
+const searchNavActive = computed(() => route.name === 'search')
 </script>
 
 <template>
@@ -63,12 +72,66 @@ const adminTo = computed(() =>
         :class="{ 'app__actions--open': navOpen }"
         data-testid="app-nav"
       >
-        <RouterLink to="/map" class="app__nav-link" data-testid="nav-map">Mapa</RouterLink>
-        <RouterLink to="/timeline" class="app__nav-link" data-testid="nav-timeline">Timeline</RouterLink>
-        <RouterLink to="/memories" class="app__nav-link" data-testid="nav-memories">Memórias</RouterLink>
-        <RouterLink to="/popular" class="app__nav-link" data-testid="nav-popular">Populares</RouterLink>
-        <RouterLink to="/tags" class="app__nav-link" data-testid="nav-tags">Tags</RouterLink>
-        <RouterLink to="/search" class="app__nav-link" data-testid="nav-search">Busca</RouterLink>
+        <RouterLink
+          to="/map"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': mapNavActive }"
+          data-testid="nav-map"
+        >
+          Mapa
+        </RouterLink>
+        <RouterLink
+          to="/timeline"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': timelineNavActive }"
+          data-testid="nav-timeline"
+        >
+          Timeline
+        </RouterLink>
+        <RouterLink
+          to="/memories"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': memoriesNavActive }"
+          data-testid="nav-memories"
+        >
+          Memórias
+        </RouterLink>
+        <RouterLink
+          to="/popular"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': popularNavActive }"
+          data-testid="nav-popular"
+        >
+          Populares
+        </RouterLink>
+        <RouterLink
+          to="/tags"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': tagsNavActive }"
+          data-testid="nav-tags"
+        >
+          Tags
+        </RouterLink>
+        <RouterLink
+          to="/search"
+          class="app__nav-link"
+          active-class=""
+          exact-active-class=""
+          :class="{ 'router-link-active': searchNavActive }"
+          data-testid="nav-search"
+        >
+          Busca
+        </RouterLink>
         <RouterLink :to="adminTo" class="app__nav-link" data-testid="admin-link">Admin</RouterLink>
       </nav>
     </header>
@@ -130,6 +193,11 @@ const adminTo = computed(() =>
 
 .app__nav-link:hover {
   color: var(--fg, #eee);
+}
+
+.app__nav-link.router-link-active {
+  color: var(--fg, #eee);
+  font-weight: 600;
 }
 
 .sr-only {
