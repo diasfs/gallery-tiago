@@ -29,6 +29,7 @@ const adminTo = computed(() => adminDeepLink(route, albumAdminId.value))
     <header v-if="!isAdmin" class="app__header">
       <RouterLink to="/" class="app__brand">Gallery</RouterLink>
       <div class="app__actions">
+        <RouterLink to="/map" class="app__nav-link" data-testid="nav-map">Mapa</RouterLink>
         <RouterLink to="/timeline" class="app__nav-link" data-testid="nav-timeline">Timeline</RouterLink>
         <RouterLink to="/tags" class="app__nav-link" data-testid="nav-tags">Tags</RouterLink>
         <RouterLink to="/search" class="app__nav-link" data-testid="nav-search">Busca</RouterLink>

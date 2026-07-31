@@ -58,6 +58,16 @@ class AlbumController
         ]);
     }
 
+    #[Route('/map', name: 'public_albums_map', methods: ['GET'])]
+    public function map(): JsonResponse
+    {
+        $items = $this->albums->findPublicWithCoordinates();
+
+        return new JsonResponse([
+            'data' => array_map($this->normalize(...), $items),
+        ]);
+    }
+
     #[Route('/{slug}/children', name: 'public_albums_children', methods: ['GET'])]
     public function children(string $slug, Request $request): JsonResponse
     {

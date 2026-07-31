@@ -73,6 +73,25 @@ class AlbumRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /**
+     * Public albums (any depth) whose location has latitude and longitude.
+     *
+     * @return Album[]
+     */
+    public function findPublicWithCoordinates(): array
+    {
+        return $this->createQueryBuilder('a')
+            ->innerJoin('a.location', 'loc')
+            ->addSelect('loc')
+            ->andWhere('a.visibility = :visibility')
+            ->andWhere('loc.latitude IS NOT NULL')
+            ->andWhere('loc.longitude IS NOT NULL')
+            ->setParameter('visibility', AlbumVisibility::Public)
+            ->orderBy('a.title', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function findOneBySlug(string $slug): ?Album
     {
         return $this->findOneBy(['slug' => $slug]);

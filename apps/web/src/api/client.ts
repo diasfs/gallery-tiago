@@ -273,6 +273,7 @@ export const api = {
     getJsonPage<AlbumSummary>(`/api/albums${queryString(params)}`),
   listRecentAlbums: (params: { limit?: number } = {}) =>
     getJson<AlbumSummary[]>(`/api/albums/recent${queryString(params)}`),
+  listAlbumsOnMap: () => getJson<AlbumSummary[]>('/api/albums/map'),
   getAlbum: (slug: string) => getJson<AlbumDetail>(`/api/albums/${encodeURIComponent(slug)}`),
   recordAlbumView: (slug: string) =>
     postJson<{ viewCount: number }>(`/api/albums/${encodeURIComponent(slug)}/view`),

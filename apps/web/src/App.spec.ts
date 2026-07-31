@@ -30,6 +30,7 @@ describe('App public header', () => {
       history: createWebHistory(),
       routes: [
         { path: '/', name: 'home', component: { template: '<div data-testid="home">Home</div>' } },
+        { path: '/map', name: 'map', component: { template: '<div data-testid="map">Map</div>' } },
         { path: '/timeline', name: 'timeline', component: { template: '<div data-testid="timeline">Timeline</div>' } },
         { path: '/tags', name: 'tags', component: { template: '<div data-testid="tags">Tags</div>' } },
         { path: '/search', name: 'search', component: { template: '<div data-testid="search">Search</div>' } },
@@ -45,6 +46,10 @@ describe('App public header', () => {
     })
     await flushPromises()
 
+    const map = wrapper.find('[data-testid="nav-map"]')
+    expect(map.exists()).toBe(true)
+    expect(map.text()).toBe('Mapa')
+    expect(map.attributes('href')).toBe('/map')
 
     const timeline = wrapper.find('[data-testid="nav-timeline"]')
     expect(timeline.exists()).toBe(true)
