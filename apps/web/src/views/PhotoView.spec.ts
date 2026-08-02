@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PhotoView from './PhotoView.vue'
-import { api } from '../api/client'
+import { adminApi, api } from '../api/client'
 import type { PhotoDetail, PhotoSummary } from '../api/types'
+import { resetAdminSessionCache } from '../composables/useAdminSession'
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
@@ -15,6 +16,11 @@ vi.mock('../api/client', async () => {
       listSimilarPhotos: vi.fn(),
       recordPhotoView: vi.fn(),
     },
+    adminApi: {
+      me: vi.fn(),
+      removePersonFromPhoto: vi.fn(),
+      discardPerson: vi.fn(),
+    },
   }
 })
 
@@ -23,6 +29,12 @@ const mockedApi = api as unknown as {
   getPhotoByPath: ReturnType<typeof vi.fn>
   listSimilarPhotos: ReturnType<typeof vi.fn>
   recordPhotoView: ReturnType<typeof vi.fn>
+}
+
+const mockedAdminApi = adminApi as unknown as {
+  me: ReturnType<typeof vi.fn>
+  removePersonFromPhoto: ReturnType<typeof vi.fn>
+  discardPerson: ReturnType<typeof vi.fn>
 }
 
 function makePhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
@@ -70,6 +82,7 @@ function photoRoutes() {
 }
 
 async function mountLegacyView(photo: PhotoDetail) {
+  document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
   mockedApi.getPhoto.mockResolvedValue(photo)
   mockedApi.listSimilarPhotos.mockResolvedValue([])
   mockedApi.recordPhotoView.mockResolvedValue({ viewCount: photo.viewCount + 1 })
@@ -90,6 +103,7 @@ async function mountLegacyView(photo: PhotoDetail) {
 }
 
 async function mountRootView(photo: PhotoDetail) {
+  document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
   mockedApi.getPhotoByPath.mockResolvedValue(photo)
   mockedApi.listSimilarPhotos.mockResolvedValue([])
   mockedApi.recordPhotoView.mockResolvedValue({ viewCount: photo.viewCount + 1 })
@@ -112,13 +126,22 @@ async function mountRootView(photo: PhotoDetail) {
   return { wrapper, router }
 }
 
+function testId(id: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+  if (!element) throw new Error(`Missing element with data-testid="${id}"`)
+  return element
+}
+
 describe('PhotoView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetAdminSessionCache()
+    mockedAdminApi.me.mockRejectedValue(new Error('unauthorized'))
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
+    resetAdminSessionCache()
   })
 
   it('shows person face crop beside the name', async () => {
@@ -248,6 +271,83 @@ describe('PhotoView', () => {
       name: 'photo',
       params: { albumSlug: 'summer', filename: 'prev.jpg' },
     })
+
+    wrapper.unmount()
+  })
+
+  it('hides person delete controls when admin is not logged in', async () => {
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [{ id: 'person-1', name: 'Ana', avatarCropPath: null }],
+      }),
+    )
+
+    expect(wrapper.find('[data-testid="photo-person-delete"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('shows person delete controls when admin is logged in', async () => {
+    mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
+
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [{ id: 'person-1', name: 'Ana', avatarCropPath: null }],
+      }),
+    )
+
+    expect(wrapper.findAll('[data-testid="photo-person-delete"]')).toHaveLength(1)
+
+    wrapper.unmount()
+  })
+
+  it('unlinks a person from the photo after admin confirmation', async () => {
+    mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
+    mockedAdminApi.removePersonFromPhoto.mockResolvedValue(undefined)
+
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [
+          { id: 'person-1', name: 'Ana', avatarCropPath: null },
+          { id: 'person-2', name: 'Bruno', avatarCropPath: null },
+        ],
+      }),
+    )
+
+    await wrapper.find('[data-testid="photo-person-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(testId('person-delete-dialog')).toBeTruthy()
+
+    testId('person-delete-unlink').click()
+    await flushPromises()
+
+    expect(mockedAdminApi.removePersonFromPhoto).toHaveBeenCalledWith('photo-1', 'person-1')
+    expect(wrapper.findAll('[data-testid="photo-person-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Bruno')
+    expect(wrapper.text()).not.toContain('Ana')
+
+    wrapper.unmount()
+  })
+
+  it('discards a person after admin confirmation', async () => {
+    mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
+    mockedAdminApi.discardPerson.mockResolvedValue(undefined)
+
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [{ id: 'person-1', name: 'Ana', avatarCropPath: null }],
+      }),
+    )
+
+    await wrapper.find('[data-testid="photo-person-delete"]').trigger('click')
+    await flushPromises()
+
+    testId('person-delete-discard').click()
+    await flushPromises()
+
+    expect(mockedAdminApi.discardPerson).toHaveBeenCalledWith('person-1')
+    expect(wrapper.findAll('[data-testid="photo-person-row"]')).toHaveLength(0)
 
     wrapper.unmount()
   })

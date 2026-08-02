@@ -5,7 +5,9 @@ import { absoluteMediaUrl, api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, p
 import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
+import PhotoPersonDeleteDialog from '../components/PhotoPersonDeleteDialog.vue'
 import ViewCount from '../components/ViewCount.vue'
+import { useAdminSession } from '../composables/useAdminSession'
 import { usePageMeta } from '../composables/usePageMeta'
 import { photoPath } from '../lib/publicPaths'
 
@@ -20,8 +22,11 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const { isAdmin } = useAdminSession()
 
 const photo = ref<PhotoDetail | null>(null)
+const deleteTarget = ref<PersonSummary | null>(null)
+const deleteDialogOpen = ref(false)
 const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
 const similarLoading = ref(false)
@@ -154,6 +159,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 function personAvatarSrc(person: PersonSummary): string | null {
   return mediaUrl(person.avatarCropPath)
 }
+
+function openDeleteDialog(person: PersonSummary) {
+  deleteTarget.value = person
+  deleteDialogOpen.value = true
+}
+
+function onPersonDeleted() {
+  if (!photo.value || !deleteTarget.value) {
+    return
+  }
+  const removedId = deleteTarget.value.id
+  photo.value.people = photo.value.people.filter((person) => person.id !== removedId)
+  deleteTarget.value = null
+}
 </script>
 
 <template>
@@ -196,29 +215,43 @@ function personAvatarSrc(person: PersonSummary): string | null {
       <div v-if="photo.people.length > 0" class="photo-detail__people">
         <h2>Pessoas</h2>
         <div class="photo-detail__people-grid">
-          <RouterLink
+          <div
             v-for="person in photo.people"
             :key="person.id"
-            :to="{ name: 'person', params: { id: person.id } }"
             class="person-card"
             data-testid="photo-person-row"
           >
-            <img
-              v-if="personAvatarSrc(person)"
-              :src="personAvatarSrc(person)!"
-              alt=""
-              class="person-card__avatar"
-              data-testid="photo-person-avatar"
-            />
-            <div
-              v-else
-              class="person-card__avatar person-card__avatar--empty"
-              data-testid="photo-person-avatar-empty"
+            <RouterLink
+              :to="{ name: 'person', params: { id: person.id } }"
+              class="person-card__link"
             >
-              —
-            </div>
-            <span class="person-card__name">{{ person.name ?? 'Sem nome' }}</span>
-          </RouterLink>
+              <img
+                v-if="personAvatarSrc(person)"
+                :src="personAvatarSrc(person)!"
+                alt=""
+                class="person-card__avatar"
+                data-testid="photo-person-avatar"
+              />
+              <div
+                v-else
+                class="person-card__avatar person-card__avatar--empty"
+                data-testid="photo-person-avatar-empty"
+              >
+                —
+              </div>
+              <span class="person-card__name">{{ person.name ?? 'Sem nome' }}</span>
+            </RouterLink>
+            <button
+              v-if="isAdmin"
+              type="button"
+              class="person-card__delete"
+              aria-label="Remover pessoa"
+              data-testid="photo-person-delete"
+              @click="openDeleteDialog(person)"
+            >
+              ×
+            </button>
+          </div>
         </div>
       </div>
 
@@ -233,6 +266,14 @@ function personAvatarSrc(person: PersonSummary): string | null {
         <span v-else />
         <RouterLink v-if="nextTarget" :to="nextTarget">Próxima →</RouterLink>
       </nav>
+
+      <PhotoPersonDeleteDialog
+        v-if="photo"
+        v-model:open="deleteDialogOpen"
+        :person="deleteTarget"
+        :photo-id="photo.id"
+        @done="onPersonDeleted"
+      />
     </template>
   </section>
 </template>
@@ -317,18 +358,44 @@ function personAvatarSrc(person: PersonSummary): string | null {
 }
 
 .person-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: 10px;
   background: #1a1a1a;
   color: inherit;
-  text-decoration: none;
   transition: transform 0.15s ease;
 }
 
 .person-card:hover {
   transform: translateY(-2px);
+}
+
+.person-card__link {
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
+}
+
+.person-card__delete {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.person-card__delete:hover {
+  background: rgba(180, 40, 40, 0.9);
 }
 
 .person-card__avatar {
