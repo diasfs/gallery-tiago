@@ -6,6 +6,7 @@ use App\Entity\Album;
 use App\Enum\AlbumVisibility;
 use App\Service\SearchText;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
@@ -100,6 +101,59 @@ class AlbumRepository extends ServiceEntityRepository
     }
 
     /**
+     * Public/unlisted albums whose date (takenAtEnd, takenAt, or createdAt) falls on
+     * the given month/day in years before $beforeYear.
+     *
+     * @return array{items: Album[], total: int}
+     */
+    public function findPublicOnThisDayPaginated(
+        int $month,
+        int $day,
+        int $beforeYear,
+        int $page,
+        int $perPage,
+    ): array {
+        $conn = $this->getEntityManager()->getConnection();
+        $params = ['month' => $month, 'day' => $day, 'year' => $beforeYear];
+        $types = [
+            'month' => ParameterType::INTEGER,
+            'day' => ParameterType::INTEGER,
+            'year' => ParameterType::INTEGER,
+        ];
+
+        $where = <<<'SQL'
+            a.visibility IN ('public', 'unlisted')
+            AND EXTRACT(MONTH FROM COALESCE(a.taken_at_end, a.taken_at, a.created_at)) = :month
+            AND EXTRACT(DAY FROM COALESCE(a.taken_at_end, a.taken_at, a.created_at)) = :day
+            AND EXTRACT(YEAR FROM COALESCE(a.taken_at_end, a.taken_at, a.created_at)) < :year
+        SQL;
+
+        $total = (int) $conn->fetchOne(
+            "SELECT COUNT(a.id)::int FROM album a WHERE {$where}",
+            $params,
+            $types,
+        );
+
+        $offset = max(0, ($page - 1) * $perPage);
+        $ids = $conn->fetchFirstColumn(
+            <<<SQL
+                SELECT a.id::text
+                FROM album a
+                WHERE {$where}
+                ORDER BY COALESCE(a.taken_at_end, a.taken_at, a.created_at) DESC
+                LIMIT :limit OFFSET :offset
+            SQL,
+            [...$params, 'limit' => $perPage, 'offset' => $offset],
+            [...$types, 'limit' => ParameterType::INTEGER, 'offset' => ParameterType::INTEGER],
+        );
+
+        return [
+            'items' => $this->loadAlbumsOrdered(array_map(static fn (mixed $id): string => (string) $id, $ids)),
+            'total' => $total,
+        ];
+    }
+
+    /**
      * Public albums (any depth) whose location has latitude and longitude.
      *
      * @return Album[]
@@ -160,7 +214,7 @@ class AlbumRepository extends ServiceEntityRepository
             ->andWhere('a.visibility IN (:visibilities)')
             ->setParameter('parent', $parent)
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted]);
-        $this->orderByPublicRecency($qb);
+        $this->orderByAlbumDate($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -182,7 +236,7 @@ class AlbumRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         $itemsQb = clone $base;
-        $this->orderByPublicRecency($itemsQb);
+        $this->orderByAlbumDate($itemsQb);
         $items = $itemsQb
             ->setFirstResult(max(0, ($page - 1) * $perPage))
             ->setMaxResults($perPage)
@@ -192,9 +246,19 @@ class AlbumRepository extends ServiceEntityRepository
         return ['items' => $items, 'total' => $total];
     }
 
+    /** Sub-album lists: album date (takenAtEnd or takenAt) DESC; undated last. */
+    private function orderByAlbumDate(QueryBuilder $qb): void
+    {
+        $qb
+            ->addSelect('CASE WHEN COALESCE(a.takenAtEnd, a.takenAt) IS NULL THEN 0 ELSE 1 END AS HIDDEN hasDate')
+            ->addSelect('COALESCE(a.takenAtEnd, a.takenAt) AS HIDDEN albumDate')
+            ->orderBy('hasDate', 'DESC')
+            ->addOrderBy('albumDate', 'DESC');
+    }
+
     /**
      * Native albums (no legacyId) first by createdAt; imported by legacyId DESC
-     * (old gallery id_album DESC). Used for public and admin child lists / recent.
+     * (old gallery id_album DESC). Used for public recent albums only.
      */
     private function orderByPublicRecency(QueryBuilder $qb): void
     {
@@ -364,7 +428,7 @@ class AlbumRepository extends ServiceEntityRepository
         $qb = $this->createQueryBuilder('a')
             ->andWhere('a.parent = :parent')
             ->setParameter('parent', $parent);
-        $this->orderByPublicRecency($qb);
+        $this->orderByAlbumDate($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -384,7 +448,7 @@ class AlbumRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         $itemsQb = clone $base;
-        $this->orderByPublicRecency($itemsQb);
+        $this->orderByAlbumDate($itemsQb);
         $items = $itemsQb
             ->setFirstResult(max(0, ($page - 1) * $perPage))
             ->setMaxResults($perPage)
@@ -586,5 +650,34 @@ class AlbumRepository extends ServiceEntityRepository
                 ->andWhere('a.takenAt <= :to')
                 ->setParameter('to', new \DateTimeImmutable($filters['to'].'T23:59:59Z'));
         }
+    }
+
+    /** @param list<string> $ids */
+    private function loadAlbumsOrdered(array $ids): array
+    {
+        if ([] === $ids) {
+            return [];
+        }
+
+        /** @var list<Album> $albums */
+        $albums = $this->createQueryBuilder('a')
+            ->andWhere('a.id IN (:ids)')
+            ->setParameter('ids', array_map(static fn (string $id): Uuid => Uuid::fromString($id), $ids))
+            ->getQuery()
+            ->getResult();
+
+        $byId = [];
+        foreach ($albums as $album) {
+            $byId[$album->getId()->toRfc4122()] = $album;
+        }
+
+        $ordered = [];
+        foreach ($ids as $id) {
+            if (isset($byId[$id])) {
+                $ordered[] = $byId[$id];
+            }
+        }
+
+        return $ordered;
     }
 }

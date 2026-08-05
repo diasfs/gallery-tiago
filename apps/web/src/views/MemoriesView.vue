@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { OnThisDayPhoto } from '../api/types'
-import PhotoGrid from '../components/PhotoGrid.vue'
+import type { OnThisDayAlbum } from '../api/types'
+import AlbumGrid from '../components/AlbumGrid.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import { usePageMeta } from '../composables/usePageMeta'
 import { formatOnThisDayHeading, formatYearsAgo } from '../lib/utils'
@@ -11,7 +11,7 @@ import { formatOnThisDayHeading, formatYearsAgo } from '../lib/utils'
 const route = useRoute()
 const router = useRouter()
 
-const photos = ref<OnThisDayPhoto[]>([])
+const albums = ref<OnThisDayAlbum[]>([])
 const headingMonth = ref<number | null>(null)
 const headingDay = ref<number | null>(null)
 const total = ref(0)
@@ -34,16 +34,16 @@ const heading = computed(() => {
 usePageMeta(
   computed(() => ({
     title: `${heading.value} · Gallery`,
-    description: 'Fotos de anos anteriores tiradas neste dia',
+    description: 'Álbuns de anos anteriores com data neste dia',
   })),
 )
 
-const groupedPhotos = computed(() => {
-  const groups = new Map<number, OnThisDayPhoto[]>()
-  for (const photo of photos.value) {
-    const bucket = groups.get(photo.yearsAgo) ?? []
-    bucket.push(photo)
-    groups.set(photo.yearsAgo, bucket)
+const groupedAlbums = computed(() => {
+  const groups = new Map<number, OnThisDayAlbum[]>()
+  for (const album of albums.value) {
+    const bucket = groups.get(album.yearsAgo) ?? []
+    bucket.push(album)
+    groups.set(album.yearsAgo, bucket)
   }
 
   return [...groups.entries()]
@@ -55,14 +55,14 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const result = await api.listOnThisDayPhotos({ page: page.value, perPage })
-    photos.value = result.data
+    const result = await api.listOnThisDayAlbums({ page: page.value, perPage })
+    albums.value = result.data
     total.value = result.meta.total
     headingMonth.value = result.meta.month
     headingDay.value = result.meta.day
   } catch {
     error.value = 'Não foi possível carregar as memórias.'
-    photos.value = []
+    albums.value = []
     total.value = 0
   } finally {
     loading.value = false
@@ -88,14 +88,14 @@ function setPage(next: number) {
 <template>
   <section>
     <h1>{{ heading }}</h1>
-    <p class="intro">Fotos de anos anteriores tiradas neste dia.</p>
+    <p class="intro">Álbuns de anos anteriores com data neste dia.</p>
     <p v-if="loading">Carregando memórias…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
-    <p v-else-if="photos.length === 0">Nenhuma memória para este dia ainda.</p>
+    <p v-else-if="albums.length === 0">Nenhuma memória para este dia ainda.</p>
     <template v-else>
-      <section v-for="group in groupedPhotos" :key="group.yearsAgo" class="group">
+      <section v-for="group in groupedAlbums" :key="group.yearsAgo" class="group">
         <h2>{{ formatYearsAgo(group.yearsAgo) }}</h2>
-        <PhotoGrid :photos="group.items" />
+        <AlbumGrid :albums="group.items" />
       </section>
       <PaginationBar class="pager" :page="page" :total="total" :per-page="perPage" @update:page="setPage" />
     </template>

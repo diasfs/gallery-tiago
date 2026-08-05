@@ -94,7 +94,7 @@ final class PublicDiscoverTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertSame(1, $body['meta']['total']);
-        $this->assertSame((string) $this->memoryPhoto->getId(), $body['data'][0]['id']);
+        $this->assertSame('old-summer', $body['data'][0]['slug']);
         $this->assertSame('2020-07-31T12:00:00+00:00', $body['data'][0]['timelineAt']);
         $this->assertSame(6, $body['data'][0]['yearsAgo']);
     }
@@ -104,18 +104,6 @@ final class PublicDiscoverTest extends WebTestCase
         $this->client->request('GET', '/api/discover/on-this-day?month=2&day=31&beforeYear=2026');
 
         $this->assertResponseStatusCodeSame(400);
-    }
-
-    public function testMostViewedPhotosRanksByViewCount(): void
-    {
-        $this->client->request('GET', '/api/discover/most-viewed/photos');
-
-        $this->assertResponseIsSuccessful();
-        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
-        $this->assertSame(1, $body['meta']['total']);
-        $this->assertSame((string) $this->popularPhoto->getId(), $body['data'][0]['id']);
-        $this->assertSame(120, $body['data'][0]['viewCount']);
-        $this->assertSame('all', $body['meta']['period']);
     }
 
     public function testMostViewedAlbumsRanksByViewCount(): void

@@ -2,9 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { AlbumSummary, PhotoSummary } from '../api/types'
+import type { AlbumSummary } from '../api/types'
 import AlbumGrid from '../components/AlbumGrid.vue'
-import PhotoGrid from '../components/PhotoGrid.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 
 const route = useRoute()
@@ -20,9 +19,9 @@ const recentAlbums = ref<AlbumSummary[]>([])
 const recentLoading = ref(true)
 const recentError = ref<string | null>(null)
 
-const memoryPhotos = ref<PhotoSummary[]>([])
+const memoryAlbums = ref<AlbumSummary[]>([])
 const memoryLoading = ref(true)
-const popularPhotos = ref<PhotoSummary[]>([])
+const popularAlbums = ref<AlbumSummary[]>([])
 const popularLoading = ref(true)
 
 const page = computed(() => {
@@ -77,14 +76,14 @@ async function loadDiscoverTeasers() {
   popularLoading.value = true
   try {
     const [memories, popular] = await Promise.all([
-      api.listOnThisDayPhotos({ perPage: 6 }),
-      api.listMostViewedPhotos({ perPage: 6 }),
+      api.listOnThisDayAlbums({ perPage: 6 }),
+      api.listMostViewedAlbums({ perPage: 6 }),
     ])
-    memoryPhotos.value = memories.data
-    popularPhotos.value = popular.data
+    memoryAlbums.value = memories.data
+    popularAlbums.value = popular.data
   } catch {
-    memoryPhotos.value = []
-    popularPhotos.value = []
+    memoryAlbums.value = []
+    popularAlbums.value = []
   } finally {
     memoryLoading.value = false
     popularLoading.value = false
@@ -121,7 +120,7 @@ onMounted(() => {
   </section>
 
   <section
-    v-if="memoryLoading || memoryPhotos.length > 0"
+    v-if="memoryLoading || memoryAlbums.length > 0"
     class="discover"
     data-testid="memory-teaser"
   >
@@ -130,11 +129,11 @@ onMounted(() => {
       <RouterLink to="/memories">Ver tudo</RouterLink>
     </div>
     <p v-if="memoryLoading">Carregando memórias…</p>
-    <PhotoGrid v-else :photos="memoryPhotos" />
+    <AlbumGrid v-else :albums="memoryAlbums" />
   </section>
 
   <section
-    v-if="popularLoading || popularPhotos.length > 0"
+    v-if="popularLoading || popularAlbums.length > 0"
     class="discover"
     data-testid="popular-teaser"
   >
@@ -143,7 +142,7 @@ onMounted(() => {
       <RouterLink to="/popular">Ver tudo</RouterLink>
     </div>
     <p v-if="popularLoading">Carregando ranking…</p>
-    <PhotoGrid v-else :photos="popularPhotos" />
+    <AlbumGrid v-else :albums="popularAlbums" />
   </section>
 </template>
 

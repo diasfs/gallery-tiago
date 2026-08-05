@@ -185,32 +185,33 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->assertLessThanOrEqual(2, \count($body['data']));
     }
 
-    public function testPublicAlbumChildrenOrderedByLegacyIdDescNotSortOrder(): void
+    public function testPublicAlbumChildrenOrderedByTakenAtDesc(): void
     {
         $parent = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
         $this->assertNotNull($parent);
 
-        // Higher sortOrder must NOT win — siblings follow legacy id_album DESC.
         $older = new Album('Older Child', 'older-child');
         $older->setVisibility(AlbumVisibility::Public);
         $older->setParent($parent);
-        $older->setSortOrder(1);
-        $older->setLegacyId(100);
+        $older->setSortOrder(99);
+        $older->setLegacyId(500);
+        $older->setTakenAt(new \DateTimeImmutable('2020-01-01'));
         $this->em->persist($older);
 
         $newer = new Album('Newer Child', 'newer-child');
         $newer->setVisibility(AlbumVisibility::Public);
         $newer->setParent($parent);
-        $newer->setSortOrder(99);
-        $newer->setLegacyId(500);
+        $newer->setSortOrder(1);
+        $newer->setLegacyId(100);
+        $newer->setTakenAt(new \DateTimeImmutable('2024-06-01'));
+        $newer->setTakenAtEnd(new \DateTimeImmutable('2024-06-10'));
         $this->em->persist($newer);
 
-        // Native (no legacyId) sorts ahead of imported siblings.
-        $native = new Album('Native Child', 'native-child');
-        $native->setVisibility(AlbumVisibility::Public);
-        $native->setParent($parent);
-        $native->setSortOrder(0);
-        $this->em->persist($native);
+        $undated = new Album('Undated Child', 'undated-child');
+        $undated->setVisibility(AlbumVisibility::Public);
+        $undated->setParent($parent);
+        $undated->setSortOrder(0);
+        $this->em->persist($undated);
 
         $this->em->flush();
 
@@ -218,7 +219,7 @@ final class AlbumVisibilityTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $slugs = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'slug');
-        $this->assertSame(['native-child', 'newer-child', 'older-child'], $slugs);
+        $this->assertSame(['newer-child', 'older-child', 'undated-child'], $slugs);
     }
 
     public function testPublicRecentAlbumsOrderedByLegacyIdDescWithLimit(): void

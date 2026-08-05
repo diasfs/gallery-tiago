@@ -17,7 +17,7 @@ import type {
   MergeSuggestionsResponse,
   MostViewedMeta,
   OnThisDayMeta,
-  OnThisDayPhoto,
+  OnThisDayAlbum,
   Paginated,
   PeopleScope,
   PersonSummary,
@@ -345,10 +345,8 @@ export const api = {
         perPage: params.perPage,
       })}`,
     ),
-  listOnThisDayPhotos: (params: { month?: number; day?: number; beforeYear?: number; page?: number; perPage?: number } = {}) =>
-    getJsonPage<OnThisDayPhoto, OnThisDayMeta>(`/api/discover/on-this-day${queryString(params)}`),
-  listMostViewedPhotos: (params: { page?: number; perPage?: number } = {}) =>
-    getJsonPage<PhotoSummary, MostViewedMeta>(`/api/discover/most-viewed/photos${queryString(params)}`),
+  listOnThisDayAlbums: (params: { month?: number; day?: number; beforeYear?: number; page?: number; perPage?: number } = {}) =>
+    getJsonPage<OnThisDayAlbum, OnThisDayMeta>(`/api/discover/on-this-day${queryString(params)}`),
   listMostViewedAlbums: (params: { page?: number; perPage?: number } = {}) =>
     getJsonPage<AlbumSummary, MostViewedMeta>(`/api/discover/most-viewed/albums${queryString(params)}`),
   getSiteConfig: () => getJson<SiteConfig>('/api/site-config'),

@@ -10,13 +10,33 @@ vi.mock('../api/client', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listOnThisDayPhotos: vi.fn(),
+      listOnThisDayAlbums: vi.fn(),
     },
   }
 })
 
 const mockedApi = api as unknown as {
-  listOnThisDayPhotos: ReturnType<typeof vi.fn>
+  listOnThisDayAlbums: ReturnType<typeof vi.fn>
+}
+
+function makeAlbum(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'album-1',
+    title: 'Old summer',
+    slug: 'old-summer',
+    description: null,
+    visibility: 'public',
+    sortOrder: 0,
+    coverPhotoId: null,
+    coverPhoto: null,
+    parentSlug: null,
+    takenAt: '2020-07-31T00:00:00.000Z',
+    location: null,
+    viewCount: 0,
+    timelineAt: '2020-07-31T00:00:00.000Z',
+    yearsAgo: 6,
+    ...overrides,
+  }
 }
 
 describe('MemoriesView', () => {
@@ -24,27 +44,17 @@ describe('MemoriesView', () => {
     vi.clearAllMocks()
   })
 
-  it('loads on-this-day photos grouped by years ago', async () => {
-    mockedApi.listOnThisDayPhotos.mockResolvedValue({
+  it('loads on-this-day albums grouped by years ago', async () => {
+    mockedApi.listOnThisDayAlbums.mockResolvedValue({
       data: [
-        {
-          id: 'a',
-          title: 'Old',
-          avifPath: null,
-          thumbPaths: {},
-          viewCount: 1,
-          timelineAt: '2020-07-31T00:00:00.000Z',
-          yearsAgo: 6,
-        },
-        {
+        makeAlbum({ id: 'a', title: 'Old', yearsAgo: 6, timelineAt: '2020-07-31T00:00:00.000Z' }),
+        makeAlbum({
           id: 'b',
           title: 'Older',
-          avifPath: null,
-          thumbPaths: {},
-          viewCount: 2,
-          timelineAt: '2018-07-31T00:00:00.000Z',
+          slug: 'older-summer',
           yearsAgo: 8,
-        },
+          timelineAt: '2018-07-31T00:00:00.000Z',
+        }),
       ],
       meta: { page: 1, perPage: 48, total: 2, month: 7, day: 31, beforeYear: 2026 },
     })
@@ -53,7 +63,7 @@ describe('MemoriesView', () => {
       history: createWebHistory(),
       routes: [
         { path: '/memories', name: 'memories', component: MemoriesView },
-        { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
+        { path: '/:slug', name: 'album', component: { template: '<div />' } },
       ],
     })
     await router.push('/memories')
@@ -62,7 +72,7 @@ describe('MemoriesView', () => {
     const wrapper = mount(MemoriesView, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(mockedApi.listOnThisDayPhotos).toHaveBeenCalled()
+    expect(mockedApi.listOnThisDayAlbums).toHaveBeenCalled()
     expect(wrapper.text()).toContain('Há 8 anos')
     expect(wrapper.text()).toContain('Há 6 anos')
   })

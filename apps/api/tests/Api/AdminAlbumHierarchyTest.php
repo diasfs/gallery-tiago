@@ -128,23 +128,25 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame('originals/aa/cover.jpg', $body['data'][0]['cover']['originalPath']);
     }
 
-    public function testChildrenEndpointOrdersByRecencyLikePublic(): void
+    public function testChildrenEndpointOrdersByTakenAtDesc(): void
     {
         $this->child->setSortOrder(1);
-        $this->child->setLegacyId(100);
+        $this->child->setLegacyId(500);
+        $this->child->setTakenAt(new \DateTimeImmutable('2020-01-01'));
 
         $newer = new Album('Newer Child', 'newer-child');
         $newer->setVisibility(AlbumVisibility::Public);
         $newer->setParent($this->parent);
         $newer->setSortOrder(99);
-        $newer->setLegacyId(500);
+        $newer->setLegacyId(100);
+        $newer->setTakenAt(new \DateTimeImmutable('2024-06-01'));
         $this->em->persist($newer);
 
-        $native = new Album('Native Child', 'native-child');
-        $native->setVisibility(AlbumVisibility::Private);
-        $native->setParent($this->parent);
-        $native->setSortOrder(0);
-        $this->em->persist($native);
+        $undated = new Album('Undated Child', 'undated-child');
+        $undated->setVisibility(AlbumVisibility::Private);
+        $undated->setParent($this->parent);
+        $undated->setSortOrder(0);
+        $this->em->persist($undated);
 
         $this->em->flush();
 
@@ -153,7 +155,7 @@ final class AdminAlbumHierarchyTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $slugs = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'slug');
-        $this->assertSame(['native-child', 'newer-child', 'usa-sandiego'], $slugs);
+        $this->assertSame(['newer-child', 'usa-sandiego', 'undated-child'], $slugs);
     }
 
     public function testAdminCanReorderRootAlbums(): void

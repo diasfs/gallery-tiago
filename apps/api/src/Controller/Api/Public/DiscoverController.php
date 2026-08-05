@@ -3,11 +3,8 @@
 namespace App\Controller\Api\Public;
 
 use App\Entity\Album;
-use App\Entity\Photo;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
-use App\Repository\PhotoRepository;
-use App\Service\PhotoPublicNormalizer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -21,9 +18,7 @@ class DiscoverController
     private const DEFAULT_PER_PAGE = 48;
 
     public function __construct(
-        private readonly PhotoRepository $photos,
         private readonly AlbumRepository $albums,
-        private readonly PhotoPublicNormalizer $photoNormalizer,
     ) {
     }
 
@@ -33,31 +28,15 @@ class DiscoverController
         [$month, $day, $beforeYear] = $this->resolveOnThisDayParams($request);
         $page = Pagination::page($request);
         $perPage = Pagination::perPage($request, self::DEFAULT_PER_PAGE);
-        $result = $this->photos->findPublicOnThisDayPaginated($month, $day, $beforeYear, $page, $perPage);
+        $result = $this->albums->findPublicOnThisDayPaginated($month, $day, $beforeYear, $page, $perPage);
 
         return new JsonResponse([
-            'data' => array_map($this->normalizeOnThisDayPhoto(...), $result['items']),
+            'data' => array_map($this->normalizeOnThisDayAlbum(...), $result['items']),
             'meta' => [
                 ...Pagination::meta($page, $perPage, $result['total']),
                 'month' => $month,
                 'day' => $day,
                 'beforeYear' => $beforeYear,
-            ],
-        ]);
-    }
-
-    #[Route('/most-viewed/photos', name: 'public_discover_most_viewed_photos', methods: ['GET'])]
-    public function mostViewedPhotos(Request $request): JsonResponse
-    {
-        $page = Pagination::page($request);
-        $perPage = Pagination::perPage($request, self::DEFAULT_PER_PAGE);
-        $result = $this->photos->findPublicMostViewedPaginated($page, $perPage);
-
-        return new JsonResponse([
-            'data' => array_map($this->photoNormalizer->summary(...), $result['items']),
-            'meta' => [
-                ...Pagination::meta($page, $perPage, $result['total']),
-                'period' => 'all',
             ],
         ]);
     }
@@ -98,22 +77,22 @@ class DiscoverController
     }
 
     /** @return array<string, mixed> */
-    private function normalizeOnThisDayPhoto(Photo $photo): array
+    private function normalizeOnThisDayAlbum(Album $album): array
     {
-        $timelineAt = $this->photoTimelineAt($photo);
+        $timelineAt = $this->albumTimelineAt($album);
 
         return [
-            ...$this->photoNormalizer->summary($photo),
+            ...$this->normalizeAlbum($album),
             'timelineAt' => $timelineAt->format(\DATE_ATOM),
             'yearsAgo' => max(0, (int) (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y') - (int) $timelineAt->format('Y')),
         ];
     }
 
-    private function photoTimelineAt(Photo $photo): \DateTimeImmutable
+    private function albumTimelineAt(Album $album): \DateTimeImmutable
     {
-        return $photo->getAlbum()->getTakenAt()
-            ?? $photo->getAlbum()->getCreatedAt()
-            ?? $photo->getCreatedAt();
+        return $album->getTakenAtEnd()
+            ?? $album->getTakenAt()
+            ?? $album->getCreatedAt();
     }
 
     /** @return array<string, mixed> */

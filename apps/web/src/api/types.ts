@@ -98,7 +98,7 @@ export interface TimelineMonth {
   photoCount: number
 }
 
-export interface OnThisDayPhoto extends PhotoSummary {
+export interface OnThisDayAlbum extends AlbumSummary {
   timelineAt: string
   yearsAgo: number
 }
