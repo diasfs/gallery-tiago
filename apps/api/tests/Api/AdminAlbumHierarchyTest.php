@@ -299,6 +299,26 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame(30, $album->getPhotosPerPage());
     }
 
+    public function testClearingDescriptionPersistsNull(): void
+    {
+        $this->parent->setDescription('Had text');
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'description' => null,
+        ]);
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNull($data['description']);
+
+        $this->em->clear();
+        $album = $this->em->getRepository(Album::class)->find($this->parent->getId());
+        $this->assertNotNull($album);
+        $this->assertNull($album->getDescription());
+    }
+
     public function testRejectsInvalidPhotosPerPage(): void
     {
         $this->loginAsAdmin();

@@ -263,7 +263,7 @@ class AlbumController
     /** @param array<string, mixed> $payload */
     private function applyPayload(Album $album, array $payload): void
     {
-        if (isset($payload['description'])) {
+        if (\array_key_exists('description', $payload)) {
             $album->setDescription(\is_string($payload['description']) ? $payload['description'] : null);
         }
 
