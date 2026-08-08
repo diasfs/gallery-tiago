@@ -32,6 +32,12 @@ class ProcessingSettings
     #[ORM\Column(length: 32, enumType: AlbumPhotoLayout::class, options: ['default' => 'grid'])]
     private AlbumPhotoLayout $albumPhotoLayout = AlbumPhotoLayout::Grid;
 
+    #[ORM\Column(options: ['default' => true])]
+    private bool $mostViewedHomeEnabled = true;
+
+    #[ORM\Column(options: ['default' => false])]
+    private bool $mostViewedExcludeRootAlbums = false;
+
     public static function defaults(): self
     {
         return new self();
@@ -86,6 +92,30 @@ class ProcessingSettings
     public function setAlbumPhotoLayout(AlbumPhotoLayout $albumPhotoLayout): static
     {
         $this->albumPhotoLayout = $albumPhotoLayout;
+
+        return $this;
+    }
+
+    public function isMostViewedHomeEnabled(): bool
+    {
+        return $this->mostViewedHomeEnabled;
+    }
+
+    public function setMostViewedHomeEnabled(bool $mostViewedHomeEnabled): static
+    {
+        $this->mostViewedHomeEnabled = $mostViewedHomeEnabled;
+
+        return $this;
+    }
+
+    public function isMostViewedExcludeRootAlbums(): bool
+    {
+        return $this->mostViewedExcludeRootAlbums;
+    }
+
+    public function setMostViewedExcludeRootAlbums(bool $mostViewedExcludeRootAlbums): static
+    {
+        $this->mostViewedExcludeRootAlbums = $mostViewedExcludeRootAlbums;
 
         return $this;
     }

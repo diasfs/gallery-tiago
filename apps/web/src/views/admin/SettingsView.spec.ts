@@ -25,6 +25,8 @@ const defaults: ProcessingSettings = {
   tagsEnabled: true,
   tagDetector: 'ram_plus',
   albumPhotoLayout: 'grid',
+  mostViewedHomeEnabled: true,
+  mostViewedExcludeRootAlbums: false,
 }
 
 describe('SettingsView', () => {
@@ -36,6 +38,8 @@ describe('SettingsView', () => {
       tagsEnabled: true,
       tagDetector: 'mobileclip_s0',
       albumPhotoLayout: 'grid',
+      mostViewedHomeEnabled: true,
+      mostViewedExcludeRootAlbums: false,
     })
   })
 
@@ -56,6 +60,8 @@ describe('SettingsView', () => {
     expect(wrapper.find('[data-testid="settings-faces-enabled"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-tags-enabled"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-album-photo-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="settings-most-viewed-home"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="settings-most-viewed-exclude-root"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('RAM++')
 
     wrapper.unmount()
@@ -73,6 +79,8 @@ describe('SettingsView', () => {
       tagsEnabled: true,
       tagDetector: 'ram_plus',
       albumPhotoLayout: 'grid',
+      mostViewedHomeEnabled: true,
+      mostViewedExcludeRootAlbums: false,
     })
     expect(wrapper.find('[data-testid="settings-saved"]').exists()).toBe(true)
 

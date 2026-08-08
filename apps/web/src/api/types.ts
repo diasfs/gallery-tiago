@@ -115,7 +115,7 @@ export interface MostViewedMeta extends PageMeta {
 
 export interface PublicSearchParams {
   q?: string
-  person?: string[]
+  person?: string
   tag?: string[]
   year?: string
   from?: string
@@ -185,6 +185,8 @@ export type AlbumPhotoLayout = 'grid' | 'masonry_vertical' | 'masonry_horizontal
 
 export interface SiteConfig {
   albumPhotoLayout: AlbumPhotoLayout
+  mostViewedHomeEnabled: boolean
+  mostViewedExcludeRootAlbums: boolean
 }
 
 export interface ProcessingSettings {
@@ -192,6 +194,8 @@ export interface ProcessingSettings {
   tagsEnabled: boolean
   tagDetector: TagDetector
   albumPhotoLayout: AlbumPhotoLayout
+  mostViewedHomeEnabled: boolean
+  mostViewedExcludeRootAlbums: boolean
 }
 
 export type ReprocessScope = 'all' | 'faces' | 'tags'

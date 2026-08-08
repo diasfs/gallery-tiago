@@ -197,6 +197,12 @@ function onPersonDeleted() {
         <figcaption v-if="photo.title">{{ photo.title }}</figcaption>
       </figure>
 
+      <nav class="photo-detail__nav">
+        <RouterLink v-if="prevTarget" :to="prevTarget">← Anterior</RouterLink>
+        <span v-else />
+        <RouterLink v-if="nextTarget" :to="nextTarget">Próxima →</RouterLink>
+      </nav>
+
       <p class="photo-detail__views">
         <ViewCount :count="photo.viewCount" />
       </p>
@@ -260,12 +266,6 @@ function onPersonDeleted() {
         <p v-if="similarLoading" class="photo-detail__similar-status">Carregando fotos parecidas…</p>
         <PhotoGrid v-else :photos="similarPhotos" />
       </div>
-
-      <nav class="photo-detail__nav">
-        <RouterLink v-if="prevTarget" :to="prevTarget">← Anterior</RouterLink>
-        <span v-else />
-        <RouterLink v-if="nextTarget" :to="nextTarget">Próxima →</RouterLink>
-      </nav>
 
       <PhotoPersonDeleteDialog
         v-if="photo"
@@ -426,7 +426,7 @@ function onPersonDeleted() {
 .photo-detail__nav {
   display: flex;
   justify-content: space-between;
-  margin-top: 2rem;
+  margin-top: 0.75rem;
 }
 
 .photo-detail__nav a {

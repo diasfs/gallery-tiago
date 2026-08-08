@@ -35,6 +35,8 @@ final class SiteConfigTest extends WebTestCase
 
         $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
         $this->assertSame('grid', $data['albumPhotoLayout']);
+        $this->assertTrue($data['mostViewedHomeEnabled']);
+        $this->assertFalse($data['mostViewedExcludeRootAlbums']);
     }
 
     public function testReflectsPersistedAlbumPhotoLayout(): void
@@ -50,6 +52,21 @@ final class SiteConfigTest extends WebTestCase
         $this->assertSame('masonry_horizontal', $data['albumPhotoLayout']);
     }
 
+    public function testReflectsMostViewedFlags(): void
+    {
+        $settings = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $settings->setMostViewedHomeEnabled(false);
+        $settings->setMostViewedExcludeRootAlbums(true);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/site-config');
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertFalse($data['mostViewedHomeEnabled']);
+        $this->assertTrue($data['mostViewedExcludeRootAlbums']);
+    }
+
     private function resetSettings(): void
     {
         $row = $this->em->find(ProcessingSettings::class, ProcessingSettings::SINGLETON_ID);
@@ -58,6 +75,8 @@ final class SiteConfigTest extends WebTestCase
             $this->em->persist($row);
         } else {
             $row->setAlbumPhotoLayout(AlbumPhotoLayout::Grid);
+            $row->setMostViewedHomeEnabled(true);
+            $row->setMostViewedExcludeRootAlbums(false);
         }
         $this->em->flush();
     }

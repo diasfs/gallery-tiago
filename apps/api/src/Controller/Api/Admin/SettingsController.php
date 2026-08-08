@@ -75,6 +75,20 @@ final class SettingsController
             $row->setAlbumPhotoLayout($resolved);
         }
 
+        if (\array_key_exists('mostViewedHomeEnabled', $payload)) {
+            if (!\is_bool($payload['mostViewedHomeEnabled'])) {
+                throw new BadRequestHttpException('mostViewedHomeEnabled must be a boolean.');
+            }
+            $row->setMostViewedHomeEnabled($payload['mostViewedHomeEnabled']);
+        }
+
+        if (\array_key_exists('mostViewedExcludeRootAlbums', $payload)) {
+            if (!\is_bool($payload['mostViewedExcludeRootAlbums'])) {
+                throw new BadRequestHttpException('mostViewedExcludeRootAlbums must be a boolean.');
+            }
+            $row->setMostViewedExcludeRootAlbums($payload['mostViewedExcludeRootAlbums']);
+        }
+
         $this->em->flush();
 
         return new JsonResponse(['data' => $this->normalize($row)]);
@@ -88,6 +102,8 @@ final class SettingsController
             'tagsEnabled' => $settings->isTagsEnabled(),
             'tagDetector' => $settings->getTagDetector()->value,
             'albumPhotoLayout' => $settings->getAlbumPhotoLayout()->value,
+            'mostViewedHomeEnabled' => $settings->isMostViewedHomeEnabled(),
+            'mostViewedExcludeRootAlbums' => $settings->isMostViewedExcludeRootAlbums(),
         ];
     }
 

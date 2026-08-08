@@ -44,6 +44,8 @@ const facesEnabled = ref(true)
 const tagsEnabled = ref(true)
 const tagDetector = ref<TagDetector>('ram_plus')
 const albumPhotoLayout = ref<AlbumPhotoLayout>('grid')
+const mostViewedHomeEnabled = ref(true)
+const mostViewedExcludeRootAlbums = ref(false)
 
 async function load() {
   loading.value = true
@@ -64,6 +66,8 @@ function applySettings(settings: ProcessingSettings) {
   tagsEnabled.value = settings.tagsEnabled
   tagDetector.value = settings.tagDetector
   albumPhotoLayout.value = settings.albumPhotoLayout
+  mostViewedHomeEnabled.value = settings.mostViewedHomeEnabled
+  mostViewedExcludeRootAlbums.value = settings.mostViewedExcludeRootAlbums
 }
 
 async function save() {
@@ -76,6 +80,8 @@ async function save() {
       tagsEnabled: tagsEnabled.value,
       tagDetector: tagDetector.value,
       albumPhotoLayout: albumPhotoLayout.value,
+      mostViewedHomeEnabled: mostViewedHomeEnabled.value,
+      mostViewedExcludeRootAlbums: mostViewedExcludeRootAlbums.value,
     })
     applySettings(updated)
     saved.value = true
@@ -204,6 +210,33 @@ onMounted(load)
           <p class="text-xs text-muted-foreground">
             {{ LAYOUT_OPTIONS.find((o) => o.value === albumPhotoLayout)?.hint }}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Mais vistos</CardTitle>
+          <CardDescription>
+            Controle o teaser da home e quais álbuns entram no ranking público.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="flex flex-col gap-3">
+          <label class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
+            <Checkbox
+              :model-value="mostViewedHomeEnabled"
+              data-testid="settings-most-viewed-home"
+              @update:model-value="mostViewedHomeEnabled = $event === true"
+            />
+            Mostrar “Mais vistos” na home
+          </label>
+          <label class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
+            <Checkbox
+              :model-value="mostViewedExcludeRootAlbums"
+              data-testid="settings-most-viewed-exclude-root"
+              @update:model-value="mostViewedExcludeRootAlbums = $event === true"
+            />
+            Excluir álbuns da raiz do ranking
+          </label>
         </CardContent>
       </Card>
 

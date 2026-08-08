@@ -274,7 +274,7 @@ export const PHOTO_DETAIL_SIZES = '(max-width: 1200px) 100vw, 1200px'
 function searchQueryString(params: PublicSearchParams): string {
   const q = new URLSearchParams()
   if (params.q) q.set('q', params.q)
-  for (const id of params.person ?? []) q.append('person', id)
+  if (params.person) q.set('person', params.person)
   for (const slug of params.tag ?? []) q.append('tag', slug)
   if (params.year) q.set('year', params.year)
   if (params.from) q.set('from', params.from)

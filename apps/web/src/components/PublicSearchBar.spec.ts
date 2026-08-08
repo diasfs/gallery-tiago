@@ -9,21 +9,18 @@ vi.mock('../api/client', async () => {
     ...actual,
     api: {
       ...actual.api,
-      searchPeople: vi.fn(),
       searchTags: vi.fn(),
     },
   }
 })
 
 const mockedApi = api as unknown as {
-  searchPeople: ReturnType<typeof vi.fn>
   searchTags: ReturnType<typeof vi.fn>
 }
 
 describe('PublicSearchBar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedApi.searchPeople.mockResolvedValue([{ id: 'p1', name: 'Ana' }])
     mockedApi.searchTags.mockResolvedValue([{ id: 't1', name: 'Beach', slug: 'beach' }])
   })
 
@@ -31,36 +28,41 @@ describe('PublicSearchBar', () => {
     document.body.innerHTML = ''
   })
 
-  it('adds person and tag pills from suggestions', async () => {
+  it('keeps person as plain text and adds tag pills from suggestions', async () => {
     const wrapper = mount(PublicSearchBar, { attachTo: document.body })
-    await wrapper.find('[data-testid="search-person-input"]').trigger('focus')
-    await flushPromises()
-    await wrapper.find('[data-testid="search-person-suggest"] button').trigger('click')
+    await wrapper.find('[data-testid="search-person-input"]').setValue('Fábio')
 
     await wrapper.find('[data-testid="search-tag-input"]').trigger('focus')
     await flushPromises()
     await wrapper.find('[data-testid="search-tag-suggest"] button').trigger('click')
 
-    expect(wrapper.findAll('[data-testid="search-person-pill"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="search-person-input"]').element).toMatchObject({ value: 'Fábio' })
     expect(wrapper.findAll('[data-testid="search-tag-pill"]')).toHaveLength(1)
-    expect(wrapper.text()).toContain('Ana')
     expect(wrapper.text()).toContain('Beach')
+    expect(wrapper.find('[data-testid="search-person-suggest"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
 
-  it('emits submit with year date mode', async () => {
+  it('emits submit with person name and year date mode', async () => {
     const wrapper = mount(PublicSearchBar, { attachTo: document.body })
     await wrapper.find('[data-testid="search-q"]').setValue('Paris')
+    await wrapper.find('[data-testid="search-person-input"]').setValue('Ana')
     await wrapper.find('[data-testid="search-year"]').setValue('2024')
     await wrapper.find('form').trigger('submit')
 
     const submitted = wrapper.emitted('submit')?.[0]?.[0] as {
       q: string
+      person: string
       year: string
       dateMode: string
     }
-    expect(submitted).toMatchObject({ q: 'Paris', year: '2024', dateMode: 'year' })
+    expect(submitted).toMatchObject({
+      q: 'Paris',
+      person: 'Ana',
+      year: '2024',
+      dateMode: 'year',
+    })
     wrapper.unmount()
   })
 })

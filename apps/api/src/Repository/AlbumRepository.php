@@ -77,12 +77,19 @@ class AlbumRepository extends ServiceEntityRepository
     /**
      * @return array{items: Album[], total: int}
      */
-    public function findPublicMostViewedPaginated(int $page, int $perPage): array
-    {
+    public function findPublicMostViewedPaginated(
+        int $page,
+        int $perPage,
+        bool $excludeRootAlbums = false,
+    ): array {
         $base = $this->createQueryBuilder('a')
             ->andWhere('a.visibility IN (:visibilities)')
             ->andWhere('a.viewCount > 0')
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted]);
+
+        if ($excludeRootAlbums) {
+            $base->andWhere('a.parent IS NOT NULL');
+        }
 
         $total = (int) (clone $base)
             ->select('COUNT(a.id)')
@@ -555,7 +562,7 @@ class AlbumRepository extends ServiceEntityRepository
      *
      * @param array{
      *   q?: string|null,
-     *   personIds?: list<string>,
+     *   personName?: string|null,
      *   tagSlugs?: list<string>,
      *   year?: int|null,
      *   from?: string|null,
@@ -584,16 +591,18 @@ class AlbumRepository extends ServiceEntityRepository
 
         $this->applyTakenAtFilters($qb, $filters);
 
-        $personIds = $filters['personIds'] ?? [];
+        $personName = isset($filters['personName']) && \is_string($filters['personName']) ? trim($filters['personName']) : '';
         $tagSlugs = $filters['tagSlugs'] ?? [];
-        if ([] !== $personIds || [] !== $tagSlugs) {
+        if ('' !== $personName || [] !== $tagSlugs) {
             $photoExists = 'EXISTS (SELECT 1 FROM App\Entity\Photo p WHERE p.album = a';
-            $i = 0;
-            foreach ($personIds as $personId) {
-                $param = 'person'.$i;
-                $photoExists .= ' AND EXISTS (SELECT 1 FROM App\Entity\Face f'.$i.' WHERE f'.$i.'.photo = p AND f'.$i.'.person = :'.$param.')';
-                $qb->setParameter($param, Uuid::fromString($personId), 'uuid');
-                ++$i;
+            if ('' !== $personName) {
+                $photoExists .= ' AND EXISTS (
+                    SELECT 1 FROM App\Entity\Face f
+                    JOIN f.person person
+                    WHERE f.photo = p
+                    AND LOWER(UNACCENT(COALESCE(person.name, \'\'))) LIKE :personName
+                )';
+                $qb->setParameter('personName', SearchText::likePattern($personName));
             }
             $j = 0;
             foreach ($tagSlugs as $slug) {

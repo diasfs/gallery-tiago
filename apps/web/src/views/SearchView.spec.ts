@@ -11,9 +11,7 @@ vi.mock('../api/client', async () => {
     api: {
       ...actual.api,
       search: vi.fn(),
-      searchPeople: vi.fn(),
       searchTags: vi.fn(),
-      getPerson: vi.fn(),
       getTag: vi.fn(),
     },
   }
@@ -21,16 +19,13 @@ vi.mock('../api/client', async () => {
 
 const mockedApi = api as unknown as {
   search: ReturnType<typeof vi.fn>
-  searchPeople: ReturnType<typeof vi.fn>
   searchTags: ReturnType<typeof vi.fn>
-  getPerson: ReturnType<typeof vi.fn>
   getTag: ReturnType<typeof vi.fn>
 }
 
 describe('SearchView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedApi.searchPeople.mockResolvedValue([])
     mockedApi.searchTags.mockResolvedValue([])
   })
 

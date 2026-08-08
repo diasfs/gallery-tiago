@@ -5,6 +5,7 @@ namespace App\Tests\Api;
 use App\Entity\Album;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
+use App\Repository\ProcessingSettingsRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -40,8 +41,15 @@ final class PublicDiscoverTest extends WebTestCase
             $this->em->remove($photo);
         }
         foreach ($this->em->getRepository(Album::class)->findAll() as $album) {
+            $album->setParent(null);
+            $album->setCoverPhoto(null);
+        }
+        $this->em->flush();
+        foreach ($this->em->getRepository(Album::class)->findAll() as $album) {
             $this->em->remove($album);
         }
+        $settings = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $settings->setMostViewedExcludeRootAlbums(false);
         $this->em->flush();
     }
 
@@ -115,5 +123,26 @@ final class PublicDiscoverTest extends WebTestCase
         $this->assertSame(1, $body['meta']['total']);
         $this->assertSame('popular-trip', $body['data'][0]['slug']);
         $this->assertSame(42, $body['data'][0]['viewCount']);
+    }
+
+    public function testMostViewedAlbumsCanExcludeRootAlbums(): void
+    {
+        $child = new Album('Nested hit', 'nested-hit');
+        $child->setVisibility(AlbumVisibility::Public);
+        $child->setParent($this->popularAlbum);
+        $child->setViewCount(7);
+        $this->em->persist($child);
+        $this->em->flush();
+
+        $settings = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $settings->setMostViewedExcludeRootAlbums(true);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/discover/most-viewed/albums');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame(1, $body['meta']['total']);
+        $this->assertSame('nested-hit', $body['data'][0]['slug']);
     }
 }

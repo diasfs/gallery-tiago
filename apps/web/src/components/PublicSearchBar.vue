@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api } from '../api/client'
-import type { PersonSummary, Tag } from '../api/types'
+import type { Tag } from '../api/types'
 
 export type SearchDateMode = 'year' | 'range'
 
 export interface PublicSearchBarState {
   q: string
-  people: Array<{ id: string; name: string }>
+  person: string
   tags: Array<{ id: string; name: string; slug: string }>
   dateMode: SearchDateMode
   year: string
@@ -32,10 +32,10 @@ const emit = defineEmits<{
 
 const state = ref<PublicSearchBarState>(
   props.modelValue
-    ? { ...props.modelValue, people: [...props.modelValue.people], tags: [...props.modelValue.tags] }
+    ? { ...props.modelValue, tags: [...props.modelValue.tags] }
     : {
         q: '',
-        people: [],
+        person: '',
         tags: [],
         dateMode: 'year',
         year: '',
@@ -50,7 +50,6 @@ watch(
     if (!next) return
     state.value = {
       ...next,
-      people: [...next.people],
       tags: [...next.tags],
     }
   },
@@ -60,32 +59,16 @@ watch(
 function sync() {
   emit('update:modelValue', {
     ...state.value,
-    people: [...state.value.people],
     tags: [...state.value.tags],
   })
 }
 
-const personQuery = ref('')
 const tagQuery = ref('')
-const personSuggestions = ref<PersonSummary[]>([])
 const tagSuggestions = ref<Tag[]>([])
-const showPeople = ref(false)
 const showTags = ref(false)
-let personTimer: ReturnType<typeof setTimeout> | null = null
 let tagTimer: ReturnType<typeof setTimeout> | null = null
 
-const selectedPersonIds = computed(() => new Set(state.value.people.map((p) => p.id)))
 const selectedTagSlugs = computed(() => new Set(state.value.tags.map((t) => t.slug)))
-
-async function loadPeople(q: string) {
-  try {
-    personSuggestions.value = (await api.searchPeople(q || undefined)).filter(
-      (p) => !selectedPersonIds.value.has(p.id),
-    )
-  } catch {
-    personSuggestions.value = []
-  }
-}
 
 async function loadTags(q: string) {
   try {
@@ -97,25 +80,10 @@ async function loadTags(q: string) {
   }
 }
 
-function onPersonInput() {
-  showPeople.value = true
-  if (personTimer) clearTimeout(personTimer)
-  personTimer = setTimeout(() => void loadPeople(personQuery.value.trim()), 200)
-}
-
 function onTagInput() {
   showTags.value = true
   if (tagTimer) clearTimeout(tagTimer)
   tagTimer = setTimeout(() => void loadTags(tagQuery.value.trim()), 200)
-}
-
-function addPerson(person: PersonSummary) {
-  if (!person.name || selectedPersonIds.value.has(person.id)) return
-  state.value.people.push({ id: person.id, name: person.name })
-  personQuery.value = ''
-  personSuggestions.value = []
-  showPeople.value = false
-  sync()
 }
 
 function addTag(tag: Tag) {
@@ -124,11 +92,6 @@ function addTag(tag: Tag) {
   tagQuery.value = ''
   tagSuggestions.value = []
   showTags.value = false
-  sync()
-}
-
-function removePerson(id: string) {
-  state.value.people = state.value.people.filter((p) => p.id !== id)
   sync()
 }
 
@@ -159,21 +122,18 @@ function submit() {
   sync()
   emit('submit', {
     ...state.value,
-    people: [...state.value.people],
     tags: [...state.value.tags],
   })
 }
 
 function onDocClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
-  if (!target?.closest('[data-search-people]')) showPeople.value = false
   if (!target?.closest('[data-search-tags]')) showTags.value = false
 }
 
 onMounted(() => document.addEventListener('click', onDocClick))
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
-  if (personTimer) clearTimeout(personTimer)
   if (tagTimer) clearTimeout(tagTimer)
 })
 </script>
@@ -193,22 +153,14 @@ onUnmounted(() => {
     </div>
 
     <div class="search-bar__filters">
-      <div class="search-bar__suggest" data-search-people>
-        <input
-          v-model="personQuery"
-          type="text"
-          class="search-bar__filter-input"
-          placeholder="Adicionar pessoa…"
-          data-testid="search-person-input"
-          @focus="showPeople = true; void loadPeople(personQuery.trim())"
-          @input="onPersonInput"
-        />
-        <ul v-if="showPeople && personSuggestions.length" class="search-bar__dropdown" data-testid="search-person-suggest">
-          <li v-for="person in personSuggestions" :key="person.id">
-            <button type="button" @click="addPerson(person)">{{ person.name }}</button>
-          </li>
-        </ul>
-      </div>
+      <input
+        v-model="state.person"
+        type="text"
+        class="search-bar__filter-input search-bar__person"
+        placeholder="Pessoa…"
+        data-testid="search-person-input"
+        @input="sync"
+      />
 
       <div class="search-bar__suggest" data-search-tags>
         <input
@@ -298,17 +250,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="state.people.length || state.tags.length" class="search-bar__pills" data-testid="search-pills">
-      <button
-        v-for="person in state.people"
-        :key="person.id"
-        type="button"
-        class="search-bar__pill"
-        data-testid="search-person-pill"
-        @click="removePerson(person.id)"
-      >
-        {{ person.name }} ×
-      </button>
+    <div v-if="state.tags.length" class="search-bar__pills" data-testid="search-pills">
       <button
         v-for="tag in state.tags"
         :key="tag.slug"
@@ -370,6 +312,11 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: flex-start;
+}
+
+.search-bar__person {
+  min-width: 10rem;
+  flex: 1 1 10rem;
 }
 
 .search-bar__suggest {

@@ -5,6 +5,7 @@ namespace App\Controller\Api\Public;
 use App\Entity\Album;
 use App\Http\Pagination;
 use App\Repository\AlbumRepository;
+use App\Service\ProcessingSettingsReader;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -19,6 +20,7 @@ class DiscoverController
 
     public function __construct(
         private readonly AlbumRepository $albums,
+        private readonly ProcessingSettingsReader $settings,
     ) {
     }
 
@@ -46,7 +48,11 @@ class DiscoverController
     {
         $page = Pagination::page($request);
         $perPage = Pagination::perPage($request, self::DEFAULT_PER_PAGE);
-        $result = $this->albums->findPublicMostViewedPaginated($page, $perPage);
+        $result = $this->albums->findPublicMostViewedPaginated(
+            $page,
+            $perPage,
+            excludeRootAlbums: $this->settings->isMostViewedExcludeRootAlbums(),
+        );
 
         return new JsonResponse([
             'data' => array_map($this->normalizeAlbum(...), $result['items']),

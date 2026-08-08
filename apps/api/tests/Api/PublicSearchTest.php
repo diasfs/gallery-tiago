@@ -249,7 +249,7 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByPersonAndTag(): void
     {
-        $this->client->request('GET', '/api/search?person='.$this->namedPerson->getId().'&tag=beach');
+        $this->client->request('GET', '/api/search?person=Fábio&tag=beach');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);

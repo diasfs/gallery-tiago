@@ -391,7 +391,7 @@ class PhotoRepository extends ServiceEntityRepository
     /**
      * @param array{
      *   q?: string|null,
-     *   personIds?: list<string>,
+     *   personName?: string|null,
      *   tagSlugs?: list<string>,
      *   year?: int|null,
      *   from?: string|null,
@@ -440,12 +440,16 @@ class PhotoRepository extends ServiceEntityRepository
             }
         }
 
-        $i = 0;
-        foreach ($filters['personIds'] ?? [] as $personId) {
-            $param = 'person'.$i;
-            $qb->andWhere('EXISTS (SELECT 1 FROM App\Entity\Face f'.$i.' WHERE f'.$i.'.photo = p AND f'.$i.'.person = :'.$param.')')
-                ->setParameter($param, Uuid::fromString($personId), 'uuid');
-            ++$i;
+        $personName = isset($filters['personName']) && \is_string($filters['personName']) ? trim($filters['personName']) : '';
+        if ('' !== $personName) {
+            $qb->andWhere(
+                'EXISTS (
+                    SELECT 1 FROM App\Entity\Face f
+                    JOIN f.person person
+                    WHERE f.photo = p
+                    AND LOWER(UNACCENT(COALESCE(person.name, \'\'))) LIKE :personName
+                )'
+            )->setParameter('personName', SearchText::likePattern($personName));
         }
 
         $j = 0;

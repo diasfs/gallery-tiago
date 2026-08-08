@@ -14,7 +14,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Routing\Attribute\Route;
-use Symfony\Component\Uid\Uuid;
 
 #[AsController]
 #[Route('/api/search')]
@@ -67,7 +66,7 @@ class SearchController
     /**
      * @return array{
      *   q: string|null,
-     *   personIds: list<string>,
+     *   personName: string|null,
      *   tagSlugs: list<string>,
      *   year: int|null,
      *   from: string|null,
@@ -82,20 +81,10 @@ class SearchController
             $q = null;
         }
 
-        $personIds = [];
-        $rawPeople = $request->query->all()['person'] ?? [];
-        if (\is_string($rawPeople)) {
-            $rawPeople = [$rawPeople];
-        }
-        foreach ($rawPeople as $raw) {
-            if (!\is_string($raw) || '' === $raw) {
-                continue;
-            }
-            try {
-                $personIds[] = (string) Uuid::fromString($raw);
-            } catch (\InvalidArgumentException) {
-                continue;
-            }
+        $personName = $request->query->get('person');
+        $personName = \is_string($personName) ? trim($personName) : null;
+        if ('' === $personName) {
+            $personName = null;
         }
 
         $tagSlugs = [];
@@ -130,7 +119,7 @@ class SearchController
 
         return [
             'q' => $q,
-            'personIds' => array_values(array_unique($personIds)),
+            'personName' => $personName,
             'tagSlugs' => array_values(array_unique($tagSlugs)),
             'year' => $year,
             'from' => $from,
@@ -138,11 +127,11 @@ class SearchController
         ];
     }
 
-    /** @param array{q: string|null, personIds: list<string>, tagSlugs: list<string>, year: int|null, from: string|null, to: string|null} $filters */
+    /** @param array{q: string|null, personName: string|null, tagSlugs: list<string>, year: int|null, from: string|null, to: string|null} $filters */
     private function hasCriteria(array $filters): bool
     {
         return null !== $filters['q']
-            || [] !== $filters['personIds']
+            || null !== $filters['personName']
             || [] !== $filters['tagSlugs']
             || null !== $filters['year']
             || null !== $filters['from']

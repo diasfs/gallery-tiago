@@ -41,4 +41,14 @@ final class ProcessingSettingsReader
     {
         return $this->get()->getAlbumPhotoLayout();
     }
+
+    public function isMostViewedHomeEnabled(): bool
+    {
+        return $this->get()->isMostViewedHomeEnabled();
+    }
+
+    public function isMostViewedExcludeRootAlbums(): bool
+    {
+        return $this->get()->isMostViewedExcludeRootAlbums();
+    }
 }

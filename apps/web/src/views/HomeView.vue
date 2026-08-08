@@ -5,9 +5,11 @@ import { api } from '../api/client'
 import type { AlbumSummary } from '../api/types'
 import AlbumGrid from '../components/AlbumGrid.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import { useSiteConfig } from '../composables/useSiteConfig'
 
 const route = useRoute()
 const router = useRouter()
+const { mostViewedHomeEnabled, loading: siteConfigLoading } = useSiteConfig()
 
 const albums = ref<AlbumSummary[]>([])
 const total = ref(0)
@@ -73,12 +75,13 @@ watch(
 
 async function loadDiscoverTeasers() {
   memoryLoading.value = true
-  popularLoading.value = true
+  popularLoading.value = mostViewedHomeEnabled.value
   try {
-    const [memories, popular] = await Promise.all([
-      api.listOnThisDayAlbums({ perPage: 6 }),
-      api.listMostViewedAlbums({ perPage: 6 }),
-    ])
+    const memoriesPromise = api.listOnThisDayAlbums({ perPage: 6 })
+    const popularPromise = mostViewedHomeEnabled.value
+      ? api.listMostViewedAlbums({ perPage: 6 })
+      : Promise.resolve({ data: [] as AlbumSummary[] })
+    const [memories, popular] = await Promise.all([memoriesPromise, popularPromise])
     memoryAlbums.value = memories.data
     popularAlbums.value = popular.data
   } catch {
@@ -90,9 +93,18 @@ async function loadDiscoverTeasers() {
   }
 }
 
+watch(
+  siteConfigLoading,
+  (loadingConfig) => {
+    if (!loadingConfig) {
+      void loadDiscoverTeasers()
+    }
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   void loadRecent()
-  void loadDiscoverTeasers()
 })
 </script>
 
@@ -133,7 +145,7 @@ onMounted(() => {
   </section>
 
   <section
-    v-if="popularLoading || popularAlbums.length > 0"
+    v-if="mostViewedHomeEnabled && (popularLoading || popularAlbums.length > 0)"
     class="discover"
     data-testid="popular-teaser"
   >

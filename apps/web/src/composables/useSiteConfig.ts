@@ -4,6 +4,8 @@ import type { SiteConfig } from '../api/types'
 
 const DEFAULT_CONFIG: SiteConfig = {
   albumPhotoLayout: 'grid',
+  mostViewedHomeEnabled: true,
+  mostViewedExcludeRootAlbums: false,
 }
 
 let cachedConfig: SiteConfig | null = null
@@ -36,11 +38,13 @@ export function useSiteConfig() {
   }
 
   const albumPhotoLayout = computed(() => config.value.albumPhotoLayout)
+  const mostViewedHomeEnabled = computed(() => config.value.mostViewedHomeEnabled)
 
   return {
     config,
     loading,
     albumPhotoLayout,
+    mostViewedHomeEnabled,
   }
 }
 

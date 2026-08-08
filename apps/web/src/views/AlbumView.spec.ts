@@ -85,7 +85,11 @@ async function mountView(
   query: Record<string, string> = {},
 ) {
   mockedApi.getAlbum.mockResolvedValue(album)
-  mockedApi.getSiteConfig.mockResolvedValue({ albumPhotoLayout: 'masonry_vertical' })
+  mockedApi.getSiteConfig.mockResolvedValue({
+    albumPhotoLayout: 'masonry_vertical',
+    mostViewedHomeEnabled: true,
+    mostViewedExcludeRootAlbums: false,
+  })
   mockedApi.recordAlbumView.mockResolvedValue({ viewCount: album.viewCount + 1 })
   mockedApi.listAlbumChildren.mockResolvedValue({
     data: children,

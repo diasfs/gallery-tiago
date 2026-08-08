@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveSearchPillLabels, searchStateFromQuery } from './publicSearch'
+import { resolveSearchPillLabels, searchParamsFromState, searchStateFromQuery } from './publicSearch'
 import { api } from '../api/client'
 
 vi.mock('../api/client', async () => {
@@ -8,33 +8,41 @@ vi.mock('../api/client', async () => {
     ...actual,
     api: {
       ...actual.api,
-      getPerson: vi.fn(),
       getTag: vi.fn(),
     },
   }
 })
 
 const mockedApi = api as unknown as {
-  getPerson: ReturnType<typeof vi.fn>
   getTag: ReturnType<typeof vi.fn>
 }
 
-describe('resolveSearchPillLabels', () => {
+describe('publicSearch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('replaces person ids and tag slugs with display names', async () => {
-    mockedApi.getPerson.mockResolvedValue({ id: 'p1', name: 'Tiago Meuser' })
+  it('reads person as a free-text name from the query', () => {
+    const state = searchStateFromQuery({
+      person: 'Fábio',
+      tag: 'swim',
+    })
+
+    expect(state.person).toBe('Fábio')
+    expect(searchParamsFromState(state).person).toBe('Fábio')
+  })
+
+  it('resolves tag slugs with display names', async () => {
     mockedApi.getTag.mockResolvedValue({ tag: { id: 't1', name: 'Swim', slug: 'swim' } })
 
     const state = searchStateFromQuery({
-      person: 'p1',
+      person: 'Tiago',
       tag: 'swim',
     })
     const resolved = await resolveSearchPillLabels(state)
 
-    expect(resolved.people[0]).toEqual({ id: 'p1', name: 'Tiago Meuser' })
+    expect(resolved.person).toBe('Tiago')
     expect(resolved.tags[0]).toEqual({ id: 't1', name: 'Swim', slug: 'swim' })
+    expect(mockedApi.getTag).toHaveBeenCalledWith('swim')
   })
 })

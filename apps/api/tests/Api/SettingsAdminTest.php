@@ -52,6 +52,8 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertTrue($data['tagsEnabled']);
         $this->assertSame('ram_plus', $data['tagDetector']);
         $this->assertSame('grid', $data['albumPhotoLayout']);
+        $this->assertTrue($data['mostViewedHomeEnabled']);
+        $this->assertFalse($data['mostViewedExcludeRootAlbums']);
     }
 
     public function testUpdatePersistsSettings(): void
@@ -116,6 +118,24 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertResponseStatusCodeSame(400);
     }
 
+    public function testUpdatePersistsMostViewedFlags(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'mostViewedHomeEnabled' => false,
+            'mostViewedExcludeRootAlbums' => true,
+        ]);
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertFalse($data['mostViewedHomeEnabled']);
+        $this->assertTrue($data['mostViewedExcludeRootAlbums']);
+
+        $row = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $this->assertFalse($row->isMostViewedHomeEnabled());
+        $this->assertTrue($row->isMostViewedExcludeRootAlbums());
+    }
+
     private function loginAsAdmin(): void
     {
         $this->client->jsonRequest('POST', '/api/admin/login', [
@@ -150,6 +170,8 @@ final class SettingsAdminTest extends WebTestCase
             $row->setTagsEnabled(true);
             $row->setTagDetector(TagDetector::RamPlus);
             $row->setAlbumPhotoLayout(AlbumPhotoLayout::Grid);
+            $row->setMostViewedHomeEnabled(true);
+            $row->setMostViewedExcludeRootAlbums(false);
         }
         $this->em->flush();
     }
