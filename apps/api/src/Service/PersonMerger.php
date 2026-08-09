@@ -25,6 +25,10 @@ final class PersonMerger
             throw new BadRequestHttpException('Cannot merge a person into itself.');
         }
 
+        if ($source->isDeleted() || $target->isDeleted()) {
+            throw new BadRequestHttpException('Cannot merge trashed people.');
+        }
+
         foreach ($source->getFaces() as $face) {
             $face->setPerson($target);
         }

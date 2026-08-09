@@ -5,7 +5,9 @@ namespace App\Repository;
 use App\Entity\Person;
 use App\Service\SearchText;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<Person>
@@ -22,13 +24,14 @@ class PersonRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('p')
             ->andWhere('p.isNamed = false')
+            ->andWhere('p.deletedAt IS NULL')
             ->orderBy('p.id', 'ASC')
             ->getQuery()
             ->getResult();
     }
 
     /**
-     * @param 'all'|'named'|'unnamed' $scope
+     * @param 'all'|'named'|'unnamed'|'trashed' $scope
      *
      * @return Person[]
      */
@@ -38,7 +41,7 @@ class PersonRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param 'all'|'named'|'unnamed' $scope
+     * @param 'all'|'named'|'unnamed'|'trashed' $scope
      *
      * @return array{items: Person[], total: int}
      */
@@ -49,12 +52,7 @@ class PersonRepository extends ServiceEntityRepository
         int $perPage,
     ): array {
         $base = $this->createQueryBuilder('p');
-
-        if ('named' === $scope) {
-            $base->andWhere('p.isNamed = true');
-        } elseif ('unnamed' === $scope) {
-            $base->andWhere('p.isNamed = false');
-        }
+        $this->applyScope($base, $scope);
 
         if (null !== $query && '' !== trim($query)) {
             $base->andWhere('LOWER(UNACCENT(p.name)) LIKE :query')
@@ -70,7 +68,10 @@ class PersonRepository extends ServiceEntityRepository
             ->leftJoin('p.avatarFace', 'af')
             ->addSelect('af');
 
-        if ('named' === $scope) {
+        if ('trashed' === $scope) {
+            $itemsQuery->orderBy('p.deletedAt', 'DESC')
+                ->addOrderBy('p.id', 'ASC');
+        } elseif ('named' === $scope) {
             $itemsQuery->orderBy('p.name', 'ASC')
                 ->addOrderBy('p.id', 'ASC');
         } elseif ('unnamed' === $scope) {
@@ -130,7 +131,7 @@ class PersonRepository extends ServiceEntityRepository
     }
 
     /**
-     * Exact name match among named people (case-insensitive).
+     * Exact name match among active named people (case-insensitive).
      */
     public function findOneNamedByName(string $name): ?Person
     {
@@ -141,6 +142,7 @@ class PersonRepository extends ServiceEntityRepository
 
         return $this->createQueryBuilder('p')
             ->andWhere('p.isNamed = true')
+            ->andWhere('p.deletedAt IS NULL')
             ->andWhere('LOWER(p.name) = :name')
             ->setParameter('name', mb_strtolower($trimmed))
             ->setMaxResults(1)
@@ -157,6 +159,7 @@ class PersonRepository extends ServiceEntityRepository
     {
         $qb = $this->createQueryBuilder('person')
             ->andWhere('person.isNamed = true')
+            ->andWhere('person.deletedAt IS NULL')
             ->andWhere(
                 'EXISTS (
                     SELECT 1 FROM App\Entity\Face f
@@ -175,5 +178,40 @@ class PersonRepository extends ServiceEntityRepository
         }
 
         return $qb->getQuery()->getResult();
+    }
+
+    public function findIncludingTrashed(string $id): ?Person
+    {
+        return $this->find($id);
+    }
+
+    public function findActive(Uuid|string $id): ?Person
+    {
+        return $this->createQueryBuilder('p')
+            ->andWhere('p.id = :id')
+            ->andWhere('p.deletedAt IS NULL')
+            ->setParameter('id', $id, 'uuid')
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * @param 'all'|'named'|'unnamed'|'trashed' $scope
+     */
+    private function applyScope(QueryBuilder $qb, string $scope): void
+    {
+        if ('trashed' === $scope) {
+            $qb->andWhere('p.deletedAt IS NOT NULL');
+
+            return;
+        }
+
+        $qb->andWhere('p.deletedAt IS NULL');
+
+        if ('named' === $scope) {
+            $qb->andWhere('p.isNamed = true');
+        } elseif ('unnamed' === $scope) {
+            $qb->andWhere('p.isNamed = false');
+        }
     }
 }

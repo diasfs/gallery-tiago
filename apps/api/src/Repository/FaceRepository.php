@@ -44,6 +44,16 @@ class FaceRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /** @return Face[] */
+    public function findWithCropPathPrefix(string $prefix): array
+    {
+        return $this->createQueryBuilder('f')
+            ->andWhere('f.cropPath LIKE :prefix')
+            ->setParameter('prefix', $prefix.'%')
+            ->getQuery()
+            ->getResult();
+    }
+
     /**
      * @return list<string> visible photo ids, closest first
      */
@@ -111,6 +121,7 @@ class FaceRepository extends ServiceEntityRepository
                 ) nearest
                 INNER JOIN person ON person.id = nearest.person_id
                 LEFT JOIN face avatar_face ON avatar_face.id = person.avatar_face_id
+                WHERE person.deleted_at IS NULL
                 ORDER BY nearest.dist ASC
                 LIMIT {$limit}
             SQL,
@@ -137,6 +148,7 @@ class FaceRepository extends ServiceEntityRepository
                 FROM person p
                 INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true
                 WHERE p.is_named = false
+                  AND p.deleted_at IS NULL
             SQL,
         );
     }
@@ -179,7 +191,7 @@ class FaceRepository extends ServiceEntityRepository
                 WITH ranked_clusters AS (
                     SELECT f.person_id, COUNT(*)::int AS face_count
                     FROM face f
-                    INNER JOIN person p ON p.id = f.person_id AND p.is_named = false
+                    INNER JOIN person p ON p.id = f.person_id AND p.is_named = false AND p.deleted_at IS NULL
                     WHERE f.has_embedding = true
                     GROUP BY f.person_id
                     ORDER BY face_count DESC, f.person_id

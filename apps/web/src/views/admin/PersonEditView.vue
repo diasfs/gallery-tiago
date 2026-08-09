@@ -258,7 +258,7 @@ async function deletePerson() {
           :disabled="saving"
           @click="deleteOpen = true"
         >
-          Excluir pessoa
+          Mover para lixeira
         </Button>
       </div>
 
@@ -450,9 +450,10 @@ async function deletePerson() {
     <Dialog :open="deleteOpen" @update:open="(open) => { if (!open && !saving) deleteOpen = false }">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Excluir esta pessoa?</DialogTitle>
+          <DialogTitle>Mover para a lixeira?</DialogTitle>
           <DialogDescription>
-            Excluir {{ title }} e {{ person?.faceCount ?? 0 }} rosto(s)? Esta ação não pode ser desfeita.
+            {{ title }} e {{ person?.faceCount ?? 0 }} rosto(s) vão para a lixeira. Você pode restaurar depois
+            em Pessoas → Lixeira.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter class="gap-2 sm:gap-2">
@@ -467,7 +468,7 @@ async function deletePerson() {
             data-testid="delete-confirm"
             @click="deletePerson"
           >
-            Excluir pessoa
+            Mover para lixeira
           </Button>
         </DialogFooter>
       </DialogContent>

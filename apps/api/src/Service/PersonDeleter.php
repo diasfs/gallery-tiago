@@ -6,7 +6,7 @@ use App\Entity\Person;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
- * Deletes a Person, its Face rows, and any on-disk face crop files.
+ * Soft-discards people into trash or permanently purges them with faces/crops.
  */
 final class PersonDeleter
 {
@@ -16,7 +16,27 @@ final class PersonDeleter
     ) {
     }
 
-    public function delete(Person $person): void
+    public function discard(Person $person): void
+    {
+        if ($person->isDeleted()) {
+            return;
+        }
+
+        $person->setDeletedAt(new \DateTimeImmutable());
+        $this->em->flush();
+    }
+
+    public function restore(Person $person): void
+    {
+        if (!$person->isDeleted()) {
+            return;
+        }
+
+        $person->setDeletedAt(null);
+        $this->em->flush();
+    }
+
+    public function purge(Person $person): void
     {
         $this->storage->deleteRelative($person->getAvatarPath());
         $person->setAvatarPath(null);

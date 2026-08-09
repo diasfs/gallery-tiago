@@ -113,6 +113,14 @@ def photo_id_from_fields(fields: dict) -> Optional[str]:
     return str(value)
 
 
+def scan_job_from_fields(fields: dict) -> Optional[tuple[str, str]]:
+    scan_id = fields.get("scan_id")
+    photo_id = fields.get("photo_id")
+    if not scan_id or not photo_id:
+        return None
+    return str(scan_id), str(photo_id)
+
+
 def consume_once(
     redis_client: Any,
     stream: str,

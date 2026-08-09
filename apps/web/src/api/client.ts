@@ -10,6 +10,9 @@ import type {
   AlbumDetail,
   AlbumSummary,
   Face,
+  FaceGalleryScan,
+  FaceGalleryScanDetail,
+  FaceGalleryScanMatch,
   FaceSearchMatch,
   GeocodeSuggestion,
   Location,
@@ -474,6 +477,37 @@ export const adminApi = {
       isForm: true,
     })
   },
+  createFaceScan: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return adminRequest<FaceGalleryScan>('/api/admin/people/face-scans', {
+      method: 'POST',
+      body: form,
+      isForm: true,
+    })
+  },
+  listFaceScans: (params: { page?: number; perPage?: number } = {}) =>
+    adminRequestRaw<Paginated<FaceGalleryScan>>(
+      `/api/admin/people/face-scans${queryString({ page: params.page, perPage: params.perPage })}`,
+    ),
+  getFaceScan: (id: string) =>
+    adminRequest<FaceGalleryScanDetail>(`/api/admin/people/face-scans/${encodeURIComponent(id)}`),
+  cancelFaceScan: (id: string) =>
+    adminRequest<FaceGalleryScan>(`/api/admin/people/face-scans/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+    }),
+  deleteFaceScan: (id: string) =>
+    adminRequest<void>(`/api/admin/people/face-scans/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  patchFaceScanMatch: (scanId: string, matchId: string, selected: boolean) =>
+    adminRequest<FaceGalleryScanMatch>(
+      `/api/admin/people/face-scans/${encodeURIComponent(scanId)}/matches/${encodeURIComponent(matchId)}`,
+      { method: 'PATCH', body: { selected } },
+    ),
+  confirmFaceScan: (scanId: string, name: string) =>
+    adminRequest<{ personId: string }>(
+      `/api/admin/people/face-scans/${encodeURIComponent(scanId)}/confirm`,
+      { method: 'POST', body: { name } },
+    ),
   listPeople: (
     params: {
       scope?: PeopleScope
@@ -517,6 +551,10 @@ export const adminApi = {
       body: { targetPersonId },
     }),
   discardPerson: (id: string) => adminRequest<void>(`/api/admin/people/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  restorePerson: (id: string) =>
+    adminRequest<AdminPerson>(`/api/admin/people/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
+  purgePerson: (id: string) =>
+    adminRequest<void>(`/api/admin/people/${encodeURIComponent(id)}/purge`, { method: 'DELETE' }),
 
   searchLocations: (q?: string) =>
     adminRequest<Location[]>(`/api/admin/locations${q ? `?q=${encodeURIComponent(q)}` : ''}`),

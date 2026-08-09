@@ -308,3 +308,109 @@ def get_processing_settings(conn: psycopg.Connection) -> dict:
             "tags_enabled": bool(row[1]),
             "tag_detector": row[2] or "ram_plus",
         }
+
+
+def get_face_scan(conn: psycopg.Connection, scan_id: str) -> Optional[dict]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT status, reference_embedding::text, threshold, total_photos, enqueued_photos, processed_photos
+            FROM face_gallery_scan
+            WHERE id = %s
+            """,
+            (scan_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        embedding_text = row[1]
+        assert embedding_text is not None
+        embedding = [float(v) for v in embedding_text.strip("[]").split(",")]
+        return {
+            "status": row[0],
+            "reference_embedding": embedding,
+            "threshold": float(row[2]),
+            "total_photos": int(row[3]),
+            "enqueued_photos": int(row[4]),
+            "processed_photos": int(row[5]),
+        }
+
+
+def upsert_face_scan_match(
+    conn: psycopg.Connection,
+    scan_id: str,
+    photo_id: str,
+    distance: float,
+    bbox: tuple[float, float, float, float],
+    embedding: Sequence[float],
+    crop_path: Optional[str],
+) -> bool:
+    """Insert or improve a scan match. Returns True when this photo newly matched."""
+    x, y, width, height = bbox
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO face_gallery_scan_match (
+                id, scan_id, photo_id, distance, x, y, width, height, embedding, crop_path, selected
+            )
+            VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s::vector, %s, true)
+            ON CONFLICT (scan_id, photo_id) DO UPDATE SET
+                distance = EXCLUDED.distance,
+                x = EXCLUDED.x,
+                y = EXCLUDED.y,
+                width = EXCLUDED.width,
+                height = EXCLUDED.height,
+                embedding = EXCLUDED.embedding,
+                crop_path = EXCLUDED.crop_path
+            WHERE face_gallery_scan_match.distance > EXCLUDED.distance
+            RETURNING (xmax = 0) AS inserted
+            """,
+            (
+                scan_id,
+                photo_id,
+                distance,
+                x,
+                y,
+                width,
+                height,
+                _vector_literal(embedding),
+                crop_path,
+            ),
+        )
+        row = cur.fetchone()
+        return bool(row[0]) if row is not None else False
+
+
+def increment_face_scan_processed(conn: psycopg.Connection, scan_id: str, *, matched: bool) -> None:
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE face_gallery_scan
+                SET processed_photos = processed_photos + 1,
+                    matched_photos = matched_photos + %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING processed_photos, enqueued_photos, total_photos, status
+                """,
+                (1 if matched else 0, scan_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return
+            processed, enqueued, total, status = row
+            if status in ("done", "failed", "cancelled"):
+                return
+            if processed >= total and enqueued >= total:
+                cur.execute(
+                    "UPDATE face_gallery_scan SET status = 'done', updated_at = NOW() WHERE id = %s",
+                    (scan_id,),
+                )
+
+
+def mark_face_scan_failed(conn: psycopg.Connection, scan_id: str, error: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE face_gallery_scan SET status = 'failed', error = %s, updated_at = NOW() WHERE id = %s",
+            (error[:2000], scan_id),
+        )

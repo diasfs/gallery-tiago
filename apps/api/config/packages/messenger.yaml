@@ -32,6 +32,7 @@ framework:
 
             App\Message\ConvertMediaMessage: convert
             App\Message\DetectFacesMessage: faces
+            App\Message\ScanFaceMessage: faces
             App\Message\SuggestTagsMessage: tags
 
 when@test:

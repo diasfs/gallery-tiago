@@ -50,6 +50,65 @@ final class MediaStorage
         return $relativePath;
     }
 
+    public function storeFaceScanReference(UploadedFile $file, string $scanId): string
+    {
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'bin');
+        $relativePath = \sprintf('face-scans/%s/%s/reference.%s', substr($scanId, 0, 2), $scanId, $extension);
+
+        $absoluteDir = \dirname($this->absolutePath($relativePath));
+        $this->ensureDirectory($absoluteDir);
+        $file->move($absoluteDir, basename($relativePath));
+
+        return $relativePath;
+    }
+
+    public function faceScanDirectoryRelative(string $scanId): string
+    {
+        return \sprintf('face-scans/%s/%s', substr($scanId, 0, 2), $scanId);
+    }
+
+    public function deleteFaceScanDirectory(string $scanId): void
+    {
+        $absoluteDir = $this->absolutePath($this->faceScanDirectoryRelative($scanId));
+        if (!is_dir($absoluteDir)) {
+            return;
+        }
+
+        foreach (glob($absoluteDir.'/*') ?: [] as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+        @rmdir($absoluteDir);
+    }
+
+    public function faceCropPath(string $faceId): string
+    {
+        return \sprintf('faces/%s/%s.jpg', substr($faceId, 0, 2), $faceId);
+    }
+
+    public function copyFaceCrop(?string $sourceRelative, string $faceId): ?string
+    {
+        if (null === $sourceRelative || '' === $sourceRelative) {
+            return null;
+        }
+
+        $source = $this->absolutePath($sourceRelative);
+        if (!is_file($source)) {
+            return null;
+        }
+
+        $destRelative = $this->faceCropPath($faceId);
+        $dest = $this->absolutePath($destRelative);
+        $this->ensureDirectory(\dirname($dest));
+
+        if (!copy($source, $dest)) {
+            throw new \RuntimeException(\sprintf('Unable to copy "%s" to "%s".', $source, $dest));
+        }
+
+        return $destRelative;
+    }
+
     /**
      * Copies an existing file into the originals tree (e.g. v3 import) and
      * returns its path relative to MEDIA_ROOT.

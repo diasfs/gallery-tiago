@@ -82,7 +82,7 @@ class PersonController
             throw new NotFoundHttpException('Person not found.');
         }
 
-        $person = $this->people->find($uuid);
+        $person = $this->people->findActive($uuid);
         if (null === $person) {
             throw new NotFoundHttpException('Person not found.');
         }

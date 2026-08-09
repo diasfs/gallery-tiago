@@ -63,6 +63,10 @@ export default defineConfig(({ mode }) => {
           target: apiProxyTarget,
           changeOrigin: true,
         }),
+        '/face-scans': withPublicHostHeaders({
+          target: apiProxyTarget,
+          changeOrigin: true,
+        }),
         '/originals': withPublicHostHeaders({
           target: apiProxyTarget,
           changeOrigin: true,

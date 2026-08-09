@@ -347,6 +347,34 @@ class PhotoRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function countWithAvif(): int
+    {
+        return (int) $this->createQueryBuilder('p')
+            ->select('COUNT(p.id)')
+            ->andWhere('p.avifPath IS NOT NULL')
+            ->andWhere("p.avifPath <> ''")
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /**
+     * @return string[]
+     */
+    public function findIdsWithAvif(int $offset, int $limit): array
+    {
+        $rows = $this->createQueryBuilder('p')
+            ->select('p.id')
+            ->andWhere('p.avifPath IS NOT NULL')
+            ->andWhere("p.avifPath <> ''")
+            ->orderBy('p.createdAt', 'ASC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getScalarResult();
+
+        return array_map(static fn (array $row): string => (string) $row['id'], $rows);
+    }
+
     /**
      * Photos waiting for a faces/tags worker claim, oldest first.
      *

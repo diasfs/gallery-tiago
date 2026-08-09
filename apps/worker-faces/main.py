@@ -24,6 +24,7 @@ from pathlib import Path
 import redis
 
 import db
+import scan as face_scan
 import stream_queue
 from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person
 from rasterize import materialize_jpeg
@@ -32,7 +33,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("worker-faces")
 
 STREAM_KEY = "gallery:faces:stream"
+SCAN_STREAM_KEY = "gallery:face-scan:stream"
 GROUP_NAME = "faces-workers"
+SCAN_GROUP_NAME = "face-scan-workers"
 TERMINAL_STATUSES = frozenset({"done", "failed", "disabled"})
 
 
@@ -176,6 +179,33 @@ def handle_photo(conn, cfg: Config, photo_id: str) -> bool:
             return False
 
 
+def handle_scan_message(conn, cfg: Config, fields: dict) -> bool:
+    job = stream_queue.scan_job_from_fields(fields)
+    if job is None:
+        return True
+    scan_id, photo_id = job
+    return face_scan.handle_scan_job(conn, cfg, scan_id, photo_id)
+
+
+def consume_scan_once(r, conn, cfg: Config) -> bool:
+    batch = stream_queue.claim_stale(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, cfg.consumer_name, min_idle_ms=cfg.min_idle_ms)
+    if not batch:
+        batch = stream_queue.read_new(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, cfg.consumer_name, block_ms=0)
+    if not batch:
+        return False
+
+    msg_id, fields = batch[0]
+    try:
+        ok = handle_scan_message(conn, cfg, fields)
+    except Exception:
+        log.exception("scan handler crashed for message %s; leaving unacked", msg_id)
+        return True
+
+    if ok:
+        stream_queue.ack(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, msg_id)
+    return True
+
+
 def main() -> None:
     cfg = Config()
     embed_port = os.environ.get("FACES_EMBED_PORT")
@@ -187,14 +217,19 @@ def main() -> None:
     r = redis.Redis.from_url(cfg.redis_url)
 
     stream_queue.ensure_consumer_group(r, STREAM_KEY, GROUP_NAME)
+    stream_queue.ensure_consumer_group(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME)
     log.info(
-        "worker-faces started; stream=%s group=%s consumer=%s",
+        "worker-faces started; stream=%s group=%s consumer=%s; scan_stream=%s",
         STREAM_KEY,
         GROUP_NAME,
         cfg.consumer_name,
+        SCAN_STREAM_KEY,
     )
 
     while True:
+        scan_consumed = consume_scan_once(r, conn, cfg)
+        if scan_consumed:
+            continue
         stream_queue.consume_once(
             r,
             STREAM_KEY,
@@ -202,6 +237,7 @@ def main() -> None:
             cfg.consumer_name,
             lambda photo_id: handle_photo(conn, cfg, photo_id),
             min_idle_ms=cfg.min_idle_ms,
+            block_ms=1000,
         )
 
 

@@ -317,6 +317,7 @@ export interface AdminPerson {
   faceCount: number
   avatarFaceId: string | null
   avatarCropPath: string | null
+  deletedAt?: string | null
 }
 
 export interface AdminPersonDetail extends AdminPerson {
@@ -324,7 +325,7 @@ export interface AdminPersonDetail extends AdminPerson {
   hasCustomAvatar?: boolean
 }
 
-export type PeopleScope = 'all' | 'named' | 'unnamed'
+export type PeopleScope = 'all' | 'named' | 'unnamed' | 'trashed'
 
 export interface MergeSuggestion {
   sourcePersonId: string
@@ -354,4 +355,34 @@ export interface FaceSearchMatch {
   distance: number
   name: string | null
   avatarCropPath: string | null
+}
+
+export type FaceGalleryScanStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+export interface FaceGalleryScan {
+  id: string
+  status: FaceGalleryScanStatus
+  referenceCropPath: string | null
+  threshold: number
+  totalPhotos: number
+  enqueuedPhotos: number
+  processedPhotos: number
+  matchedPhotos: number
+  error: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FaceGalleryScanMatch {
+  id: string
+  photoId: string
+  photoFilename: string
+  photoTitle: string | null
+  distance: number
+  cropPath: string | null
+  selected: boolean
+}
+
+export interface FaceGalleryScanDetail extends FaceGalleryScan {
+  matches: FaceGalleryScanMatch[]
 }

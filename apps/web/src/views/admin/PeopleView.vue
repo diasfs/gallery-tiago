@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table'
 import { adminApi, ApiError, mediaUrl } from '../../api/client'
 import type { AdminPerson, FaceSearchMatch, MergeSuggestion, PeopleScope } from '../../api/types'
+import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
 
 const route = useRoute()
@@ -44,7 +45,7 @@ const perPage = 50
 
 const scope = computed<PeopleScope>(() => {
   const value = route.query.scope
-  if (value === 'named' || value === 'unnamed') return value
+  if (value === 'named' || value === 'unnamed' || value === 'trashed') return value
   return 'all'
 })
 
@@ -181,6 +182,35 @@ async function acceptMerge(suggestion: MergeSuggestion) {
   }
 }
 
+const trashBusyId = ref<string | null>(null)
+
+async function restorePerson(person: AdminPerson) {
+  trashBusyId.value = person.id
+  try {
+    await adminApi.restorePerson(person.id)
+    await load()
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Falha ao restaurar pessoa.'
+  } finally {
+    trashBusyId.value = null
+  }
+}
+
+async function purgePerson(person: AdminPerson) {
+  if (!window.confirm(`Excluir permanentemente ${displayName(person)} e todos os rostos?`)) {
+    return
+  }
+  trashBusyId.value = person.id
+  try {
+    await adminApi.purgePerson(person.id)
+    await load()
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : 'Falha ao excluir permanentemente.'
+  } finally {
+    trashBusyId.value = null
+  }
+}
+
 async function onFaceSearch(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -232,6 +262,15 @@ async function onFaceSearch(event: Event) {
         >
           Sem nome
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          :variant="scope === 'trashed' ? 'default' : 'outline'"
+          data-testid="scope-trashed"
+          @click="setScope('trashed')"
+        >
+          Lixeira
+        </Button>
       </div>
 
       <form class="flex gap-2" @submit.prevent="submitSearch">
@@ -246,7 +285,7 @@ async function onFaceSearch(event: Event) {
       </form>
     </div>
 
-    <div class="admin-panel space-y-3 rounded-xl p-4">
+    <div v-if="scope !== 'trashed'" class="admin-panel space-y-3 rounded-xl p-4">
       <div>
         <h2 class="text-sm font-medium">Busca por rosto</h2>
         <p class="text-sm text-muted-foreground">Envie um recorte com um rosto para encontrar pessoas parecidas.</p>
@@ -287,6 +326,8 @@ async function onFaceSearch(event: Event) {
         </li>
       </ul>
     </div>
+
+    <FaceGalleryScanPanel v-if="scope !== 'trashed'" />
 
     <div
       v-if="scope === 'unnamed'"
@@ -436,8 +477,8 @@ async function onFaceSearch(event: Event) {
             v-for="person in people"
             :key="person.id"
             data-testid="person-row"
-            class="cursor-pointer"
-            @click="router.push({ name: 'admin-person-edit', params: { id: person.id } })"
+            :class="scope !== 'trashed' ? 'cursor-pointer' : undefined"
+            @click="scope !== 'trashed' && router.push({ name: 'admin-person-edit', params: { id: person.id } })"
           >
             <TableCell>
               <img
@@ -473,7 +514,30 @@ async function onFaceSearch(event: Event) {
               {{ person.faceCount }}
             </TableCell>
             <TableCell class="text-right" @click.stop>
-              <Button as-child variant="outline" size="sm">
+              <div v-if="scope === 'trashed'" class="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="trashBusyId === person.id"
+                  data-testid="person-restore"
+                  @click="restorePerson(person)"
+                >
+                  Restaurar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  class="admin-btn-danger-solid"
+                  :disabled="trashBusyId === person.id"
+                  data-testid="person-purge"
+                  @click="purgePerson(person)"
+                >
+                  Excluir
+                </Button>
+              </div>
+              <Button v-else as-child variant="outline" size="sm">
                 <RouterLink
                   :to="{ name: 'person', params: { id: person.id } }"
                   target="_blank"

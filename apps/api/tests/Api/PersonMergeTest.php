@@ -337,11 +337,13 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseStatusCodeSame(204);
 
         $this->em->clear();
-        $this->assertNull($this->em->getRepository(Person::class)->find($personId));
-        $this->assertNull($this->em->getRepository(Face::class)->find($faceId));
+        $trashed = $this->em->getRepository(Person::class)->find($personId);
+        $this->assertNotNull($trashed);
+        $this->assertNotNull($trashed->getDeletedAt());
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($faceId));
     }
 
-    public function testAdminCanDeleteNamedPerson(): void
+    public function testAdminCanSoftDiscardNamedPerson(): void
     {
         $person = new Person();
         $person->setName('Ana');
@@ -359,8 +361,108 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseStatusCodeSame(204);
 
         $this->em->clear();
+        $trashed = $this->em->getRepository(Person::class)->find($personId);
+        $this->assertNotNull($trashed);
+        $this->assertNotNull($trashed->getDeletedAt());
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($faceId));
+    }
+
+    public function testAdminCanRestoreTrashedPerson(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $person->setDeletedAt(new \DateTimeImmutable());
+        $this->em->persist($person);
+        $this->em->flush();
+        $personId = (string) $person->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('POST', '/api/admin/people/'.$personId.'/restore');
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode($this->client->getResponse()->getContent(), true);
+        $this->assertNull($payload['data']['deletedAt']);
+
+        $this->em->clear();
+        $restored = $this->em->getRepository(Person::class)->find($personId);
+        $this->assertNotNull($restored);
+        $this->assertNull($restored->getDeletedAt());
+    }
+
+    public function testAdminCanPurgeTrashedPerson(): void
+    {
+        $person = new Person();
+        $person->setDeletedAt(new \DateTimeImmutable());
+        $this->em->persist($person);
+        $face = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $personId = (string) $person->getId();
+        $faceId = (string) $face->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('DELETE', '/api/admin/people/'.$personId.'/purge');
+
+        $this->assertResponseStatusCodeSame(204);
+
+        $this->em->clear();
         $this->assertNull($this->em->getRepository(Person::class)->find($personId));
         $this->assertNull($this->em->getRepository(Face::class)->find($faceId));
+    }
+
+    public function testTrashedPeopleHiddenFromDefaultList(): void
+    {
+        $active = new Person();
+        $active->setName('Ativa');
+        $active->setIsNamed(true);
+        $this->em->persist($active);
+
+        $trashed = new Person();
+        $trashed->setName('Lixeira');
+        $trashed->setIsNamed(true);
+        $trashed->setDeletedAt(new \DateTimeImmutable());
+        $this->em->persist($trashed);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/people?scope=all');
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode($this->client->getResponse()->getContent(), true);
+        $names = array_column($payload['data'], 'name');
+        $this->assertContains('Ativa', $names);
+        $this->assertNotContains('Lixeira', $names);
+
+        $this->client->request('GET', '/api/admin/people?scope=trashed');
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode($this->client->getResponse()->getContent(), true);
+        $names = array_column($payload['data'], 'name');
+        $this->assertContains('Lixeira', $names);
+        $this->assertNotContains('Ativa', $names);
+    }
+
+    public function testTrashedPeopleListShowsFaceCount(): void
+    {
+        $person = new Person();
+        $person->setName('Com rostos');
+        $person->setIsNamed(true);
+        $person->setDeletedAt(new \DateTimeImmutable());
+        $this->em->persist($person);
+        $this->detectedFace($this->publicPhoto, $person);
+        $this->detectedFace($this->privatePhoto, $person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/people?scope=trashed');
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode($this->client->getResponse()->getContent(), true);
+        $row = $payload['data'][0];
+        $this->assertSame('Com rostos', $row['name']);
+        $this->assertSame(2, $row['faceCount']);
+        $this->assertNotNull($row['avatarCropPath']);
     }
 
     // --- List / detail / avatar --------------------------------------------

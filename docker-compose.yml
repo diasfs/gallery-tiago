@@ -29,6 +29,7 @@ services:
       - ../old/_img:/var/gallery/v3-img:ro
       # Bind php.ini so memory_limit etc. apply without image rebuild.
       - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
+      - ./apps/api/docker/nginx.conf:/etc/nginx/sites-available/default:ro
       # Entrypoint installs pdo_mysql if the image was built without it.
       - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
     env_file: .env

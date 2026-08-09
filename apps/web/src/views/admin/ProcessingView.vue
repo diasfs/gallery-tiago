@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { adminApi, photoDisplayUrl } from '../../api/client'
+import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import type {
   FacesStatus,
   MediaStatus,
@@ -259,6 +260,8 @@ watch(
     <Alert v-if="error" variant="destructive">
       <AlertDescription>{{ error }}</AlertDescription>
     </Alert>
+
+    <FaceGalleryScanPanel :show-upload="false" />
 
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">

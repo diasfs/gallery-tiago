@@ -123,7 +123,7 @@ final class PhotoPublicNormalizer
         $people = [];
         foreach ($photo->getFaces() as $face) {
             $person = $face->getPerson();
-            if (null === $person) {
+            if (null === $person || $person->isDeleted()) {
                 continue;
             }
             $personId = (string) $person->getId();

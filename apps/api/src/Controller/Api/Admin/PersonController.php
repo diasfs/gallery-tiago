@@ -101,8 +101,8 @@ class PersonController
     public function search(Request $request): JsonResponse
     {
         $scope = $request->query->getString('scope', 'named');
-        if (!\in_array($scope, ['all', 'named', 'unnamed'], true)) {
-            throw new BadRequestHttpException('scope must be all, named, or unnamed.');
+        if (!\in_array($scope, ['all', 'named', 'unnamed', 'trashed'], true)) {
+            throw new BadRequestHttpException('scope must be all, named, unnamed, or trashed.');
         }
 
         $q = $request->query->get('q');
@@ -261,7 +261,25 @@ class PersonController
     public function discard(string $id): JsonResponse
     {
         $person = $this->findPersonOrFail($id);
-        $this->personDeleter->delete($person);
+        $this->personDeleter->discard($person);
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    #[Route('/api/admin/people/{id}/restore', name: 'admin_people_restore', methods: ['POST'])]
+    public function restore(string $id): JsonResponse
+    {
+        $person = $this->findTrashedPersonOrFail($id);
+        $this->personDeleter->restore($person);
+
+        return new JsonResponse(['data' => $this->normalizePerson($person)]);
+    }
+
+    #[Route('/api/admin/people/{id}/purge', name: 'admin_people_purge', methods: ['DELETE'])]
+    public function purge(string $id): JsonResponse
+    {
+        $person = $this->findTrashedPersonOrFail($id);
+        $this->personDeleter->purge($person);
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }
@@ -338,9 +356,25 @@ class PersonController
             throw new NotFoundHttpException('Person not found.');
         }
 
-        $person = $this->people->find($uuid);
+        $person = $this->people->findActive($uuid);
         if (null === $person) {
             throw new NotFoundHttpException('Person not found.');
+        }
+
+        return $person;
+    }
+
+    private function findTrashedPersonOrFail(string $id): Person
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $person = $this->people->find($uuid);
+        if (null === $person || !$person->isDeleted()) {
+            throw new NotFoundHttpException('Person not found in trash.');
         }
 
         return $person;
@@ -433,6 +467,7 @@ class PersonController
             'faceCount' => $faceCount,
             'avatarFaceId' => $avatar ? (string) $avatar->getId() : null,
             'avatarCropPath' => $avatarCropPath,
+            'deletedAt' => $person->getDeletedAt()?->format(\DATE_ATOM),
         ];
     }
 

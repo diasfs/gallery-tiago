@@ -87,8 +87,8 @@ async function discardPerson() {
       <DialogHeader>
         <DialogTitle>Remover {{ personLabel }}?</DialogTitle>
         <DialogDescription>
-          Escolha se deseja remover apenas o vínculo desta pessoa com esta foto, ou excluir a pessoa do
-          sistema. Excluir a pessoa remove todos os rostos em todas as fotos e não pode ser desfeito.
+          Escolha se deseja remover apenas o vínculo desta pessoa com esta foto, ou enviar a pessoa para a
+          lixeira. Na lixeira os rostos permanecem e você pode restaurar depois em Pessoas → Lixeira.
         </DialogDescription>
       </DialogHeader>
 
@@ -123,7 +123,7 @@ async function discardPerson() {
           data-testid="person-delete-discard"
           @click="discardPerson"
         >
-          {{ busy ? 'Excluindo…' : 'Excluir pessoa' }}
+          {{ busy ? 'Enviando…' : 'Mover para lixeira' }}
         </Button>
       </DialogFooter>
     </DialogContent>
