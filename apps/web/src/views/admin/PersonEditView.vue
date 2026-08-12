@@ -573,7 +573,6 @@ async function purgePerson() {
               </span>
             </button>
             <button
-              v-if="!isTrashed"
               type="button"
               class="absolute top-1.5 right-1.5 rounded bg-background/90 px-1.5 py-0.5 text-[10px] text-destructive opacity-0 transition group-hover:opacity-100"
               :disabled="saving"

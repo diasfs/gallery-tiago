@@ -307,6 +307,31 @@ describe('PersonEditView', () => {
     expect(mockedApi.deletePersonFace).toHaveBeenCalledWith('person-1', 'face-1')
   })
 
+  it('allows deleting faces while the person is in the trash', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedApi.getPerson.mockResolvedValue(
+      makeDetail({ deletedAt: '2026-08-01T12:00:00+00:00' }),
+    )
+    mockedApi.deletePersonFace.mockResolvedValue(
+      makeDetail({
+        deletedAt: '2026-08-01T12:00:00+00:00',
+        faces: [
+          { id: 'face-2', photoId: null, personId: 'person-1', cropPath: 'faces/bb/face-2.jpg', hasEmbedding: true },
+        ],
+        faceCount: 1,
+      }),
+    )
+    const { wrapper } = await mountView()
+
+    expect(wrapper.findAll('[data-testid="face-delete"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="face-tile"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.findAll('[data-testid="face-delete"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.deletePersonFace).toHaveBeenCalledWith('person-1', 'face-1')
+  })
+
   it('removes a custom avatar', async () => {
     mockedApi.getPerson.mockResolvedValue(
       makeDetail({
