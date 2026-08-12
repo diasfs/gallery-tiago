@@ -3,12 +3,15 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { PersonSummary, PhotoSummary } from '../api/types'
+import PersonAdminPanel from '../components/PersonAdminPanel.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import { useAdminSession } from '../composables/useAdminSession'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
 const router = useRouter()
+const { isAdmin } = useAdminSession()
 
 const person = ref<PersonSummary | null>(null)
 const photos = ref<PhotoSummary[]>([])
@@ -57,6 +60,19 @@ function setPage(next: number) {
     query: next > 1 ? { page: String(next) } : {},
   })
 }
+
+function onNamed(payload: { id: string; name: string | null }) {
+  if (!person.value || person.value.id !== payload.id) return
+  person.value = { ...person.value, name: payload.name }
+}
+
+async function onMerged(payload: { survivorId: string }) {
+  if (payload.survivorId !== props.id) {
+    await router.push({ name: 'person', params: { id: payload.survivorId } })
+    return
+  }
+  await load()
+}
 </script>
 
 <template>
@@ -65,6 +81,14 @@ function setPage(next: number) {
     <p v-else-if="notFound">Pessoa não encontrada.</p>
     <template v-else-if="person">
       <h1>{{ person.name ?? 'Pessoa sem nome' }}</h1>
+
+      <PersonAdminPanel
+        v-if="isAdmin"
+        :person-id="person.id"
+        @named="onNamed"
+        @merged="onMerged"
+      />
+
       <PhotoGrid :photos="photos" />
       <PaginationBar class="pager" :page="page" :total="total" :per-page="perPage" @update:page="setPage" />
     </template>
