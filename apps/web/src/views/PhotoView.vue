@@ -14,6 +14,7 @@ import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PhotoPersonDeleteDialog from '../components/PhotoPersonDeleteDialog.vue'
+import PhotoPersonEditDialog from '../components/PhotoPersonEditDialog.vue'
 import ViewCount from '../components/ViewCount.vue'
 import { useAdminSession } from '../composables/useAdminSession'
 import { usePageMeta } from '../composables/usePageMeta'
@@ -35,6 +36,8 @@ const { isAdmin } = useAdminSession()
 const photo = ref<PhotoDetail | null>(null)
 const deleteTarget = ref<PersonSummary | null>(null)
 const deleteDialogOpen = ref(false)
+const editTarget = ref<PersonSummary | null>(null)
+const editDialogOpen = ref(false)
 const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
 const similarLoading = ref(false)
@@ -174,6 +177,11 @@ function openDeleteDialog(person: PersonSummary) {
   deleteDialogOpen.value = true
 }
 
+function openEditDialog(person: PersonSummary) {
+  editTarget.value = person
+  editDialogOpen.value = true
+}
+
 function onPersonDeleted() {
   if (!photo.value || !deleteTarget.value) {
     return
@@ -181,6 +189,22 @@ function onPersonDeleted() {
   const removedId = deleteTarget.value.id
   photo.value.people = photo.value.people.filter((person) => person.id !== removedId)
   deleteTarget.value = null
+}
+
+function onPersonNamed(payload: { id: string; name: string | null }) {
+  if (!photo.value) return
+  photo.value.people = photo.value.people.map((person) =>
+    person.id === payload.id ? { ...person, name: payload.name } : person,
+  )
+  if (editTarget.value?.id === payload.id) {
+    editTarget.value = { ...editTarget.value, name: payload.name }
+  }
+}
+
+async function onPersonMerged() {
+  editDialogOpen.value = false
+  editTarget.value = null
+  await load()
 }
 </script>
 
@@ -268,6 +292,16 @@ function onPersonDeleted() {
             <button
               v-if="isAdmin"
               type="button"
+              class="person-card__edit"
+              aria-label="Editar pessoa"
+              data-testid="photo-person-edit"
+              @click="openEditDialog(person)"
+            >
+              ✎
+            </button>
+            <button
+              v-if="isAdmin"
+              type="button"
               class="person-card__delete"
               aria-label="Remover pessoa"
               data-testid="photo-person-delete"
@@ -291,6 +325,12 @@ function onPersonDeleted() {
         :person="deleteTarget"
         :photo-id="photo.id"
         @done="onPersonDeleted"
+      />
+      <PhotoPersonEditDialog
+        v-model:open="editDialogOpen"
+        :person="editTarget"
+        @named="onPersonNamed"
+        @merged="onPersonMerged"
       />
     </template>
   </section>
@@ -415,19 +455,32 @@ function onPersonDeleted() {
   text-decoration: none;
 }
 
+.person-card__edit,
 .person-card__delete {
   position: absolute;
   top: 0.35rem;
-  right: 0.35rem;
   width: 1.5rem;
   height: 1.5rem;
   border: 0;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.65);
   color: #fff;
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   line-height: 1;
   cursor: pointer;
+}
+
+.person-card__edit {
+  left: 0.35rem;
+}
+
+.person-card__delete {
+  right: 0.35rem;
+  font-size: 1.1rem;
+}
+
+.person-card__edit:hover {
+  background: rgba(60, 60, 60, 0.95);
 }
 
 .person-card__delete:hover {
