@@ -87,6 +87,38 @@ final class MediaStorage
         return \sprintf('faces/%s/%s.jpg', substr($faceId, 0, 2), $faceId);
     }
 
+    public function writeFaceCrop(string $faceId, string $jpegBytes): string
+    {
+        $relative = $this->faceCropPath($faceId);
+        $absolute = $this->absolutePath($relative);
+        $this->ensureDirectory(\dirname($absolute));
+        if (false === file_put_contents($absolute, $jpegBytes)) {
+            throw new \RuntimeException(\sprintf('Unable to write face crop "%s".', $relative));
+        }
+
+        return $relative;
+    }
+
+    public function copyToFaceScanReference(?string $sourceRelative, string $scanId): ?string
+    {
+        if (null === $sourceRelative || '' === $sourceRelative) {
+            return null;
+        }
+        $source = $this->absolutePath($sourceRelative);
+        if (!is_file($source)) {
+            return null;
+        }
+
+        $destRelative = \sprintf('face-scans/%s/%s/reference.jpg', substr($scanId, 0, 2), $scanId);
+        $dest = $this->absolutePath($destRelative);
+        $this->ensureDirectory(\dirname($dest));
+        if (!copy($source, $dest)) {
+            throw new \RuntimeException(\sprintf('Unable to copy "%s" to "%s".', $source, $dest));
+        }
+
+        return $destRelative;
+    }
+
     public function copyFaceCrop(?string $sourceRelative, string $faceId): ?string
     {
         if (null === $sourceRelative || '' === $sourceRelative) {

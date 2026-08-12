@@ -24,6 +24,7 @@ final class SiteConfigController
                 'albumPhotoLayout' => $this->settings->getAlbumPhotoLayout()->value,
                 'mostViewedHomeEnabled' => $this->settings->isMostViewedHomeEnabled(),
                 'mostViewedExcludeRootAlbums' => $this->settings->isMostViewedExcludeRootAlbums(),
+                'gaMeasurementId' => $this->settings->get()->getGaMeasurementId() ?? '',
             ],
         ]);
     }

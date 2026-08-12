@@ -5,8 +5,10 @@ namespace App\Controller\Api\Admin;
 use App\Entity\FaceGalleryScan;
 use App\Entity\FaceGalleryScanMatch;
 use App\Http\Pagination;
+use App\Entity\Person;
 use App\Repository\FaceGalleryScanMatchRepository;
 use App\Repository\FaceGalleryScanRepository;
+use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
 use App\Service\FaceEmbeddingClientInterface;
 use App\Service\FaceGalleryScanConfirmer;
@@ -33,6 +35,7 @@ class FaceGalleryScanController
     public function __construct(
         private readonly FaceGalleryScanRepository $scans,
         private readonly FaceGalleryScanMatchRepository $matches,
+        private readonly PersonRepository $people,
         private readonly PhotoRepository $photos,
         private readonly FaceGalleryScanEnqueuer $enqueuer,
         private readonly FaceGalleryScanConfirmer $confirmer,
@@ -70,18 +73,34 @@ class FaceGalleryScanController
         $this->em->flush();
 
         $scan->setReferenceCropPath($this->storage->storeFaceScanReference($file, (string) $scan->getId()));
-        $scan->setTotalPhotos($this->photos->countWithAvif());
-        $scan->setStatus(FaceGalleryScan::STATUS_RUNNING);
-        $this->em->flush();
 
-        if (0 === $scan->getTotalPhotos()) {
-            $scan->setStatus(FaceGalleryScan::STATUS_DONE);
-            $this->em->flush();
-        } else {
-            $this->enqueuer->enqueueNextBatch($scan);
+        return $this->startScan($scan);
+    }
+
+    #[Route('/api/admin/people/{id}/face-scans', name: 'admin_people_face_scans_from_person', methods: ['POST'])]
+    public function createFromPerson(string $id): JsonResponse
+    {
+        $person = $this->findActivePersonOrFail($id);
+        $source = $this->referenceFaceForScan($person);
+        if (null === $source) {
+            throw new BadRequestHttpException('Person has no face embedding to scan with.');
         }
 
-        return new JsonResponse(['data' => $this->normalizeScan($scan)], JsonResponse::HTTP_CREATED);
+        $embedding = $source->getEmbedding();
+        if (!\is_array($embedding) || [] === $embedding) {
+            throw new BadRequestHttpException('Person has no face embedding to scan with.');
+        }
+
+        $scan = new FaceGalleryScan($embedding, $this->defaultThreshold);
+        $scan->setTargetPerson($person);
+        $this->em->persist($scan);
+        $this->em->flush();
+
+        $scan->setReferenceCropPath(
+            $this->storage->copyToFaceScanReference($source->getCropPath(), (string) $scan->getId()),
+        );
+
+        return $this->startScan($scan);
     }
 
     #[Route('/api/admin/people/face-scans', name: 'admin_face_scans_list', methods: ['GET'])]
@@ -89,7 +108,12 @@ class FaceGalleryScanController
     {
         $page = Pagination::page($request);
         $perPage = Pagination::perPage($request, 20, 50);
-        $result = $this->scans->searchPaginated($page, $perPage);
+        $targetPersonId = $request->query->get('targetPersonId');
+        $result = $this->scans->searchPaginated(
+            $page,
+            $perPage,
+            \is_string($targetPersonId) && '' !== $targetPersonId ? $targetPersonId : null,
+        );
 
         return new JsonResponse([
             'data' => array_map($this->normalizeScan(...), $result['items']),
@@ -158,11 +182,7 @@ class FaceGalleryScanController
         $scan = $this->findScanOrFail($id);
         $payload = $this->decode($request);
         $name = $payload['name'] ?? null;
-        if (!\is_string($name)) {
-            throw new BadRequestHttpException('name is required.');
-        }
-
-        $person = $this->confirmer->confirm($scan, $name);
+        $person = $this->confirmer->confirm($scan, \is_string($name) ? $name : null);
 
         return new JsonResponse([
             'data' => [
@@ -226,9 +246,57 @@ class FaceGalleryScanController
             'processedPhotos' => $scan->getProcessedPhotos(),
             'matchedPhotos' => $scan->getMatchedPhotos(),
             'error' => $scan->getError(),
+            'targetPersonId' => $scan->getTargetPerson() ? (string) $scan->getTargetPerson()->getId() : null,
             'createdAt' => $scan->getCreatedAt()->format(\DATE_ATOM),
             'updatedAt' => $scan->getUpdatedAt()->format(\DATE_ATOM),
         ];
+    }
+
+    private function startScan(FaceGalleryScan $scan): JsonResponse
+    {
+        $scan->setTotalPhotos($this->photos->countWithAvif());
+        $scan->setStatus(FaceGalleryScan::STATUS_RUNNING);
+        $this->em->flush();
+
+        if (0 === $scan->getTotalPhotos()) {
+            $scan->setStatus(FaceGalleryScan::STATUS_DONE);
+            $this->em->flush();
+        } else {
+            $this->enqueuer->enqueueNextBatch($scan);
+        }
+
+        return new JsonResponse(['data' => $this->normalizeScan($scan)], JsonResponse::HTTP_CREATED);
+    }
+
+    private function findActivePersonOrFail(string $id): Person
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $person = $this->people->findActive($uuid);
+        if (null === $person) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        return $person;
+    }
+
+    private function referenceFaceForScan(Person $person): ?\App\Entity\Face
+    {
+        $avatar = $person->getAvatarFace();
+        if (null !== $avatar && $avatar->hasEmbedding()) {
+            return $avatar;
+        }
+        foreach ($person->getFaces() as $face) {
+            if ($face->hasEmbedding()) {
+                return $face;
+            }
+        }
+
+        return null;
     }
 
     /** @return array<string, mixed> */

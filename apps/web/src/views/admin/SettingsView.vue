@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -46,6 +47,7 @@ const tagDetector = ref<TagDetector>('ram_plus')
 const albumPhotoLayout = ref<AlbumPhotoLayout>('grid')
 const mostViewedHomeEnabled = ref(true)
 const mostViewedExcludeRootAlbums = ref(false)
+const gaMeasurementId = ref('')
 
 async function load() {
   loading.value = true
@@ -68,6 +70,7 @@ function applySettings(settings: ProcessingSettings) {
   albumPhotoLayout.value = settings.albumPhotoLayout
   mostViewedHomeEnabled.value = settings.mostViewedHomeEnabled
   mostViewedExcludeRootAlbums.value = settings.mostViewedExcludeRootAlbums
+  gaMeasurementId.value = settings.gaMeasurementId
 }
 
 async function save() {
@@ -82,6 +85,7 @@ async function save() {
       albumPhotoLayout: albumPhotoLayout.value,
       mostViewedHomeEnabled: mostViewedHomeEnabled.value,
       mostViewedExcludeRootAlbums: mostViewedExcludeRootAlbums.value,
+      gaMeasurementId: gaMeasurementId.value.trim(),
     })
     applySettings(updated)
     saved.value = true
@@ -237,6 +241,26 @@ onMounted(load)
             />
             Excluir álbuns da raiz do ranking
           </label>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Google Analytics</CardTitle>
+          <CardDescription>
+            Measurement ID (G-… ou GT-…). Deixe vazio para desativar no site público.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Label for="ga-measurement-id" class="sr-only">Measurement ID</Label>
+          <Input
+            id="ga-measurement-id"
+            v-model="gaMeasurementId"
+            type="text"
+            placeholder="G-XXXXXXXXXX"
+            class="max-w-sm"
+            data-testid="settings-ga-id"
+          />
         </CardContent>
       </Card>
 

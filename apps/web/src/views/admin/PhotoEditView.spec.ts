@@ -150,7 +150,11 @@ describe('PhotoEditView people list', () => {
       meta: { page: 1, perPage: 20, total: 1 },
     })
 
-    await wrapper.find('[data-testid="people-search"]').setValue('Grace')
+    vi.useFakeTimers()
+    const input = wrapper.find('[data-testid="people-search"]')
+    await input.setValue('Grace')
+    await input.trigger('input')
+    await vi.advanceTimersByTimeAsync(200)
     await flushPromises()
 
     expect(mockedApi.listPeople).toHaveBeenCalledWith({
@@ -159,7 +163,11 @@ describe('PhotoEditView people list', () => {
       page: 1,
       perPage: 20,
     })
+    expect(input.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="people-suggestions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="people-suggestion"]').text()).toContain('Grace Hopper')
 
     wrapper.unmount()
+    vi.useRealTimers()
   })
 })

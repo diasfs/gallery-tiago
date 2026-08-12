@@ -77,7 +77,12 @@ describe('PeopleView', () => {
           avatarCropPath: null,
         }),
       ],
-      meta: { page: 1, perPage: 50, total: 75 },
+      meta: {
+        page: 1,
+        perPage: 50,
+        total: 75,
+        counts: { all: 75, named: 40, unnamed: 35, trashed: 3 },
+      },
     })
     mockedApi.listMergeSuggestions.mockResolvedValue({
       data: [
@@ -112,11 +117,16 @@ describe('PeopleView', () => {
       q: undefined,
       page: 1,
       perPage: 50,
+      sort: 'name',
     })
     expect(wrapper.findAll('[data-testid="person-row"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Ada Lovelace')
     expect(wrapper.text()).toContain('2 rostos')
     expect(wrapper.find('[data-testid="person-avatar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scope-all"]').text()).toContain('(75)')
+    expect(wrapper.find('[data-testid="scope-named"]').text()).toContain('(40)')
+    expect(wrapper.find('[data-testid="scope-unnamed"]').text()).toContain('(35)')
+    expect(wrapper.find('[data-testid="scope-trashed"]').text()).toContain('(3)')
   })
 
   it('links each person to their public photos page', async () => {
@@ -141,6 +151,7 @@ describe('PeopleView', () => {
       q: undefined,
       page: 1,
       perPage: 50,
+      sort: 'name',
     })
     expect(mockedApi.listMergeSuggestions).not.toHaveBeenCalled()
   })
@@ -166,7 +177,12 @@ describe('PeopleView', () => {
   it('shows empty state when no people match', async () => {
     mockedApi.listPeople.mockResolvedValue({
       data: [],
-      meta: { page: 1, perPage: 50, total: 0 },
+      meta: {
+        page: 1,
+        perPage: 50,
+        total: 0,
+        counts: { all: 0, named: 0, unnamed: 0, trashed: 0 },
+      },
     })
     const { wrapper } = await mountView()
 
@@ -185,6 +201,7 @@ describe('PeopleView', () => {
       q: 'ana',
       page: 2,
       perPage: 50,
+      sort: 'name',
     })
   })
 
@@ -207,10 +224,29 @@ describe('PeopleView', () => {
     expect(router.currentRoute.value.query).toEqual({ q: 'grace' })
   })
 
+  it('requests faces sort when selected', async () => {
+    const { router } = await mountView({ sort: 'faces' })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.sort).toBe('faces')
+    expect(mockedApi.listPeople).toHaveBeenLastCalledWith({
+      scope: 'all',
+      q: undefined,
+      page: 1,
+      perPage: 50,
+      sort: 'faces',
+    })
+  })
+
   it('allows returning from an empty later page', async () => {
     mockedApi.listPeople.mockResolvedValue({
       data: [],
-      meta: { page: 2, perPage: 50, total: 50 },
+      meta: {
+        page: 2,
+        perPage: 50,
+        total: 50,
+        counts: { all: 50, named: 50, unnamed: 0, trashed: 0 },
+      },
     })
     const { wrapper, router } = await mountView({ page: '2' })
 

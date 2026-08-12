@@ -6,15 +6,42 @@ without InsightFace/onnxruntime installed (see tests/test_matcher.py).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 # (person_id, is_named, distance) -- distance from a pgvector `<=>` (cosine)
 # nearest-neighbor query; lower is closer.
 Neighbor = tuple[str, bool, float]
+# x, y, width, height in image pixels
+BBox = tuple[float, float, float, float]
 
 ASSIGN_NAMED = "assign_named"
 ASSIGN_CLUSTER = "assign_cluster"
 CREATE_CLUSTER = "create_cluster"
+
+# Same face location on reprocess / re-delivery → skip insert (keep person link).
+OVERLAP_IOU_THRESHOLD = 0.5
+
+
+def bbox_iou(a: BBox, b: BBox) -> float:
+    ax1, ay1, aw, ah = a
+    bx1, by1, bw, bh = b
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    if inter <= 0.0:
+        return 0.0
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0.0 else 0.0
+
+
+def overlaps_existing(
+    bbox: BBox,
+    existing: Sequence[BBox],
+    threshold: float = OVERLAP_IOU_THRESHOLD,
+) -> bool:
+    return any(bbox_iou(bbox, other) >= threshold for other in existing)
 
 
 def assign_person(

@@ -18,8 +18,9 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * tags. Shared by the single-photo and whole-album reprocess endpoints.
  *
  * Scope semantics:
- * - all: delete auto-detected faces, re-run face detection + tag suggestion
- * - faces: delete auto-detected faces, re-run face detection only
+ * - all: re-run face detection + tag suggestion (existing faces kept; worker
+ *   only inserts detections that do not overlap them)
+ * - faces: re-run face detection only
  * - tags: re-run tag suggestion only (media and faces status untouched)
  *
  * When the photo has no AVIF master yet, conversion is required first and the
@@ -58,7 +59,6 @@ final class PhotoReprocessor
         }
 
         if (null === $photo->getAvifPath()) {
-            $this->removeAutoDetectedFaces($photo);
             $photo->setMediaStatus(MediaStatus::Pending);
             $photo->setFacesStatus($facesEnabled ? FacesStatus::Pending : FacesStatus::Disabled);
             $photo->setTagsStatus($tagsEnabled ? TagsStatus::Pending : TagsStatus::Disabled);
@@ -85,7 +85,6 @@ final class PhotoReprocessor
         }
 
         if ($runFaces) {
-            $this->removeAutoDetectedFaces($photo);
             $photo->setFacesStatus(FacesStatus::Queued);
             $photo->setProcessingError(ProcessingErrorBag::clear($photo->getProcessingError(), 'faces'));
         }
@@ -100,18 +99,6 @@ final class PhotoReprocessor
         }
         if ($runTags) {
             $this->bus->dispatch(new SuggestTagsMessage($photoId));
-        }
-    }
-
-    /**
-     * Manually-added faces (hasEmbedding = false) are kept, per design spec §9.
-     */
-    private function removeAutoDetectedFaces(Photo $photo): void
-    {
-        foreach ($photo->getFaces() as $face) {
-            if ($face->hasEmbedding()) {
-                $this->em->remove($face);
-            }
         }
     }
 }

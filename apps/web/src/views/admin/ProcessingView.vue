@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/table'
 import { adminApi, photoDisplayUrl } from '../../api/client'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
+import PaginationBar from '../../components/PaginationBar.vue'
 import type {
   FacesStatus,
   MediaStatus,
@@ -89,8 +90,6 @@ const page = computed(() => {
   const raw = Number(route.query.page ?? 1)
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1
 })
-
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
 const selectedList = computed(() => [...selectedIds.value])
 
@@ -188,7 +187,7 @@ async function bulkReprocess() {
   actionBusy.value = true
   error.value = null
   try {
-    await adminApi.processingReprocess(selectedList.value, reprocessScope.value)
+    await adminApi.processingReprocess({ photoIds: selectedList.value, scope: reprocessScope.value })
     await refresh()
   } catch {
     error.value = 'Falha ao reprocessar.'
@@ -209,6 +208,32 @@ async function bulkEnqueue() {
     await refresh()
   } catch {
     error.value = 'Falha ao enfileirar conversão.'
+  } finally {
+    actionBusy.value = false
+  }
+}
+
+async function reprocessAllFaces() {
+  if (
+    !window.confirm(
+      'Reprocessar detecção de rostos em até 500 fotos com AVIF? Execute novamente se ainda restarem fotos.',
+    )
+  ) {
+    return
+  }
+  actionBusy.value = true
+  error.value = null
+  try {
+    const result = await adminApi.processingReprocess({ allWithAvif: true, scope: 'faces' })
+    if ('remaining' in result) {
+      error.value =
+        result.remaining > 0
+          ? `Enfileiradas ${result.enqueued}; ${result.remaining} ainda com AVIF — execute novamente para continuar.`
+          : null
+    }
+    await refresh()
+  } catch {
+    error.value = 'Falha ao reprocessar rostos em lote.'
   } finally {
     actionBusy.value = false
   }
@@ -274,6 +299,15 @@ watch(
       <div class="flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" :disabled="loading || actionBusy" @click="refresh">
           Atualizar
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          :disabled="loading || actionBusy"
+          data-testid="reprocess-all-faces"
+          @click="reprocessAllFaces"
+        >
+          Reprocessar faces de todas
         </Button>
         <Button
           type="button"
@@ -430,20 +464,11 @@ watch(
       </TableBody>
     </Table>
 
-    <div v-if="totalPages > 1" class="flex items-center justify-between gap-3">
-      <Button type="button" variant="outline" size="sm" :disabled="page <= 1" @click="setPage(page - 1)">
-        Anterior
-      </Button>
-      <span class="text-sm text-muted-foreground">Página {{ page }} / {{ totalPages }}</span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        :disabled="page >= totalPages"
-        @click="setPage(page + 1)"
-      >
-        Próxima
-      </Button>
-    </div>
+    <PaginationBar
+      :page="page"
+      :total="total"
+      :per-page="PER_PAGE"
+      @update:page="setPage"
+    />
   </section>
 </template>

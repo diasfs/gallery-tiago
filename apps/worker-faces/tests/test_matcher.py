@@ -3,7 +3,14 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, CREATE_CLUSTER, assign_person
+from matcher import (
+    ASSIGN_CLUSTER,
+    ASSIGN_NAMED,
+    CREATE_CLUSTER,
+    assign_person,
+    bbox_iou,
+    overlaps_existing,
+)
 
 MATCH_THRESHOLD = 0.35
 CLUSTER_THRESHOLD = 0.40
@@ -72,3 +79,21 @@ def test_neighbor_order_in_input_does_not_matter():
     person_id, action = assign_person([0.0], neighbors, MATCH_THRESHOLD, CLUSTER_THRESHOLD)
 
     assert (person_id, action) == ("close-named", ASSIGN_NAMED)
+
+
+def test_bbox_iou_identical_is_one():
+    box = (10.0, 20.0, 40.0, 50.0)
+    assert bbox_iou(box, box) == 1.0
+
+
+def test_bbox_iou_disjoint_is_zero():
+    assert bbox_iou((0.0, 0.0, 10.0, 10.0), (20.0, 20.0, 10.0, 10.0)) == 0.0
+
+
+def test_overlaps_existing_skips_near_duplicate_bbox():
+    existing = [(100.0, 100.0, 50.0, 60.0)]
+    almost_same = (102.0, 101.0, 48.0, 58.0)
+    far_away = (300.0, 300.0, 40.0, 40.0)
+
+    assert overlaps_existing(almost_same, existing) is True
+    assert overlaps_existing(far_away, existing) is False

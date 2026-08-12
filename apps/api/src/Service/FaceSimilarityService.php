@@ -61,4 +61,36 @@ final class FaceSimilarityService
     {
         return $this->faces->findNearestPeople($embedding, $limit);
     }
+
+    /**
+     * Cosine distance for L2-normalized InsightFace vectors (same as pgvector <=> / worker scan).
+     *
+     * @param float[] $a
+     * @param float[] $b
+     */
+    public function cosineDistance(array $a, array $b): float
+    {
+        $dot = 0.0;
+        $n = min(\count($a), \count($b));
+        for ($i = 0; $i < $n; ++$i) {
+            $dot += (float) $a[$i] * (float) $b[$i];
+        }
+
+        return 1.0 - $dot;
+    }
+
+    /**
+     * @param float[]      $candidate
+     * @param list<float[]> $references
+     */
+    public function matchesAnyReference(array $candidate, array $references, float $threshold): bool
+    {
+        foreach ($references as $reference) {
+            if ($this->cosineDistance($candidate, $reference) <= $threshold) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

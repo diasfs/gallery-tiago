@@ -89,6 +89,7 @@ async function mountView(
     albumPhotoLayout: 'masonry_vertical',
     mostViewedHomeEnabled: true,
     mostViewedExcludeRootAlbums: false,
+    gaMeasurementId: '',
   })
   mockedApi.recordAlbumView.mockResolvedValue({ viewCount: album.viewCount + 1 })
   mockedApi.listAlbumChildren.mockResolvedValue({

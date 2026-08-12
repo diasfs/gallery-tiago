@@ -141,6 +141,7 @@ def nearest_neighbors(
             FROM face
             JOIN person ON person.id = face.person_id
             WHERE face.has_embedding = true
+              AND person.deleted_at IS NULL
             ORDER BY dist
             LIMIT %s
             """,
@@ -195,31 +196,20 @@ def insert_face(
         )
 
 
-def delete_auto_detected_faces(conn: psycopg.Connection, photo_id: str, media_root: Optional[str] = None) -> None:
-    """Drop previously auto-detected faces (has_embedding = true) for a photo.
-
-    Called before (re)running detection so re-delivered/reprocessed messages
-    stay idempotent. Manually added faces (has_embedding = false) are left
-    untouched, per design spec §9.
-
-    When media_root is provided, on-disk crop files for the deleted faces are
-    removed as well.
-    """
-    from pathlib import Path
-
+def list_face_bboxes(conn: psycopg.Connection, photo_id: str) -> list[tuple[float, float, float, float]]:
+    """Existing face boxes on a photo (x, y, width, height). Null boxes skipped."""
     with conn.cursor() as cur:
-        if media_root:
-            cur.execute(
-                "SELECT crop_path FROM face WHERE photo_id = %s AND has_embedding = true",
-                (photo_id,),
-            )
-            for (crop_path,) in cur.fetchall():
-                if crop_path:
-                    path = Path(media_root) / crop_path
-                    if path.is_file():
-                        path.unlink(missing_ok=True)
-
-        cur.execute("DELETE FROM face WHERE photo_id = %s AND has_embedding = true", (photo_id,))
+        cur.execute(
+            """
+            SELECT x, y, width, height
+            FROM face
+            WHERE photo_id = %s
+              AND x IS NOT NULL AND y IS NOT NULL
+              AND width IS NOT NULL AND height IS NOT NULL
+            """,
+            (photo_id,),
+        )
+        return [(float(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in cur.fetchall()]
 
 
 def get_photo_image_paths(conn: psycopg.Connection, photo_id: str) -> tuple[Optional[str], Optional[str]]:

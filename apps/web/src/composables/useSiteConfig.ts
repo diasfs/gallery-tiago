@@ -6,6 +6,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   albumPhotoLayout: 'grid',
   mostViewedHomeEnabled: true,
   mostViewedExcludeRootAlbums: false,
+  gaMeasurementId: '',
 }
 
 let cachedConfig: SiteConfig | null = null
@@ -39,12 +40,14 @@ export function useSiteConfig() {
 
   const albumPhotoLayout = computed(() => config.value.albumPhotoLayout)
   const mostViewedHomeEnabled = computed(() => config.value.mostViewedHomeEnabled)
+  const gaMeasurementId = computed(() => config.value.gaMeasurementId)
 
   return {
     config,
     loading,
     albumPhotoLayout,
     mostViewedHomeEnabled,
+    gaMeasurementId,
   }
 }
 

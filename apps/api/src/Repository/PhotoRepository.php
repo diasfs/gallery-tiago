@@ -358,6 +358,20 @@ class PhotoRepository extends ServiceEntityRepository
     }
 
     /**
+     * @return Photo[]
+     */
+    public function findWithAvif(int $limit): array
+    {
+        return $this->createQueryBuilder('p')
+            ->andWhere('p.avifPath IS NOT NULL')
+            ->andWhere("p.avifPath <> ''")
+            ->orderBy('p.createdAt', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * @return string[]
      */
     public function findIdsWithAvif(int $offset, int $limit): array

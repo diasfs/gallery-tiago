@@ -26,7 +26,7 @@ import redis
 import db
 import scan as face_scan
 import stream_queue
-from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person
+from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person, overlaps_existing
 from rasterize import materialize_jpeg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -91,16 +91,19 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
         if image is None:
             raise RuntimeError(f"could not read rasterized image at {image_path}")
 
-        # Safe to call unconditionally: re-detects are idempotent because prior
-        # auto-detected faces are cleared first (manual, no-embedding faces are
-        # untouched -- see db.delete_auto_detected_faces).
-        db.delete_auto_detected_faces(conn, photo_id, media_root=str(cfg.media_root))
-
+        # Keep existing faces (and person links). Only insert detections that
+        # do not overlap a face already on this photo (reprocess / re-delivery).
+        existing_bboxes = db.list_face_bboxes(conn, photo_id)
         detected = get_face_app().get(image)
+        added = 0
 
         for face in detected:
             embedding = face.normed_embedding.tolist()
             x1, y1, x2, y2 = (float(v) for v in face.bbox.tolist())
+            bbox = (x1, y1, x2 - x1, y2 - y1)
+            if overlaps_existing(bbox, existing_bboxes):
+                continue
+
             confidence = float(face.det_score)
 
             neighbors = db.nearest_neighbors(conn, embedding, limit=5)
@@ -126,13 +129,15 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
                 face_id=face_id,
                 photo_id=photo_id,
                 person_id=person_id,
-                bbox=(x1, y1, x2 - x1, y2 - y1),
+                bbox=bbox,
                 confidence=confidence,
                 embedding=embedding,
                 crop_path=crop_relative,
             )
+            existing_bboxes.append(bbox)
+            added += 1
 
-        return len(detected)
+        return added
     finally:
         image_path.unlink(missing_ok=True)
 
@@ -190,6 +195,8 @@ def handle_scan_message(conn, cfg: Config, fields: dict) -> bool:
 def consume_scan_once(r, conn, cfg: Config) -> bool:
     batch = stream_queue.claim_stale(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, cfg.consumer_name, min_idle_ms=cfg.min_idle_ms)
     if not batch:
+        batch = stream_queue.read_pending(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, cfg.consumer_name)
+    if not batch:
         batch = stream_queue.read_new(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME, cfg.consumer_name, block_ms=0)
     if not batch:
         return False
@@ -206,6 +213,18 @@ def consume_scan_once(r, conn, cfg: Config) -> bool:
     return True
 
 
+def redis_client(redis_url: str) -> redis.Redis:
+    # socket_timeout must stay above XREAD BLOCK (1000ms). Redis BLOCK 0 means
+    # wait forever — never pass 0; omit BLOCK for non-blocking polls.
+    return redis.Redis.from_url(
+        redis_url,
+        socket_connect_timeout=5,
+        socket_timeout=10,
+        health_check_interval=30,
+        retry_on_timeout=True,
+    )
+
+
 def main() -> None:
     cfg = Config()
     embed_port = os.environ.get("FACES_EMBED_PORT")
@@ -214,7 +233,7 @@ def main() -> None:
 
         start_background_server(port=int(embed_port))
     conn = db.connect(cfg.database_url)
-    r = redis.Redis.from_url(cfg.redis_url)
+    r = redis_client(cfg.redis_url)
 
     stream_queue.ensure_consumer_group(r, STREAM_KEY, GROUP_NAME)
     stream_queue.ensure_consumer_group(r, SCAN_STREAM_KEY, SCAN_GROUP_NAME)
@@ -227,18 +246,22 @@ def main() -> None:
     )
 
     while True:
-        scan_consumed = consume_scan_once(r, conn, cfg)
-        if scan_consumed:
-            continue
-        stream_queue.consume_once(
-            r,
-            STREAM_KEY,
-            GROUP_NAME,
-            cfg.consumer_name,
-            lambda photo_id: handle_photo(conn, cfg, photo_id),
-            min_idle_ms=cfg.min_idle_ms,
-            block_ms=1000,
-        )
+        try:
+            scan_consumed = consume_scan_once(r, conn, cfg)
+            if scan_consumed:
+                continue
+            stream_queue.consume_once(
+                r,
+                STREAM_KEY,
+                GROUP_NAME,
+                cfg.consumer_name,
+                lambda photo_id: handle_photo(conn, cfg, photo_id),
+                min_idle_ms=cfg.min_idle_ms,
+                block_ms=1000,
+            )
+        except (redis.ConnectionError, redis.TimeoutError) as e:
+            log.warning("redis connection lost (%s); reconnecting", e)
+            r = redis_client(cfg.redis_url)
 
 
 if __name__ == "__main__":

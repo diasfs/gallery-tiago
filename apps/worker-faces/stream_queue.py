@@ -75,6 +75,36 @@ def claim_stale(
     return []
 
 
+def _xread_block(block_ms: Optional[int]) -> Optional[int]:
+    """Redis BLOCK 0 waits forever; omit BLOCK for a non-blocking read."""
+    if block_ms is None or block_ms <= 0:
+        return None
+    return block_ms
+
+
+def read_pending(
+    redis_client: Any,
+    stream: str,
+    group: str,
+    consumer: str,
+    count: int = DEFAULT_BATCH,
+) -> list[tuple[str, dict]]:
+    """XREADGROUP id=0: redeliver this consumer's pending entries first."""
+    result = redis_client.xreadgroup(
+        group,
+        consumer,
+        {stream: "0"},
+        count=count,
+        block=_xread_block(0),
+    )
+    if not result:
+        return []
+    entries: list[tuple[str, dict]] = []
+    for _stream_name, messages in result:
+        entries.extend(_normalize_entries(messages))
+    return entries
+
+
 def read_new(
     redis_client: Any,
     stream: str,
@@ -89,7 +119,7 @@ def read_new(
         consumer,
         {stream: ">"},
         count=count,
-        block=block_ms,
+        block=_xread_block(block_ms),
     )
     if not result:
         return []
@@ -138,6 +168,8 @@ def consume_once(
     Return False to leave the message pending for reclaim.
     """
     batch = claim_stale(redis_client, stream, group, consumer, min_idle_ms=min_idle_ms)
+    if not batch:
+        batch = read_pending(redis_client, stream, group, consumer)
     if not batch:
         batch = read_new(redis_client, stream, group, consumer, block_ms=block_ms)
     if not batch:

@@ -22,7 +22,9 @@ import type {
   OnThisDayMeta,
   OnThisDayAlbum,
   Paginated,
+  PeopleListMeta,
   PeopleScope,
+  PeopleSort,
   PersonSummary,
   PhotoDetail,
   PhotoSummary,
@@ -159,13 +161,15 @@ async function adminRequest<T>(
 
 async function adminRequestRaw<T>(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; isForm?: boolean },
 ): Promise<T> {
   const method = init?.method ?? 'GET'
   const headers: Record<string, string> = {}
   let body: BodyInit | undefined
 
-  if (init?.body !== undefined) {
+  if (init?.isForm) {
+    body = init.body as FormData
+  } else if (init?.body !== undefined) {
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(init.body)
   }
@@ -227,6 +231,10 @@ function numericThumbEntries(thumbs: Record<string, string>): Array<[number, str
 }
 
 /** Prefer named/medium thumb, else largest numeric thumb, then AVIF master, then original. */
+export function photoJpegDownloadUrl(photoId: string): string {
+  return `${API_BASE_URL}/api/photos/${encodeURIComponent(photoId)}/download.jpg`
+}
+
 export function photoDisplayUrl(photo: PhotoMedia): string | null {
   const thumbs = photo.thumbPaths ?? {}
   const numeric = numericThumbEntries(thumbs)
@@ -486,9 +494,13 @@ export const adminApi = {
       isForm: true,
     })
   },
-  listFaceScans: (params: { page?: number; perPage?: number } = {}) =>
+  listFaceScans: (params: { page?: number; perPage?: number; targetPersonId?: string } = {}) =>
     adminRequestRaw<Paginated<FaceGalleryScan>>(
-      `/api/admin/people/face-scans${queryString({ page: params.page, perPage: params.perPage })}`,
+      `/api/admin/people/face-scans${queryString({
+        page: params.page,
+        perPage: params.perPage,
+        targetPersonId: params.targetPersonId,
+      })}`,
     ),
   getFaceScan: (id: string) =>
     adminRequest<FaceGalleryScanDetail>(`/api/admin/people/face-scans/${encodeURIComponent(id)}`),
@@ -503,10 +515,29 @@ export const adminApi = {
       `/api/admin/people/face-scans/${encodeURIComponent(scanId)}/matches/${encodeURIComponent(matchId)}`,
       { method: 'PATCH', body: { selected } },
     ),
-  confirmFaceScan: (scanId: string, name: string) =>
+  confirmFaceScan: (scanId: string, name?: string) =>
     adminRequest<{ personId: string }>(
       `/api/admin/people/face-scans/${encodeURIComponent(scanId)}/confirm`,
-      { method: 'POST', body: { name } },
+      { method: 'POST', body: name ? { name } : {} },
+    ),
+  createFaceScanFromPerson: (personId: string) =>
+    adminRequest<FaceGalleryScan>(`/api/admin/people/${encodeURIComponent(personId)}/face-scans`, {
+      method: 'POST',
+    }),
+  addPersonFaces: (personId: string, files: File[]) => {
+    const form = new FormData()
+    for (const file of files) {
+      form.append('files[]', file)
+    }
+    return adminRequestRaw<{ data: AdminPersonDetail; meta: { added: number; skipped: { filename: string; reason: string }[] } }>(
+      `/api/admin/people/${encodeURIComponent(personId)}/faces`,
+      { method: 'POST', body: form, isForm: true },
+    )
+  },
+  deletePersonFace: (personId: string, faceId: string) =>
+    adminRequest<AdminPersonDetail>(
+      `/api/admin/people/${encodeURIComponent(personId)}/faces/${encodeURIComponent(faceId)}`,
+      { method: 'DELETE' },
     ),
   listPeople: (
     params: {
@@ -514,14 +545,16 @@ export const adminApi = {
       q?: string
       page?: number
       perPage?: number
+      sort?: PeopleSort
     } = {},
   ) =>
-    adminRequestRaw<Paginated<AdminPerson>>(
+    adminRequestRaw<Paginated<AdminPerson, PeopleListMeta>>(
       `/api/admin/people${queryString({
         scope: params.scope ?? 'named',
         q: params.q,
         page: params.page,
         perPage: params.perPage,
+        sort: params.sort,
       })}`,
     ),
   getPerson: (id: string) => adminRequest<AdminPersonDetail>(`/api/admin/people/${encodeURIComponent(id)}`),
@@ -606,11 +639,18 @@ export const adminApi = {
     const qs = q.toString()
     return adminRequestRaw<ProcessingPhotosPage>(`/api/admin/processing/photos${qs ? `?${qs}` : ''}`)
   },
-  processingReprocess: (photoIds: string[], scope: ReprocessScope = 'all') =>
-    adminRequest<{ processed: number; skipped: number }>('/api/admin/processing/reprocess', {
-      method: 'POST',
-      body: { photoIds, scope },
-    }),
+  processingReprocess: (
+    body:
+      | { photoIds: string[]; scope?: ReprocessScope }
+      | { allWithAvif: true; scope?: ReprocessScope },
+  ) =>
+    adminRequest<{ processed: number; skipped: number } | { enqueued: number; remaining: number }>(
+      '/api/admin/processing/reprocess',
+      {
+        method: 'POST',
+        body,
+      },
+    ),
   processingEnqueueConvert: (body: { photoIds: string[] } | { allPendingWithOriginal: true }) =>
     adminRequest<{ enqueued: number; remaining: number }>('/api/admin/processing/enqueue-convert', {
       method: 'POST',

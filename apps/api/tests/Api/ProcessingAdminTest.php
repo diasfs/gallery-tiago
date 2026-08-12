@@ -8,6 +8,7 @@ use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use App\Enum\MediaStatus;
 use App\Message\ConvertMediaMessage;
+use App\Message\DetectFacesMessage;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -31,6 +32,7 @@ final class ProcessingAdminTest extends WebTestCase
         $this->clearFixtures();
         $this->album = $this->loadFixtures();
         $this->convertTransport()->reset();
+        $this->facesTransport()->reset();
     }
 
     protected function tearDown(): void
@@ -108,6 +110,27 @@ final class ProcessingAdminTest extends WebTestCase
         $this->assertSame(1, $data['processed']);
         $this->assertSame(0, $data['skipped']);
         $this->assertGreaterThanOrEqual(1, \count($this->convertTransport()->get()));
+    }
+
+    public function testReprocessAllWithAvifEnqueuesFaces(): void
+    {
+        $this->loginAsAdmin();
+        $done = $this->em->getRepository(Photo::class)->findOneBy(['title' => 'Done shot']);
+        $this->assertNotNull($done);
+
+        $this->client->jsonRequest('POST', '/api/admin/processing/reprocess', [
+            'allWithAvif' => true,
+            'scope' => 'faces',
+        ]);
+        $this->assertResponseIsSuccessful();
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame(1, $data['enqueued']);
+        $this->assertSame(0, $data['remaining']);
+
+        $sent = $this->facesTransport()->getSent();
+        $this->assertCount(1, $sent);
+        $this->assertInstanceOf(DetectFacesMessage::class, $sent[0]->getMessage());
+        $this->assertSame((string) $done->getId(), $sent[0]->getMessage()->getPhotoId());
     }
 
     public function testSummaryAndPhotosIncludeQueuedStatus(): void
@@ -195,5 +218,10 @@ final class ProcessingAdminTest extends WebTestCase
     private function convertTransport(): InMemoryTransport
     {
         return static::getContainer()->get('messenger.transport.convert');
+    }
+
+    private function facesTransport(): InMemoryTransport
+    {
+        return static::getContainer()->get('messenger.transport.faces');
     }
 }

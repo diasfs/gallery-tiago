@@ -4,6 +4,7 @@ import { defineComponent, onMounted } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { api } from './api/client'
+import { resetSiteConfigCache } from './composables/useSiteConfig'
 
 vi.mock('./api/client', async () => {
   const actual = await vi.importActual<typeof import('./api/client')>('./api/client')
@@ -12,6 +13,12 @@ vi.mock('./api/client', async () => {
     api: {
       ...actual.api,
       getAlbum: vi.fn(),
+      getSiteConfig: vi.fn().mockResolvedValue({
+        albumPhotoLayout: 'grid',
+        mostViewedHomeEnabled: true,
+        mostViewedExcludeRootAlbums: false,
+        gaMeasurementId: '',
+      }),
     },
   }
 })
@@ -19,6 +26,10 @@ vi.mock('./api/client', async () => {
 describe('App public header', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSiteConfigCache()
+    document.getElementById('ga-gtag')?.remove()
+    delete window.gtag
+    window.dataLayer = []
   })
 
   afterEach(() => {
@@ -193,6 +204,61 @@ describe('App public header', () => {
     expect(wrapper.find('[data-testid="admin-link"]').attributes('href')).toBe(
       '/admin/albums/album-uuid/photos',
     )
+
+    wrapper.unmount()
+  })
+
+  it('does not load gtag when gaMeasurementId is empty', async () => {
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(document.getElementById('ga-gtag')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('loads gtag on public routes when gaMeasurementId is set', async () => {
+    vi.mocked(api.getSiteConfig).mockResolvedValue({
+      albumPhotoLayout: 'grid',
+      mostViewedHomeEnabled: true,
+      mostViewedExcludeRootAlbums: false,
+      gaMeasurementId: 'G-TEST1234',
+    })
+    resetSiteConfigCache()
+
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(App, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const script = document.getElementById('ga-gtag')
+    expect(script).not.toBeNull()
+    expect(script?.getAttribute('src')).toContain('G-TEST1234')
+    expect(typeof window.gtag).toBe('function')
 
     wrapper.unmount()
   })

@@ -70,9 +70,25 @@ final class ProcessingController
     public function reprocess(Request $request): JsonResponse
     {
         $payload = $this->decode($request);
+        $allWithAvif = !empty($payload['allWithAvif']);
+
+        if ($allWithAvif) {
+            $scope = $payload['scope'] ?? PhotoReprocessor::SCOPE_ALL;
+            if (!\is_string($scope) || !\in_array($scope, PhotoReprocessor::SCOPES, true)) {
+                throw new BadRequestHttpException('Invalid scope; expected all|faces|tags.');
+            }
+
+            $totalEligible = $this->photos->countWithAvif();
+            $eligible = $this->photos->findWithAvif(self::ENQUEUE_ALL_BATCH);
+            $processed = $this->reprocessPhotos($eligible, $scope);
+            $remaining = max(0, $totalEligible - $processed);
+
+            return new JsonResponse(['data' => ['enqueued' => $processed, 'remaining' => $remaining]]);
+        }
+
         $ids = $payload['photoIds'] ?? null;
         if (!\is_array($ids) || [] === $ids) {
-            throw new BadRequestHttpException('"photoIds" must be a non-empty array.');
+            throw new BadRequestHttpException('Provide "photoIds" or set "allWithAvif": true.');
         }
         if (\count($ids) > self::REPROCESS_MAX_IDS) {
             throw new BadRequestHttpException(\sprintf('At most %d photoIds allowed.', self::REPROCESS_MAX_IDS));
@@ -104,6 +120,24 @@ final class ProcessingController
         }
 
         return new JsonResponse(['data' => ['processed' => $processed, 'skipped' => $skipped]]);
+    }
+
+    /**
+     * @param list<Photo> $photos
+     */
+    private function reprocessPhotos(array $photos, string $scope): int
+    {
+        $processed = 0;
+        foreach ($photos as $photo) {
+            try {
+                $this->reprocessor->reprocess($photo, $scope);
+            } catch (ProcessingStageDisabledException $e) {
+                throw new ConflictHttpException($e->getMessage(), $e);
+            }
+            ++$processed;
+        }
+
+        return $processed;
     }
 
     #[Route('/enqueue-convert', name: 'admin_processing_enqueue_convert', methods: ['POST'])]

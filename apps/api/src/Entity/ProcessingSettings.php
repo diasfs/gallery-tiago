@@ -38,6 +38,9 @@ class ProcessingSettings
     #[ORM\Column(options: ['default' => false])]
     private bool $mostViewedExcludeRootAlbums = false;
 
+    #[ORM\Column(length: 32, nullable: true)]
+    private ?string $gaMeasurementId = null;
+
     public static function defaults(): self
     {
         return new self();
@@ -116,6 +119,18 @@ class ProcessingSettings
     public function setMostViewedExcludeRootAlbums(bool $mostViewedExcludeRootAlbums): static
     {
         $this->mostViewedExcludeRootAlbums = $mostViewedExcludeRootAlbums;
+
+        return $this;
+    }
+
+    public function getGaMeasurementId(): ?string
+    {
+        return $this->gaMeasurementId;
+    }
+
+    public function setGaMeasurementId(?string $gaMeasurementId): static
+    {
+        $this->gaMeasurementId = $gaMeasurementId;
 
         return $this;
     }

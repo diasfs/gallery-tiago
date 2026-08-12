@@ -89,6 +89,17 @@ final class SettingsController
             $row->setMostViewedExcludeRootAlbums($payload['mostViewedExcludeRootAlbums']);
         }
 
+        if (\array_key_exists('gaMeasurementId', $payload)) {
+            $gaId = $payload['gaMeasurementId'];
+            if (null !== $gaId && !\is_string($gaId)) {
+                throw new BadRequestHttpException('gaMeasurementId must be a string or null.');
+            }
+            if (\is_string($gaId) && '' !== $gaId && !preg_match('/^(G|GT)-[A-Z0-9]+$/', $gaId)) {
+                throw new BadRequestHttpException('gaMeasurementId must match G-XXXX or GT-XXXX format.');
+            }
+            $row->setGaMeasurementId('' === $gaId ? null : $gaId);
+        }
+
         $this->em->flush();
 
         return new JsonResponse(['data' => $this->normalize($row)]);
@@ -104,6 +115,7 @@ final class SettingsController
             'albumPhotoLayout' => $settings->getAlbumPhotoLayout()->value,
             'mostViewedHomeEnabled' => $settings->isMostViewedHomeEnabled(),
             'mostViewedExcludeRootAlbums' => $settings->isMostViewedExcludeRootAlbums(),
+            'gaMeasurementId' => $settings->getGaMeasurementId() ?? '',
         ];
     }
 

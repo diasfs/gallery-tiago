@@ -4,11 +4,15 @@ namespace App\Controller\Api\Public;
 
 use App\Repository\PhotoRepository;
 use App\Service\FaceSimilarityService;
+use App\Service\PhotoJpegExporter;
 use App\Service\PhotoPublicNormalizer;
 use App\Service\ViewDeduplicatorInterface;
 use App\Service\ViewVisitorIdentifier;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
@@ -24,7 +28,34 @@ class PhotoController
         private readonly FaceSimilarityService $similarity,
         private readonly ViewDeduplicatorInterface $viewDeduplicator,
         private readonly ViewVisitorIdentifier $viewVisitor,
+        private readonly PhotoJpegExporter $jpegExporter,
     ) {
+    }
+
+    #[Route('/{id}/download.jpg', name: 'public_photos_download_jpeg', methods: ['GET'], priority: 10)]
+    public function downloadJpeg(string $id): Response
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $photo = $this->photos->findVisibleById($uuid);
+        if (null === $photo) {
+            throw new NotFoundHttpException('Photo not found.');
+        }
+
+        $path = $this->jpegExporter->export($photo);
+        $response = new BinaryFileResponse($path);
+        $response->headers->set('Content-Type', 'image/jpeg');
+        $response->setContentDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            $this->jpegExporter->suggestFilename($photo),
+        );
+        $response->deleteFileAfterSend(true);
+
+        return $response;
     }
 
     #[Route('/{id}/similar', name: 'public_photos_similar', methods: ['GET'], priority: 10)]

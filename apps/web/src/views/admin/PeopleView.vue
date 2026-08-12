@@ -7,6 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,7 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { adminApi, ApiError, mediaUrl } from '../../api/client'
-import type { AdminPerson, FaceSearchMatch, MergeSuggestion, PeopleScope } from '../../api/types'
+import type { AdminPerson, FaceSearchMatch, MergeSuggestion, PeopleScope, PeopleScopeCounts, PeopleSort } from '../../api/types'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
 
@@ -42,6 +49,7 @@ const error = ref<string | null>(null)
 const search = ref('')
 const total = ref(0)
 const perPage = 50
+const scopeCounts = ref<PeopleScopeCounts>({ all: 0, named: 0, unnamed: 0, trashed: 0 })
 
 const scope = computed<PeopleScope>(() => {
   const value = route.query.scope
@@ -50,6 +58,30 @@ const scope = computed<PeopleScope>(() => {
 })
 
 const page = computed(() => Math.max(1, Number(route.query.page) || 1))
+
+const sort = computed<PeopleSort>(() => {
+  const value = route.query.sort
+  if (value === 'faces' || value === 'newest') return value
+  return 'name'
+})
+
+function peopleQuery(overrides: {
+  scope?: PeopleScope
+  q?: string
+  page?: number
+  sort?: PeopleSort
+} = {}): Record<string, string> {
+  const nextScope = overrides.scope ?? scope.value
+  const nextQ = overrides.q ?? search.value.trim()
+  const nextPage = overrides.page ?? page.value
+  const nextSort = overrides.sort ?? sort.value
+  const query: Record<string, string> = {}
+  if (nextScope !== 'all') query.scope = nextScope
+  if (nextQ) query.q = nextQ
+  if (nextPage > 1) query.page = String(nextPage)
+  if (nextSort !== 'name') query.sort = nextSort
+  return query
+}
 
 async function loadMergeSuggestions() {
   if (scope.value !== 'unnamed') {
@@ -93,9 +125,11 @@ async function load() {
       q: search.value.trim() || undefined,
       page: page.value,
       perPage,
+      sort: sort.value,
     })
     people.value = result.data
     total.value = result.meta.total
+    scopeCounts.value = result.meta.counts
   } catch {
     error.value = 'Falha ao carregar pessoas.'
   } finally {
@@ -104,7 +138,7 @@ async function load() {
 }
 
 onMounted(load)
-watch([scope, () => route.query.q, page], load)
+watch([scope, () => route.query.q, () => route.query.sort, page], load)
 watch(scope, (next, previous) => {
   if (next !== previous) {
     resetMergeSuggestions()
@@ -122,31 +156,28 @@ watch(
 function setScope(next: PeopleScope) {
   router.push({
     name: 'admin-people',
-    query: {
-      ...(next !== 'all' ? { scope: next } : {}),
-      ...(search.value.trim() ? { q: search.value.trim() } : {}),
-    },
+    query: peopleQuery({ scope: next, page: 1 }),
   })
 }
 
 function submitSearch() {
   router.push({
     name: 'admin-people',
-    query: {
-      ...(scope.value !== 'all' ? { scope: scope.value } : {}),
-      ...(search.value.trim() ? { q: search.value.trim() } : {}),
-    },
+    query: peopleQuery({ page: 1 }),
   })
 }
 
 function setPage(nextPage: number) {
   router.push({
     name: 'admin-people',
-    query: {
-      ...(scope.value !== 'all' ? { scope: scope.value } : {}),
-      ...(search.value.trim() ? { q: search.value.trim() } : {}),
-      ...(nextPage > 1 ? { page: String(nextPage) } : {}),
-    },
+    query: peopleQuery({ page: nextPage }),
+  })
+}
+
+function setSort(next: PeopleSort) {
+  router.push({
+    name: 'admin-people',
+    query: peopleQuery({ sort: next, page: 1 }),
   })
 }
 
@@ -243,6 +274,7 @@ async function onFaceSearch(event: Event) {
           @click="setScope('all')"
         >
           Todos
+          <span class="ml-1 tabular-nums opacity-80">({{ scopeCounts.all }})</span>
         </Button>
         <Button
           type="button"
@@ -252,6 +284,7 @@ async function onFaceSearch(event: Event) {
           @click="setScope('named')"
         >
           Nomeadas
+          <span class="ml-1 tabular-nums opacity-80">({{ scopeCounts.named }})</span>
         </Button>
         <Button
           type="button"
@@ -261,6 +294,7 @@ async function onFaceSearch(event: Event) {
           @click="setScope('unnamed')"
         >
           Sem nome
+          <span class="ml-1 tabular-nums opacity-80">({{ scopeCounts.unnamed }})</span>
         </Button>
         <Button
           type="button"
@@ -270,10 +304,11 @@ async function onFaceSearch(event: Event) {
           @click="setScope('trashed')"
         >
           Lixeira
+          <span class="ml-1 tabular-nums opacity-80">({{ scopeCounts.trashed }})</span>
         </Button>
       </div>
 
-      <form class="flex gap-2" @submit.prevent="submitSearch">
+      <form class="flex flex-wrap items-center gap-2" @submit.prevent="submitSearch">
         <Input
           v-model="search"
           type="search"
@@ -281,6 +316,16 @@ async function onFaceSearch(event: Event) {
           class="w-56"
           data-testid="people-search"
         />
+        <Select :model-value="sort" @update:model-value="setSort($event as PeopleSort)">
+          <SelectTrigger class="w-[160px]" data-testid="people-sort">
+            <SelectValue placeholder="Ordenar" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">Nome</SelectItem>
+            <SelectItem value="faces">Mais rostos</SelectItem>
+            <SelectItem value="newest">Mais recentes</SelectItem>
+          </SelectContent>
+        </Select>
         <Button type="submit" variant="outline" size="sm">Buscar</Button>
       </form>
     </div>

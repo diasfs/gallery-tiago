@@ -63,7 +63,7 @@ class Face
     #[ORM\Column]
     private bool $hasEmbedding = false;
 
-    public function __construct(Photo $photo)
+    public function __construct(?Photo $photo = null)
     {
         $this->photo = $photo;
     }

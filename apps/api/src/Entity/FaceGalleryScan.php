@@ -60,6 +60,10 @@ class FaceGalleryScan
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private \DateTimeImmutable $updatedAt;
 
+    #[ORM\ManyToOne(targetEntity: Person::class)]
+    #[ORM\JoinColumn(name: 'target_person_id', nullable: true, onDelete: 'SET NULL')]
+    private ?Person $targetPerson = null;
+
     /** @var Collection<int, FaceGalleryScanMatch> */
     #[ORM\OneToMany(mappedBy: 'scan', targetEntity: FaceGalleryScanMatch::class, cascade: ['remove'], orphanRemoval: true)]
     private Collection $matches;
@@ -211,6 +215,18 @@ class FaceGalleryScan
     public function getUpdatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function getTargetPerson(): ?Person
+    {
+        return $this->targetPerson;
+    }
+
+    public function setTargetPerson(?Person $targetPerson): static
+    {
+        $this->targetPerson = $targetPerson;
+
+        return $this;
     }
 
     /** @return Collection<int, FaceGalleryScanMatch> */

@@ -20,6 +20,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
@@ -28,6 +29,7 @@ use Symfony\Component\Uid\Uuid;
 class PersonController
 {
     private const ALLOWED_AVATAR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const FACE_UPLOAD_MAX = 10;
 
     public function __construct(
         private readonly PersonRepository $people,
@@ -39,6 +41,8 @@ class PersonController
         private readonly FaceEmbeddingClientInterface $embeddingClient,
         private readonly MediaStorage $storage,
         private readonly EntityManagerInterface $em,
+        #[Autowire('%env(float:FACE_MATCH_THRESHOLD)%')]
+        private readonly float $matchThreshold,
     ) {
     }
 
@@ -106,6 +110,10 @@ class PersonController
         }
 
         $q = $request->query->get('q');
+        $sort = $request->query->getString('sort', 'name');
+        if (!\in_array($sort, ['name', 'faces', 'newest'], true)) {
+            throw new BadRequestHttpException('sort must be name, faces, or newest.');
+        }
         $page = Pagination::page($request);
         $perPage = Pagination::perPage($request, 50, 100);
         $result = $this->people->searchPaginated(
@@ -113,6 +121,7 @@ class PersonController
             \is_string($q) ? $q : null,
             $page,
             $perPage,
+            $sort,
         );
         $ids = array_map(
             static fn (Person $person): string => (string) $person->getId(),
@@ -133,14 +142,17 @@ class PersonController
 
         return new JsonResponse([
             'data' => $data,
-            'meta' => Pagination::meta($page, $perPage, $result['total']),
+            'meta' => array_merge(
+                Pagination::meta($page, $perPage, $result['total']),
+                ['counts' => $this->people->countByScopes()],
+            ),
         ]);
     }
 
     #[Route('/api/admin/people/{id}', name: 'admin_people_show', methods: ['GET'], priority: -10)]
     public function show(string $id): JsonResponse
     {
-        $person = $this->findPersonOrFail($id);
+        $person = $this->findPersonForReadOrFail($id);
 
         return new JsonResponse(['data' => $this->normalizePersonDetail($person)]);
     }
@@ -217,6 +229,101 @@ class PersonController
         $person = $this->findPersonOrFail($id);
         $this->clearCustomAvatar($person);
         $this->em->flush();
+
+        return new JsonResponse(['data' => $this->normalizePersonDetail($person)]);
+    }
+
+    #[Route('/api/admin/people/{id}/faces', name: 'admin_people_faces_add', methods: ['POST'])]
+    public function addFaces(string $id, Request $request): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+        $files = $this->uploadedFaceFiles($request);
+        if ([] === $files) {
+            throw new BadRequestHttpException('A "files" (or "file") upload is required.');
+        }
+        if (\count($files) > self::FACE_UPLOAD_MAX) {
+            throw new BadRequestHttpException(\sprintf('At most %d files allowed.', self::FACE_UPLOAD_MAX));
+        }
+
+        $references = $this->existingEmbeddings($person);
+        $added = 0;
+        $skipped = [];
+
+        foreach ($files as $file) {
+            $filename = $file->getClientOriginalName() ?: 'upload.jpg';
+            if (!$file->isValid()) {
+                $skipped[] = ['filename' => $filename, 'reason' => $file->getErrorMessage()];
+                continue;
+            }
+            if (!\in_array($file->getMimeType(), self::ALLOWED_AVATAR_MIME_TYPES, true)) {
+                $skipped[] = ['filename' => $filename, 'reason' => 'Unsupported file type; expected JPEG, PNG, or WebP.'];
+                continue;
+            }
+
+            try {
+                $detected = $this->embeddingClient->detectUpload($file);
+            } catch (\RuntimeException $e) {
+                $skipped[] = ['filename' => $filename, 'reason' => $e->getMessage()];
+                continue;
+            }
+
+            $kept = $detected;
+            if ([] !== $references) {
+                $kept = array_values(array_filter(
+                    $detected,
+                    fn (array $face): bool => $this->similarity->matchesAnyReference(
+                        $face['embedding'],
+                        $references,
+                        $this->matchThreshold,
+                    ),
+                ));
+            }
+            if ([] === $kept) {
+                $skipped[] = ['filename' => $filename, 'reason' => 'No matching face for this person.'];
+                continue;
+            }
+
+            foreach ($kept as $detection) {
+                $face = new Face(null);
+                $face->setPerson($person);
+                $face->setX($detection['x']);
+                $face->setY($detection['y']);
+                $face->setWidth($detection['width']);
+                $face->setHeight($detection['height']);
+                $face->setEmbedding($detection['embedding']);
+                $this->em->persist($face);
+                $this->em->flush();
+                $face->setCropPath($this->storage->writeFaceCrop((string) $face->getId(), $detection['cropJpeg']));
+                $this->em->flush();
+                $references[] = $detection['embedding'];
+                ++$added;
+            }
+        }
+
+        $this->em->refresh($person);
+
+        return new JsonResponse([
+            'data' => $this->normalizePersonDetail($person),
+            'meta' => ['added' => $added, 'skipped' => $skipped],
+        ]);
+    }
+
+    #[Route('/api/admin/people/{id}/faces/{faceId}', name: 'admin_people_faces_delete', methods: ['DELETE'])]
+    public function deleteFace(string $id, string $faceId): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+        $face = $this->findFaceOrFail($faceId);
+        if ($face->getPerson()?->getId()?->equals($person->getId()) !== true) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+
+        if ($person->getAvatarFace()?->getId()?->equals($face->getId()) === true) {
+            $person->setAvatarFace(null);
+        }
+        $this->storage->deleteRelative($face->getCropPath());
+        $this->em->remove($face);
+        $this->em->flush();
+        $this->em->refresh($person);
 
         return new JsonResponse(['data' => $this->normalizePersonDetail($person)]);
     }
@@ -364,6 +471,22 @@ class PersonController
         return $person;
     }
 
+    private function findPersonForReadOrFail(string $id): Person
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $person = $this->people->findIncludingTrashed((string) $uuid);
+        if (null === $person) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        return $person;
+    }
+
     private function findTrashedPersonOrFail(string $id): Person
     {
         try {
@@ -416,6 +539,36 @@ class PersonController
     {
         $this->storage->deleteRelative($person->getAvatarPath());
         $person->setAvatarPath(null);
+    }
+
+    /** @return UploadedFile[] */
+    private function uploadedFaceFiles(Request $request): array
+    {
+        $raw = $request->files->get('files')
+            ?? $request->files->get('files[]')
+            ?? $request->files->get('file');
+        if ($raw instanceof UploadedFile) {
+            return [$raw];
+        }
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        return array_values(array_filter($raw, static fn ($file): bool => $file instanceof UploadedFile));
+    }
+
+    /** @return list<float[]> */
+    private function existingEmbeddings(Person $person): array
+    {
+        $refs = [];
+        foreach ($person->getFaces() as $face) {
+            $embedding = $face->getEmbedding();
+            if ($face->hasEmbedding() && \is_array($embedding) && [] !== $embedding) {
+                $refs[] = $embedding;
+            }
+        }
+
+        return $refs;
     }
 
     /** @return array<string, mixed> */

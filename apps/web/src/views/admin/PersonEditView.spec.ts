@@ -17,6 +17,9 @@ vi.mock('../../api/client', async () => {
       deletePersonAvatar: vi.fn(),
       mergePerson: vi.fn(),
       discardPerson: vi.fn(),
+      addPersonFaces: vi.fn(),
+      deletePersonFace: vi.fn(),
+      listFaceScans: vi.fn(),
     },
   }
 })
@@ -29,6 +32,9 @@ const mockedApi = adminApi as unknown as {
   deletePersonAvatar: ReturnType<typeof vi.fn>
   mergePerson: ReturnType<typeof vi.fn>
   discardPerson: ReturnType<typeof vi.fn>
+  addPersonFaces: ReturnType<typeof vi.fn>
+  deletePersonFace: ReturnType<typeof vi.fn>
+  listFaceScans: ReturnType<typeof vi.fn>
 }
 
 function makeDetail(overrides: Partial<AdminPersonDetail> = {}): AdminPersonDetail {
@@ -109,6 +115,10 @@ describe('PersonEditView', () => {
     mockedApi.listPeople.mockResolvedValue({
       data: [],
       meta: { page: 1, perPage: 20, total: 0 },
+    })
+    mockedApi.listFaceScans.mockResolvedValue({
+      data: [],
+      meta: { page: 1, perPage: 30, total: 0 },
     })
   })
 
@@ -265,6 +275,36 @@ describe('PersonEditView', () => {
 
     expect(mockedApi.uploadPersonAvatar).toHaveBeenCalledWith('person-1', file)
     expect(wrapper.find('[data-testid="remove-custom-avatar"]').exists()).toBe(true)
+  })
+
+  it('uploads multiple reference face photos', async () => {
+    mockedApi.addPersonFaces.mockResolvedValue({
+      data: makeDetail({ faceCount: 3 }),
+      meta: { added: 1, skipped: [] },
+    })
+    const { wrapper } = await mountView()
+
+    const input = wrapper.find('[data-testid="reference-faces-input"]')
+    const file = new File(['fake'], 'face.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(input.element as HTMLInputElement, 'files', {
+      value: [file],
+      configurable: true,
+    })
+    await input.trigger('change')
+    await flushPromises()
+
+    expect(mockedApi.addPersonFaces).toHaveBeenCalledWith('person-1', [file])
+  })
+
+  it('deletes an individual face', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedApi.deletePersonFace.mockResolvedValue(makeDetail({ faces: [], faceCount: 0 }))
+    const { wrapper } = await mountView()
+
+    await wrapper.findAll('[data-testid="face-delete"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.deletePersonFace).toHaveBeenCalledWith('person-1', 'face-1')
   })
 
   it('removes a custom avatar', async () => {

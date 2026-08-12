@@ -20,22 +20,35 @@ final class FaceGalleryScanConfirmer
     ) {
     }
 
-    public function confirm(FaceGalleryScan $scan, string $name): Person
+    public function confirm(FaceGalleryScan $scan, ?string $name = null): Person
     {
         if (FaceGalleryScan::STATUS_DONE !== $scan->getStatus()) {
             throw new BadRequestHttpException('Scan must be done before confirming.');
         }
 
-        $trimmed = trim($name);
-        if ('' === $trimmed) {
-            throw new BadRequestHttpException('name is required.');
+        $person = $scan->getTargetPerson();
+        if (null !== $person) {
+            if ($person->isDeleted()) {
+                throw new BadRequestHttpException('Target person is in the trash.');
+            }
+        } else {
+            $trimmed = is_string($name) ? trim($name) : '';
+            if ('' === $trimmed) {
+                throw new BadRequestHttpException('name is required.');
+            }
+            $person = new Person();
+            $person->setName($trimmed);
+            $person->setIsNamed(true);
+            $this->em->persist($person);
         }
 
-        $person = new Person();
-        $person->setName($trimmed);
-        $person->setIsNamed(true);
-        $this->em->persist($person);
+        $this->attachSelectedMatches($scan, $person);
 
+        return $person;
+    }
+
+    private function attachSelectedMatches(FaceGalleryScan $scan, Person $person): void
+    {
         /** @var list<array{0: Face, 1: ?string}> $pendingCrops */
         $pendingCrops = [];
 
@@ -68,7 +81,5 @@ final class FaceGalleryScanConfirmer
         }
 
         $this->em->flush();
-
-        return $person;
     }
 }

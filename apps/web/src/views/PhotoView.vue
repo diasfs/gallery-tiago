@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRouter, type RouteLocationRaw } from 'vue-router'
-import { absoluteMediaUrl, api, mediaUrl, PHOTO_DETAIL_SIZES, photoDisplayUrl, photoSrcSet } from '../api/client'
+import {
+  absoluteMediaUrl,
+  api,
+  mediaUrl,
+  PHOTO_DETAIL_SIZES,
+  photoDisplayUrl,
+  photoJpegDownloadUrl,
+  photoSrcSet,
+} from '../api/client'
 import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
@@ -115,6 +123,7 @@ watch(
 )
 
 const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
+const jpegDownloadHref = computed(() => (photo.value ? photoJpegDownloadUrl(photo.value.id) : null))
 const srcSet = computed(() => (photo.value ? photoSrcSet(photo.value) : null))
 
 const breadcrumbAncestors = computed(() => {
@@ -205,6 +214,15 @@ function onPersonDeleted() {
 
       <p class="photo-detail__views">
         <ViewCount :count="photo.viewCount" />
+        <a
+          v-if="jpegDownloadHref"
+          :href="jpegDownloadHref"
+          class="photo-detail__download"
+          data-testid="photo-jpeg-download"
+          download
+        >
+          Baixar Foto
+        </a>
       </p>
 
       <div v-if="photo.tags.length > 0" class="photo-detail__tags">
@@ -303,6 +321,24 @@ function onPersonDeleted() {
 .photo-detail__views {
   margin: 0.75rem 0 0;
   color: var(--muted, #888);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.photo-detail__download {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: var(--fg, #eee);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.photo-detail__download:hover {
+  background: #262626;
 }
 
 .photo-detail__tags {

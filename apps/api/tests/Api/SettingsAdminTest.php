@@ -54,6 +54,7 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertSame('grid', $data['albumPhotoLayout']);
         $this->assertTrue($data['mostViewedHomeEnabled']);
         $this->assertFalse($data['mostViewedExcludeRootAlbums']);
+        $this->assertSame('', $data['gaMeasurementId']);
     }
 
     public function testUpdatePersistsSettings(): void
@@ -136,6 +137,47 @@ final class SettingsAdminTest extends WebTestCase
         $this->assertTrue($row->isMostViewedExcludeRootAlbums());
     }
 
+    public function testUpdatePersistsGaMeasurementId(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'gaMeasurementId' => 'G-ABCDEF1234',
+        ]);
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('G-ABCDEF1234', $data['gaMeasurementId']);
+
+        $row = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $this->assertSame('G-ABCDEF1234', $row->getGaMeasurementId());
+    }
+
+    public function testUpdateClearsGaMeasurementIdWithEmptyString(): void
+    {
+        $row = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $row->setGaMeasurementId('G-OLD123');
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'gaMeasurementId' => '',
+        ]);
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('', $data['gaMeasurementId']);
+        $this->assertNull($row->getGaMeasurementId());
+    }
+
+    public function testUpdateRejectsInvalidGaMeasurementId(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('PUT', '/api/admin/settings', [
+            'gaMeasurementId' => 'UA-12345-1',
+        ]);
+        $this->assertResponseStatusCodeSame(400);
+    }
+
     private function loginAsAdmin(): void
     {
         $this->client->jsonRequest('POST', '/api/admin/login', [
@@ -172,6 +214,7 @@ final class SettingsAdminTest extends WebTestCase
             $row->setAlbumPhotoLayout(AlbumPhotoLayout::Grid);
             $row->setMostViewedHomeEnabled(true);
             $row->setMostViewedExcludeRootAlbums(false);
+            $row->setGaMeasurementId(null);
         }
         $this->em->flush();
     }

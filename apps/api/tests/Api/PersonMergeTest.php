@@ -125,6 +125,14 @@ final class PersonMergeTest extends WebTestCase
     }
 
     /** @return float[] */
+    private function setPersonCreatedAt(Person $person, \DateTimeImmutable $createdAt): void
+    {
+        $property = new \ReflectionProperty(Person::class, 'createdAt');
+        $property->setAccessible(true);
+        $property->setValue($person, $createdAt);
+        $this->em->flush();
+    }
+
     private function embedding(): array
     {
         return array_fill(0, 512, 0.01);
@@ -434,6 +442,10 @@ final class PersonMergeTest extends WebTestCase
         $names = array_column($payload['data'], 'name');
         $this->assertContains('Ativa', $names);
         $this->assertNotContains('Lixeira', $names);
+        $this->assertSame(
+            ['all' => 1, 'named' => 1, 'unnamed' => 0, 'trashed' => 1],
+            $payload['meta']['counts'],
+        );
 
         $this->client->request('GET', '/api/admin/people?scope=trashed');
         $this->assertResponseIsSuccessful();
@@ -441,6 +453,32 @@ final class PersonMergeTest extends WebTestCase
         $names = array_column($payload['data'], 'name');
         $this->assertContains('Lixeira', $names);
         $this->assertNotContains('Ativa', $names);
+        $this->assertSame(
+            ['all' => 1, 'named' => 1, 'unnamed' => 0, 'trashed' => 1],
+            $payload['meta']['counts'],
+        );
+    }
+
+    public function testShowTrashedPerson(): void
+    {
+        $person = new Person();
+        $person->setName('Lixeira detalhe');
+        $person->setIsNamed(true);
+        $person->setDeletedAt(new \DateTimeImmutable());
+        $this->em->persist($person);
+        $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+        $personId = (string) $person->getId();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/people/'.$personId);
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode($this->client->getResponse()->getContent(), true);
+        $this->assertSame($personId, $payload['data']['id']);
+        $this->assertNotNull($payload['data']['deletedAt']);
+        $this->assertCount(1, $payload['data']['faces']);
     }
 
     public function testTrashedPeopleListShowsFaceCount(): void
@@ -550,6 +588,60 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertSame(100, $payload['meta']['perPage']);
+    }
+
+    public function testAdminPeopleSortByFaces(): void
+    {
+        $few = new Person();
+        $few->setName('Few faces');
+        $few->setIsNamed(true);
+        $this->em->persist($few);
+        $many = new Person();
+        $many->setName('Many faces');
+        $many->setIsNamed(true);
+        $this->em->persist($many);
+        $this->detectedFace($this->publicPhoto, $few);
+        $this->detectedFace($this->publicPhoto, $many);
+        $this->detectedFace($this->privatePhoto, $many);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=named&sort=faces');
+
+        $this->assertResponseIsSuccessful();
+        $names = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'name');
+        $this->assertSame('Many faces', $names[0]);
+        $this->assertContains('Few faces', $names);
+    }
+
+    public function testAdminPeopleSortByNewest(): void
+    {
+        $older = new Person();
+        $older->setName('Older');
+        $older->setIsNamed(true);
+        $this->em->persist($older);
+        $newer = new Person();
+        $newer->setName('Newer');
+        $newer->setIsNamed(true);
+        $this->em->persist($newer);
+        $this->em->flush();
+        $this->setPersonCreatedAt($older, new \DateTimeImmutable('2020-01-01'));
+        $this->setPersonCreatedAt($newer, new \DateTimeImmutable('2025-01-01'));
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?scope=named&sort=newest');
+
+        $this->assertResponseIsSuccessful();
+        $names = array_column(json_decode((string) $this->client->getResponse()->getContent(), true)['data'], 'name');
+        $this->assertSame('Newer', $names[0]);
+    }
+
+    public function testAdminPeopleSortRejectsInvalidValue(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people?sort=popular');
+
+        $this->assertResponseStatusCodeSame(400);
     }
 
     public function testAdminPeopleListReturnsAggregatedFaceCountAndFallbackAvatar(): void
@@ -985,7 +1077,7 @@ final class PersonMergeTest extends WebTestCase
 
     // --- Reprocess ------------------------------------------------------------
 
-    public function testReprocessDeletesOnlyAutoDetectedFacesAndReenqueuesDetect(): void
+    public function testReprocessKeepsExistingFacesAndReenqueuesDetect(): void
     {
         $person = new Person();
         $this->em->persist($person);
@@ -1003,7 +1095,7 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseIsSuccessful();
 
         $this->em->clear();
-        $this->assertNull($this->em->getRepository(Face::class)->find($autoFaceId));
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($autoFaceId));
         $this->assertNotNull($this->em->getRepository(Face::class)->find($manualFaceId));
 
         $sent = $this->facesTransport()->getSent();
@@ -1049,7 +1141,7 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseStatusCodeSame(404);
     }
 
-    public function testReprocessScopeFacesOnlyEnqueuesDetectAndDeletesAutoFaces(): void
+    public function testReprocessScopeFacesOnlyEnqueuesDetectAndKeepsAutoFaces(): void
     {
         $person = new Person();
         $this->em->persist($person);
@@ -1066,7 +1158,7 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseIsSuccessful();
 
         $this->em->clear();
-        $this->assertNull($this->em->getRepository(Face::class)->find($autoFaceId));
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($autoFaceId));
 
         $sent = $this->facesTransport()->getSent();
         $this->assertCount(1, $sent);

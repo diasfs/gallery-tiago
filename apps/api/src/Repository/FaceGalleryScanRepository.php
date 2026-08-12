@@ -25,9 +25,13 @@ class FaceGalleryScanRepository extends ServiceEntityRepository
     /**
      * @return array{items: FaceGalleryScan[], total: int}
      */
-    public function searchPaginated(int $page, int $perPage): array
+    public function searchPaginated(int $page, int $perPage, ?string $targetPersonId = null): array
     {
         $qb = $this->createQueryBuilder('s');
+        if (null !== $targetPersonId && '' !== $targetPersonId) {
+            $qb->andWhere('IDENTITY(s.targetPerson) = :targetPersonId')
+                ->setParameter('targetPersonId', $targetPersonId);
+        }
 
         $total = (int) (clone $qb)
             ->select('COUNT(s.id)')

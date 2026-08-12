@@ -55,6 +55,7 @@ describe('HomeView', () => {
       albumPhotoLayout: 'grid',
       mostViewedHomeEnabled: true,
       mostViewedExcludeRootAlbums: false,
+      gaMeasurementId: '',
     })
     mockedApi.listAlbums.mockResolvedValue({
       data: [makeAlbum()],
@@ -121,6 +122,7 @@ describe('HomeView', () => {
       albumPhotoLayout: 'grid',
       mostViewedHomeEnabled: false,
       mostViewedExcludeRootAlbums: false,
+      gaMeasurementId: '',
     })
     const wrapper = await mountHome()
 

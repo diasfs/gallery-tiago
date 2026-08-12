@@ -19,9 +19,14 @@ import type { FaceGalleryScan, FaceGalleryScanDetail, FaceGalleryScanMatch, Face
 const props = withDefaults(
   defineProps<{
     showUpload?: boolean
+    attachPersonId?: string | null
   }>(),
-  { showUpload: true },
+  { showUpload: true, attachPersonId: null },
 )
+
+const emit = defineEmits<{
+  attached: [personId: string]
+}>()
 
 const router = useRouter()
 
@@ -96,7 +101,10 @@ function startPoll() {
 
 async function refreshList() {
   try {
-    const result = await adminApi.listFaceScans({ perPage: 30 })
+    const result = await adminApi.listFaceScans({
+      perPage: 30,
+      targetPersonId: props.attachPersonId ?? undefined,
+    })
     scans.value = result.data
     if (selectedId.value) {
       const row = scans.value.find((s) => s.id === selectedId.value)
@@ -234,22 +242,46 @@ async function toggleMatch(match: FaceGalleryScanMatch) {
   }
 }
 
+async function startFromPerson() {
+  if (!props.attachPersonId) return
+  uploadLoading.value = true
+  error.value = null
+  try {
+    const created = await adminApi.createFaceScanFromPerson(props.attachPersonId)
+    await refreshList()
+    startPoll()
+    await selectScan(created)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? err.message : 'Não foi possível iniciar a varredura.'
+  } finally {
+    uploadLoading.value = false
+  }
+}
+
 async function confirmScan() {
   if (!selectedDetail.value) return
   const name = confirmName.value.trim()
-  if (!name) {
+  if (!props.attachPersonId && !name) {
     error.value = 'Informe um nome para a nova pessoa.'
     return
   }
   confirming.value = true
   error.value = null
   try {
-    const result = await adminApi.confirmFaceScan(selectedDetail.value.id, name)
+    const result = await adminApi.confirmFaceScan(
+      selectedDetail.value.id,
+      props.attachPersonId ? undefined : name,
+    )
     selectedId.value = null
     selectedDetail.value = null
     confirmName.value = ''
     await refreshList()
-    await router.push({ name: 'admin-person-edit', params: { id: result.personId } })
+    if (props.attachPersonId) {
+      emit('attached', result.personId)
+    } else {
+      await router.push({ name: 'admin-person-edit', params: { id: result.personId } })
+    }
   } catch (err) {
     error.value =
       err instanceof ApiError ? err.message : 'Não foi possível confirmar a varredura.'
@@ -293,6 +325,20 @@ onUnmounted(stopPoll)
         @change="onUpload"
       />
       <p v-if="uploadLoading" class="text-sm text-muted-foreground">Iniciando varredura…</p>
+    </div>
+    <div v-else-if="attachPersonId" class="space-y-2">
+      <Button
+        type="button"
+        size="sm"
+        :disabled="uploadLoading"
+        data-testid="gallery-scan-from-person"
+        @click="startFromPerson"
+      >
+        {{ uploadLoading ? 'Iniciando…' : 'Varrer galeria' }}
+      </Button>
+      <p class="text-xs text-muted-foreground">
+        Compara o rosto desta pessoa com todas as fotos convertidas.
+      </p>
     </div>
 
     <Alert v-if="error" variant="destructive">
@@ -477,7 +523,7 @@ onUnmounted(stopPoll)
           data-testid="gallery-scan-confirm"
           @submit.prevent="confirmScan"
         >
-          <div class="min-w-[12rem] flex-1">
+          <div v-if="!attachPersonId" class="min-w-[12rem] flex-1">
             <Input
               v-model="confirmName"
               type="text"
@@ -486,7 +532,7 @@ onUnmounted(stopPoll)
             />
           </div>
           <Button type="submit" :disabled="confirming" data-testid="gallery-scan-confirm-button">
-            {{ confirming ? 'Criando…' : 'Criar pessoa' }}
+            {{ confirming ? 'Salvando…' : attachPersonId ? 'Anexar à pessoa' : 'Criar pessoa' }}
           </Button>
         </form>
       </template>

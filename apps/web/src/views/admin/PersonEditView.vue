@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
 import type { AdminPerson, AdminPersonDetail } from '../../api/types'
+import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
 const props = defineProps<{ id: string }>()
@@ -79,6 +80,11 @@ const title = computed(() => {
   if (person.value.isNamed && person.value.name) return person.value.name
   return 'Agrupamento sem nome'
 })
+
+const isTrashed = computed(() => !!person.value?.deletedAt)
+const peopleBackLink = computed(() =>
+  isTrashed.value ? { path: '/admin/people', query: { scope: 'trashed' } } : { path: '/admin/people' },
+)
 
 async function load() {
   loading.value = true
@@ -178,6 +184,45 @@ async function onAvatarFileChange(event: Event) {
   }
 }
 
+async function onReferenceFacesChange(event: Event) {
+  if (!person.value) return
+  const input = event.target as HTMLInputElement
+  const files = input.files ? [...input.files] : []
+  input.value = ''
+  if (files.length === 0) return
+
+  saving.value = true
+  error.value = null
+  try {
+    const result = await adminApi.addPersonFaces(person.value.id, files)
+    person.value = result.data
+    if (result.meta.skipped.length > 0) {
+      const skipped = result.meta.skipped.map((s) => `${s.filename}: ${s.reason}`).join('; ')
+      error.value = `${result.meta.added} adicionado(s). Ignorados: ${skipped}`
+    }
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao adicionar rostos: ${err.message}` : 'Falha ao adicionar rostos.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteFace(faceId: string) {
+  if (!person.value) return
+  if (!window.confirm('Remover este rosto?')) return
+  saving.value = true
+  error.value = null
+  try {
+    person.value = await adminApi.deletePersonFace(person.value.id, faceId)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao remover rosto: ${err.message}` : 'Falha ao remover rosto.'
+  } finally {
+    saving.value = false
+  }
+}
+
 async function removeCustomAvatar() {
   if (!person.value) return
   saving.value = true
@@ -223,12 +268,43 @@ async function deletePerson() {
     saving.value = false
   }
 }
+
+async function restorePerson() {
+  if (!person.value) return
+  saving.value = true
+  error.value = null
+  try {
+    person.value = await adminApi.restorePerson(person.value.id)
+  } catch (err) {
+    error.value = err instanceof ApiError ? `Falha ao restaurar: ${err.message}` : 'Falha ao restaurar pessoa.'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function purgePerson() {
+  if (!person.value) return
+  if (!window.confirm(`Excluir permanentemente ${title.value} e todos os rostos?`)) {
+    return
+  }
+  saving.value = true
+  error.value = null
+  try {
+    await adminApi.purgePerson(person.value.id)
+    await router.push(peopleBackLink.value)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao excluir permanentemente: ${err.message}` : 'Falha ao excluir permanentemente.'
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
   <section class="space-y-6">
     <div>
-      <RouterLink to="/admin/people" class="admin-back-link">← Pessoas</RouterLink>
+      <RouterLink :to="peopleBackLink" class="admin-back-link">← Pessoas</RouterLink>
     </div>
 
     <div v-if="loading" class="admin-panel rounded-xl p-12 text-center text-sm text-muted-foreground">
@@ -247,10 +323,35 @@ async function deletePerson() {
             <Badge :variant="person.isNamed ? 'default' : 'secondary'">
               {{ person.isNamed ? 'Nomeada' : 'Sem nome' }}
             </Badge>
+            <Badge v-if="isTrashed" variant="outline">Na lixeira</Badge>
             <span class="text-sm text-muted-foreground">{{ person.faceCount }} rosto(s)</span>
           </div>
         </div>
+        <div v-if="isTrashed" class="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="person-restore"
+            :disabled="saving"
+            @click="restorePerson"
+          >
+            Restaurar
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            class="admin-btn-danger-solid"
+            data-testid="person-purge"
+            :disabled="saving"
+            @click="purgePerson"
+          >
+            Excluir permanentemente
+          </Button>
+        </div>
         <Button
+          v-else
           type="button"
           variant="destructive"
           size="sm"
@@ -262,7 +363,13 @@ async function deletePerson() {
         </Button>
       </div>
 
-      <div class="admin-panel space-y-4 rounded-xl p-6">
+      <Alert v-if="isTrashed" variant="default">
+        <AlertDescription>
+          Esta pessoa está na lixeira. Restaure para editar ou exclua permanentemente.
+        </AlertDescription>
+      </Alert>
+
+      <div v-if="!isTrashed" class="admin-panel space-y-4 rounded-xl p-6">
         <div class="space-y-2">
           <Label for="person-name">Nome</Label>
           <div class="flex gap-2">
@@ -340,7 +447,7 @@ async function deletePerson() {
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-sm font-medium text-foreground">Avatar</h3>
           <Button
-            v-if="person.hasCustomAvatar"
+            v-if="!isTrashed && person.hasCustomAvatar"
             type="button"
             variant="ghost"
             size="sm"
@@ -366,7 +473,7 @@ async function deletePerson() {
           >
             Sem avatar
           </div>
-          <div class="space-y-2">
+          <div v-if="!isTrashed" class="space-y-2">
             <Label for="person-avatar-file">Enviar imagem</Label>
             <Input
               id="person-avatar-file"
@@ -383,19 +490,38 @@ async function deletePerson() {
       </div>
 
       <div class="space-y-3">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <h3 class="text-sm font-medium text-foreground">Rostos</h3>
-          <Button
-            v-if="person.avatarFaceId"
-            type="button"
-            variant="ghost"
-            size="sm"
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              v-if="!isTrashed && person.avatarFaceId"
+              type="button"
+              variant="ghost"
+              size="sm"
+              :disabled="saving"
+              data-testid="clear-primary"
+              @click="clearPrimaryFace"
+            >
+              Remover principal
+            </Button>
+          </div>
+        </div>
+
+        <div v-if="!isTrashed" class="space-y-2">
+          <Label for="person-faces-file">Adicionar fotos de rosto</Label>
+          <Input
+            id="person-faces-file"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
             :disabled="saving"
-            data-testid="clear-primary"
-            @click="clearPrimaryFace"
-          >
-            Remover principal
-          </Button>
+            data-testid="reference-faces-input"
+            class="max-w-xs cursor-pointer"
+            @change="onReferenceFacesChange"
+          />
+          <p class="text-xs text-muted-foreground">
+            JPEG, PNG ou WebP. Detecta e recorta os rostos desta pessoa.
+          </p>
         </div>
 
         <div
@@ -406,45 +532,66 @@ async function deletePerson() {
         </div>
 
         <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          <button
+          <div
             v-for="face in person.faces"
             :key="face.id"
-            type="button"
-            class="group relative overflow-hidden rounded-lg border bg-muted text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            class="group relative overflow-hidden rounded-lg border bg-muted"
             :class="
               person.avatarFaceId === face.id
                 ? 'border-foreground ring-2 ring-foreground'
                 : 'border-transparent hover:border-border'
             "
-            data-testid="face-tile"
-            :disabled="saving || !face.cropPath"
-            @click="setPrimaryFace(face.id)"
           >
-            <img
-              v-if="faceSrc(face.cropPath)"
-              :src="faceSrc(face.cropPath)!"
-              alt="Recorte do rosto"
-              class="aspect-square w-full object-cover"
-            />
-            <div v-else class="flex aspect-square items-center justify-center text-xs text-muted-foreground">
-              Sem recorte
-            </div>
-            <span
-              v-if="person.avatarFaceId === face.id"
-              class="absolute bottom-1.5 left-1.5 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background"
-              data-testid="primary-badge"
+            <button
+              type="button"
+              class="block w-full text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :disabled="saving || !face.cropPath || isTrashed"
+              data-testid="face-tile"
+              @click="setPrimaryFace(face.id)"
             >
-              Principal
-            </span>
-            <span
-              v-else
-              class="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] text-muted-foreground opacity-0 transition group-hover:opacity-100"
+              <img
+                v-if="faceSrc(face.cropPath)"
+                :src="faceSrc(face.cropPath)!"
+                alt="Recorte do rosto"
+                class="aspect-square w-full object-cover"
+              />
+              <div v-else class="flex aspect-square items-center justify-center text-xs text-muted-foreground">
+                Sem recorte
+              </div>
+              <span
+                v-if="person.avatarFaceId === face.id"
+                class="absolute bottom-1.5 left-1.5 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-medium text-background"
+                data-testid="primary-badge"
+              >
+                Principal
+              </span>
+              <span
+                v-else
+                class="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] text-muted-foreground opacity-0 transition group-hover:opacity-100"
+              >
+                Definir como principal
+              </span>
+            </button>
+            <button
+              v-if="!isTrashed"
+              type="button"
+              class="absolute top-1.5 right-1.5 rounded bg-background/90 px-1.5 py-0.5 text-[10px] text-destructive opacity-0 transition group-hover:opacity-100"
+              :disabled="saving"
+              data-testid="face-delete"
+              @click="deleteFace(face.id)"
             >
-              Definir como principal
-            </span>
-          </button>
+              Remover
+            </button>
+          </div>
         </div>
       </div>
+
+      <FaceGalleryScanPanel
+        v-if="!isTrashed"
+        :show-upload="false"
+        :attach-person-id="person.id"
+        @attached="load"
+      />
     </template>
 
     <Dialog :open="deleteOpen" @update:open="(open) => { if (!open && !saving) deleteOpen = false }">

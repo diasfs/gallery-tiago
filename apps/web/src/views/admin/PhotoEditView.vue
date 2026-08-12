@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -122,11 +122,39 @@ const {
   clear: clearPeopleSearch,
 } = useAdminPersonSearch()
 const peopleBusy = ref(false)
+let peopleSearchTimer: ReturnType<typeof setTimeout> | null = null
+const peopleSearchOpen = ref(false)
+const peopleSearchRoot = ref<HTMLElement | null>(null)
 
 function onPeopleSearchInput(event: Event) {
   peopleQuery.value = (event.target as HTMLInputElement).value
+  peopleSearchOpen.value = true
+  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
+  peopleSearchTimer = setTimeout(() => void searchPeople(), 200)
+}
+
+function onPeopleSearchFocus() {
+  peopleSearchOpen.value = true
+  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
   void searchPeople()
 }
+
+function closePeopleSearch() {
+  peopleSearchOpen.value = false
+}
+
+function onDocumentPointerDown(event: Event) {
+  const root = peopleSearchRoot.value
+  if (root && !root.contains(event.target as Node)) closePeopleSearch()
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+onUnmounted(() => {
+  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
 
 async function addPerson(person: AdminPerson) {
   if (!photo.value) {
@@ -143,6 +171,7 @@ async function addPerson(person: AdminPerson) {
       })
     }
     clearPeopleSearch()
+    closePeopleSearch()
   } catch (err) {
     error.value = err instanceof ApiError ? `Falha ao adicionar pessoa: ${err.message}` : 'Falha ao adicionar pessoa.'
   } finally {
@@ -172,6 +201,7 @@ async function createAndAddPerson() {
       })
     }
     clearPeopleSearch()
+    closePeopleSearch()
   } catch (err) {
     error.value =
       err instanceof ApiError
@@ -197,11 +227,8 @@ async function removePerson(personId: string) {
   }
 }
 
-function selectPersonResult(value: unknown) {
-  const person = peopleResults.value.find((result) => result.id === value)
-  if (person) {
-    void addPerson(person)
-  }
+function selectPersonResult(person: AdminPerson) {
+  void addPerson(person)
 }
 
 function personAvatarSrc(person: PersonSummary): string | null {
@@ -374,15 +401,37 @@ function personAvatarSrc(person: PersonSummary): string | null {
           >
             <Label for="people-search" class="admin-label-sentence">Adicionar pessoa</Label>
             <div class="flex flex-col gap-2 sm:flex-row">
-              <Input
-                id="people-search"
-                v-model="peopleQuery"
-                placeholder="Buscar ou criar pelo nome…"
-                class="flex-1"
-                data-testid="people-search"
-                :disabled="peopleBusy || peopleSearchLoading"
-                @input="onPeopleSearchInput"
-              />
+              <div ref="peopleSearchRoot" class="relative min-w-0 flex-1">
+                <Input
+                  id="people-search"
+                  v-model="peopleQuery"
+                  type="search"
+                  placeholder="Buscar ou criar pelo nome…"
+                  autocomplete="off"
+                  data-testid="people-search"
+                  :disabled="peopleBusy"
+                  @focus="onPeopleSearchFocus"
+                  @input="onPeopleSearchInput"
+                  @keydown.esc="closePeopleSearch"
+                />
+                <ul
+                  v-if="peopleSearchOpen && peopleResults.length > 0"
+                  class="admin-suggestions"
+                  data-testid="people-suggestions"
+                >
+                  <li v-for="person in peopleResults" :key="person.id">
+                    <button
+                      type="button"
+                      class="admin-suggestion"
+                      data-testid="people-suggestion"
+                      :disabled="peopleBusy"
+                      @click="selectPersonResult(person)"
+                    >
+                      {{ person.name }}
+                    </button>
+                  </li>
+                </ul>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -393,21 +442,8 @@ function personAvatarSrc(person: PersonSummary): string | null {
                 Adicionar / criar
               </Button>
             </div>
+            <p v-if="peopleSearchLoading" class="text-xs text-muted-foreground">Buscando…</p>
           </div>
-          <Select
-            v-if="peopleResults.length > 0"
-            :disabled="peopleBusy"
-            @update:model-value="selectPersonResult"
-          >
-            <SelectTrigger class="w-full" data-testid="people-results">
-              <SelectValue placeholder="Escolha uma pessoa correspondente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="person in peopleResults" :key="person.id" :value="person.id">
-                {{ person.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
         </CardContent>
       </Card>
     </template>

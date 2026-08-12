@@ -42,6 +42,7 @@ class PersonRepository extends ServiceEntityRepository
 
     /**
      * @param 'all'|'named'|'unnamed'|'trashed' $scope
+     * @param 'name'|'faces'|'newest'          $sort
      *
      * @return array{items: Person[], total: int}
      */
@@ -50,6 +51,7 @@ class PersonRepository extends ServiceEntityRepository
         ?string $query,
         int $page,
         int $perPage,
+        string $sort = 'name',
     ): array {
         $base = $this->createQueryBuilder('p');
         $this->applyScope($base, $scope);
@@ -68,19 +70,7 @@ class PersonRepository extends ServiceEntityRepository
             ->leftJoin('p.avatarFace', 'af')
             ->addSelect('af');
 
-        if ('trashed' === $scope) {
-            $itemsQuery->orderBy('p.deletedAt', 'DESC')
-                ->addOrderBy('p.id', 'ASC');
-        } elseif ('named' === $scope) {
-            $itemsQuery->orderBy('p.name', 'ASC')
-                ->addOrderBy('p.id', 'ASC');
-        } elseif ('unnamed' === $scope) {
-            $itemsQuery->orderBy('p.id', 'ASC');
-        } else {
-            $itemsQuery->orderBy('p.isNamed', 'DESC')
-                ->addOrderBy('p.name', 'ASC')
-                ->addOrderBy('p.id', 'ASC');
-        }
+        $this->applyOrder($itemsQuery, $scope, $sort);
 
         $items = $itemsQuery
             ->setFirstResult(max(0, ($page - 1) * $perPage))
@@ -89,6 +79,80 @@ class PersonRepository extends ServiceEntityRepository
             ->getResult();
 
         return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * @param 'all'|'named'|'unnamed'|'trashed' $scope
+     * @param 'name'|'faces'|'newest'          $sort
+     */
+    private function applyOrder(QueryBuilder $itemsQuery, string $scope, string $sort): void
+    {
+        if ('faces' === $sort) {
+            $itemsQuery
+                ->addSelect('(SELECT COUNT(fcs.id) FROM App\Entity\Face fcs WHERE fcs.person = p) AS HIDDEN faceCountSort')
+                ->orderBy('faceCountSort', 'DESC')
+                ->addOrderBy('p.id', 'ASC');
+
+            return;
+        }
+
+        if ('newest' === $sort) {
+            $itemsQuery
+                ->orderBy('p.createdAt', 'DESC')
+                ->addOrderBy('p.id', 'ASC');
+
+            return;
+        }
+
+        if ('trashed' === $scope) {
+            $itemsQuery->orderBy('p.deletedAt', 'DESC')
+                ->addOrderBy('p.id', 'ASC');
+
+            return;
+        }
+
+        if ('named' === $scope) {
+            $itemsQuery->orderBy('p.name', 'ASC')
+                ->addOrderBy('p.id', 'ASC');
+
+            return;
+        }
+
+        if ('unnamed' === $scope) {
+            $itemsQuery->orderBy('p.id', 'ASC');
+
+            return;
+        }
+
+        $itemsQuery->orderBy('p.isNamed', 'DESC')
+            ->addOrderBy('p.name', 'ASC')
+            ->addOrderBy('p.id', 'ASC');
+    }
+
+    /**
+     * Absolute totals per list scope (ignores search query).
+     *
+     * @return array{all: int, named: int, unnamed: int, trashed: int}
+     */
+    public function countByScopes(): array
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            <<<'SQL'
+                SELECT
+                    COUNT(*) FILTER (WHERE deleted_at IS NULL)::int AS "all",
+                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND is_named = true)::int AS named,
+                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND is_named = false)::int AS unnamed,
+                    COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed
+                FROM person
+            SQL,
+        );
+
+        return [
+            'all' => (int) ($row['all'] ?? 0),
+            'named' => (int) ($row['named'] ?? 0),
+            'unnamed' => (int) ($row['unnamed'] ?? 0),
+            'trashed' => (int) ($row['trashed'] ?? 0),
+        ];
     }
 
     /**

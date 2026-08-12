@@ -37,6 +37,7 @@ final class SiteConfigTest extends WebTestCase
         $this->assertSame('grid', $data['albumPhotoLayout']);
         $this->assertTrue($data['mostViewedHomeEnabled']);
         $this->assertFalse($data['mostViewedExcludeRootAlbums']);
+        $this->assertSame('', $data['gaMeasurementId']);
     }
 
     public function testReflectsPersistedAlbumPhotoLayout(): void
@@ -67,6 +68,19 @@ final class SiteConfigTest extends WebTestCase
         $this->assertTrue($data['mostViewedExcludeRootAlbums']);
     }
 
+    public function testReflectsGaMeasurementId(): void
+    {
+        $settings = static::getContainer()->get(ProcessingSettingsRepository::class)->getSingleton();
+        $settings->setGaMeasurementId('G-PUBLIC123');
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/site-config');
+        $this->assertResponseIsSuccessful();
+
+        $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('G-PUBLIC123', $data['gaMeasurementId']);
+    }
+
     private function resetSettings(): void
     {
         $row = $this->em->find(ProcessingSettings::class, ProcessingSettings::SINGLETON_ID);
@@ -77,6 +91,7 @@ final class SiteConfigTest extends WebTestCase
             $row->setAlbumPhotoLayout(AlbumPhotoLayout::Grid);
             $row->setMostViewedHomeEnabled(true);
             $row->setMostViewedExcludeRootAlbums(false);
+            $row->setGaMeasurementId(null);
         }
         $this->em->flush();
     }

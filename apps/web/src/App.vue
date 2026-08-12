@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { Menu, X } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { useSiteConfig } from './composables/useSiteConfig'
 import { adminDeepLink } from './lib/adminDeepLink'
 
+declare global {
+  interface Window {
+    dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
+  }
+}
+
 const route = useRoute()
+const router = useRouter()
+const { gaMeasurementId } = useSiteConfig()
 const isAdmin = computed(() => route.path.startsWith('/admin'))
 const albumAdminId = ref<string | null>(null)
 const photoAdminId = ref<string | null>(null)
@@ -48,6 +58,55 @@ const memoriesNavActive = computed(() => route.name === 'memories')
 const popularNavActive = computed(() => route.name === 'popular')
 const tagsNavActive = computed(() => route.name === 'tags' || route.name === 'tag')
 const searchNavActive = computed(() => route.name === 'search')
+
+const GA_SCRIPT_ID = 'ga-gtag'
+
+function removeGtag(): void {
+  document.getElementById(GA_SCRIPT_ID)?.remove()
+  delete window.gtag
+  window.dataLayer = []
+}
+
+function ensureGtag(measurementId: string): void {
+  if (document.getElementById(GA_SCRIPT_ID)) {
+    window.gtag?.('config', measurementId, { page_path: route.fullPath })
+    return
+  }
+
+  const script = document.createElement('script')
+  script.id = GA_SCRIPT_ID
+  script.async = true
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`
+  document.head.appendChild(script)
+
+  window.dataLayer = window.dataLayer ?? []
+  window.gtag = function gtag(...args: unknown[]) {
+    window.dataLayer?.push(args)
+  }
+  window.gtag('js', new Date())
+  window.gtag('config', measurementId)
+  window.gtag('event', 'page_view', { page_path: route.fullPath })
+}
+
+watch(
+  [isAdmin, gaMeasurementId],
+  ([admin, measurementId]) => {
+    const id = measurementId.trim()
+    if (admin || !id) {
+      removeGtag()
+      return
+    }
+    ensureGtag(id)
+  },
+  { immediate: true },
+)
+
+router.afterEach((to) => {
+  if (isAdmin.value) return
+  const id = gaMeasurementId.value.trim()
+  if (!id || !window.gtag) return
+  window.gtag('event', 'page_view', { page_path: to.fullPath })
+})
 </script>
 
 <template>

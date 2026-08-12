@@ -159,6 +159,87 @@ final class FaceGalleryScanTest extends WebTestCase
         $this->assertSame((string) $this->photo->getId(), $message->getPhotoId());
     }
 
+    public function testCreateScanFromPersonUsesExistingEmbedding(): void
+    {
+        $person = new Person();
+        $person->setName('Scan source');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = new Face($this->photo);
+        $face->setPerson($person);
+        $face->setEmbedding($this->unitEmbedding());
+        $this->em->persist($face);
+        $this->em->flush();
+        $storage = static::getContainer()->get(MediaStorage::class);
+        $crop = $storage->writeFaceCrop((string) $face->getId(), "\xff\xd8fake");
+        $face->setCropPath($crop);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('POST', '/api/admin/people/'.$person->getId().'/face-scans');
+
+        $this->assertResponseStatusCodeSame(201);
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame((string) $person->getId(), $payload['data']['targetPersonId']);
+        $this->assertSame('running', $payload['data']['status']);
+        $this->assertCount(1, $this->facesTransport()->getSent());
+    }
+
+    public function testConfirmAttachesMatchesToTargetPerson(): void
+    {
+        $storage = static::getContainer()->get(MediaStorage::class);
+        $person = new Person();
+        $person->setName('Existing');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+
+        $scan = new FaceGalleryScan($this->unitEmbedding(), 0.35);
+        $scan->setStatus(FaceGalleryScan::STATUS_DONE);
+        $scan->setTotalPhotos(1);
+        $scan->setMatchedPhotos(1);
+        $scan->setTargetPerson($person);
+        $this->em->persist($scan);
+        $this->em->flush();
+        $scanId = (string) $scan->getId();
+
+        $scanCropRelative = \sprintf('face-scans/%s/%s/%s.jpg', substr($scanId, 0, 2), $scanId, $this->photo->getId());
+        $storage->ensureDirectoryFor($scanCropRelative);
+        copy(\dirname(__DIR__).'/fixtures/sample.jpg', $storage->absolutePath($scanCropRelative));
+
+        $match = new FaceGalleryScanMatch(
+            $scan,
+            $this->photo,
+            0.12,
+            10.0,
+            20.0,
+            40.0,
+            50.0,
+            $this->unitEmbedding(),
+            $scanCropRelative,
+        );
+        $this->em->persist($match);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request(
+            'POST',
+            '/api/admin/people/face-scans/'.$scanId.'/confirm',
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            '{}',
+        );
+
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame((string) $person->getId(), $payload['data']['personId']);
+
+        $this->em->clear();
+        $reloaded = $this->em->getRepository(Person::class)->find($person->getId());
+        $this->assertCount(1, $reloaded->getFaces());
+        $this->assertTrue($reloaded->getFaces()->first()->hasEmbedding());
+    }
+
     public function testConfirmCreatesNamedPersonWithFacesFromSelectedMatches(): void
     {
         $storage = static::getContainer()->get(MediaStorage::class);

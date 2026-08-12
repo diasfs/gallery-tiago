@@ -87,9 +87,9 @@ export interface PageMeta {
   total: number
 }
 
-export interface Paginated<T> {
+export interface Paginated<T, M extends PageMeta = PageMeta> {
   data: T[]
-  meta: PageMeta
+  meta: M
 }
 
 export interface TimelineMonth {
@@ -187,6 +187,7 @@ export interface SiteConfig {
   albumPhotoLayout: AlbumPhotoLayout
   mostViewedHomeEnabled: boolean
   mostViewedExcludeRootAlbums: boolean
+  gaMeasurementId: string
 }
 
 export interface ProcessingSettings {
@@ -196,6 +197,7 @@ export interface ProcessingSettings {
   albumPhotoLayout: AlbumPhotoLayout
   mostViewedHomeEnabled: boolean
   mostViewedExcludeRootAlbums: boolean
+  gaMeasurementId: string
 }
 
 export type ReprocessScope = 'all' | 'faces' | 'tags'
@@ -327,6 +329,19 @@ export interface AdminPersonDetail extends AdminPerson {
 
 export type PeopleScope = 'all' | 'named' | 'unnamed' | 'trashed'
 
+export type PeopleSort = 'name' | 'faces' | 'newest'
+
+export interface PeopleScopeCounts {
+  all: number
+  named: number
+  unnamed: number
+  trashed: number
+}
+
+export interface PeopleListMeta extends PageMeta {
+  counts: PeopleScopeCounts
+}
+
 export interface MergeSuggestion {
   sourcePersonId: string
   targetPersonId: string
@@ -369,6 +384,7 @@ export interface FaceGalleryScan {
   processedPhotos: number
   matchedPhotos: number
   error: string | null
+  targetPersonId?: string | null
   createdAt: string
   updatedAt: string
 }

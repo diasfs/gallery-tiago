@@ -515,4 +515,27 @@ final class PhotoMetadataTest extends WebTestCase
 
         $this->assertResponseStatusCodeSame(404);
     }
+
+    public function testPublicPhotoJpegDownloadReturns404ForPrivateAlbum(): void
+    {
+        $this->client->request('GET', '/api/photos/'.$this->privatePhoto->getId().'/download.jpg');
+
+        $this->assertResponseStatusCodeSame(404);
+    }
+
+    public function testPublicPhotoJpegDownloadReturnsJpegForVisiblePhoto(): void
+    {
+        $storage = static::getContainer()->get(\App\Service\MediaStorage::class);
+        $relative = (string) $this->publicPhoto->getAvifPath();
+        $absolute = $storage->absolutePath($relative);
+        $storage->ensureDirectoryFor($relative);
+        copy(\dirname(__DIR__).'/fixtures/sample.jpg', $absolute);
+
+        $this->client->request('GET', '/api/photos/'.$this->publicPhoto->getId().'/download.jpg');
+
+        $this->assertResponseIsSuccessful();
+        $this->assertStringContainsString('image/jpeg', (string) $this->client->getResponse()->headers->get('Content-Type'));
+        $this->assertStringContainsString('attachment', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+        $this->assertNotEmpty($this->client->getResponse()->getContent());
+    }
 }
