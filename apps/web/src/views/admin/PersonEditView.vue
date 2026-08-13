@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { ExternalLink } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,9 +16,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPerson, AdminPersonDetail } from '../../api/types'
+import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../../api/types'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
+import { mergePair } from '../../lib/personMerge'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -27,6 +29,10 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const deleteOpen = ref(false)
+const mergeCandidates = ref<PersonMergeCandidate[]>([])
+const mergeCandidatesLoading = ref(false)
+const mergeCandidatesError = ref<string | null>(null)
+const mergeCandidateBusyId = ref<string | null>(null)
 
 const form = reactive({
   name: '',
@@ -82,9 +88,29 @@ const title = computed(() => {
 })
 
 const isTrashed = computed(() => !!person.value?.deletedAt)
+const hasEmbeddings = computed(() => person.value?.faces.some((f) => f.hasEmbedding) ?? false)
 const peopleBackLink = computed(() =>
   isTrashed.value ? { path: '/admin/people', query: { scope: 'trashed' } } : { path: '/admin/people' },
 )
+
+async function loadMergeCandidates() {
+  if (!person.value || isTrashed.value || !hasEmbeddings.value) {
+    mergeCandidates.value = []
+    mergeCandidatesError.value = null
+    return
+  }
+  mergeCandidatesLoading.value = true
+  mergeCandidatesError.value = null
+  try {
+    mergeCandidates.value = await adminApi.listPersonMergeSuggestions(person.value.id)
+  } catch (err) {
+    mergeCandidates.value = []
+    mergeCandidatesError.value =
+      err instanceof ApiError ? err.message : 'Falha ao buscar possíveis duplicatas.'
+  } finally {
+    mergeCandidatesLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
@@ -93,9 +119,11 @@ async function load() {
     const detail = await adminApi.getPerson(props.id)
     person.value = detail
     form.name = detail.name ?? ''
+    await loadMergeCandidates()
   } catch {
     error.value = 'Falha ao carregar pessoa.'
     person.value = null
+    mergeCandidates.value = []
   } finally {
     loading.value = false
   }
@@ -105,6 +133,7 @@ watch(() => props.id, () => {
   form.mergeTargetId = ''
   clearMergeSearch()
   closeMergeSearch()
+  mergeCandidates.value = []
   void load()
 }, { immediate: true })
 
@@ -118,6 +147,30 @@ onUnmounted(() => {
 
 function faceSrc(cropPath: string | null): string | null {
   return mediaUrl(cropPath)
+}
+
+function candidateLabel(candidate: PersonMergeCandidate): string {
+  if (candidate.isNamed && candidate.name) return candidate.name
+  return 'Sem nome'
+}
+
+async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
+  if (!person.value) return
+  const { sourceId, targetId } = mergePair(person.value, candidate)
+  mergeCandidateBusyId.value = candidate.personId
+  error.value = null
+  try {
+    await adminApi.mergePerson(sourceId, targetId)
+    if (targetId !== person.value.id) {
+      await router.push({ name: 'admin-person-edit', params: { id: targetId } })
+      return
+    }
+    await load()
+  } catch (err) {
+    error.value = err instanceof ApiError ? `Falha ao mesclar: ${err.message}` : 'Falha ao mesclar pessoa.'
+  } finally {
+    mergeCandidateBusyId.value = null
+  }
 }
 
 async function saveName() {
@@ -350,17 +403,30 @@ async function purgePerson() {
             Excluir permanentemente
           </Button>
         </div>
-        <Button
-          v-else
-          type="button"
-          variant="destructive"
-          size="sm"
-          data-testid="delete-open"
-          :disabled="saving"
-          @click="deleteOpen = true"
-        >
-          Mover para lixeira
-        </Button>
+        <div v-else class="flex flex-wrap gap-2">
+          <Button as-child variant="outline" size="sm">
+            <RouterLink
+              :to="{ name: 'person', params: { id: person.id } }"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="person-public-link"
+              title="Ver fotos no site público"
+            >
+              <ExternalLink class="size-3.5" />
+              Ver no site
+            </RouterLink>
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            data-testid="delete-open"
+            :disabled="saving"
+            @click="deleteOpen = true"
+          >
+            Mover para lixeira
+          </Button>
+        </div>
       </div>
 
       <Alert v-if="isTrashed" variant="default">
@@ -441,6 +507,74 @@ async function purgePerson() {
             {{ mergeSearchError }}
           </p>
         </div>
+
+        <div
+          v-if="!isTrashed && hasEmbeddings"
+          class="space-y-3 border-t border-border/60 pt-4"
+          data-testid="person-merge-candidates"
+        >
+          <h3 class="text-sm font-medium text-foreground">Possíveis duplicatas</h3>
+          <p v-if="mergeCandidatesLoading" class="text-sm text-muted-foreground">Buscando…</p>
+          <Alert v-else-if="mergeCandidatesError" variant="destructive">
+            <AlertDescription>{{ mergeCandidatesError }}</AlertDescription>
+          </Alert>
+          <p
+            v-else-if="mergeCandidates.length === 0"
+            class="text-sm text-muted-foreground"
+            data-testid="person-merge-candidates-empty"
+          >
+            Nenhuma pessoa parecida dentro do limiar.
+          </p>
+          <ul v-else class="space-y-2" data-testid="person-merge-candidates-list">
+            <li
+              v-for="candidate in mergeCandidates"
+              :key="candidate.personId"
+              class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+              data-testid="person-merge-candidate"
+            >
+              <RouterLink
+                :to="{ name: 'admin-person-edit', params: { id: candidate.personId } }"
+                class="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:opacity-80"
+              >
+                <img
+                  v-if="faceSrc(candidate.avatarCropPath)"
+                  :src="faceSrc(candidate.avatarCropPath)!"
+                  alt=""
+                  class="size-12 rounded-md object-cover bg-muted"
+                />
+                <div
+                  v-else
+                  class="flex size-12 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                >
+                  —
+                </div>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium">{{ candidateLabel(candidate) }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ candidate.faceCount }} rosto(s) · distância {{ candidate.distance.toFixed(3) }}
+                  </p>
+                </div>
+              </RouterLink>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                :disabled="saving || mergeCandidateBusyId === candidate.personId"
+                data-testid="person-merge-candidate-accept"
+                @click="acceptMergeCandidate(candidate)"
+              >
+                {{ mergeCandidateBusyId === candidate.personId ? 'Mesclando…' : 'Mesclar' }}
+              </Button>
+            </li>
+          </ul>
+        </div>
+        <p
+          v-else-if="!isTrashed && !hasEmbeddings"
+          class="border-t border-border/60 pt-4 text-sm text-muted-foreground"
+          data-testid="person-merge-candidates-no-embedding"
+        >
+          Esta pessoa não tem embedding — não há sugestões de mesclagem.
+        </p>
       </div>
 
       <div class="admin-panel space-y-4 rounded-xl p-6" data-testid="avatar-section">
@@ -488,6 +622,13 @@ async function purgePerson() {
           </div>
         </div>
       </div>
+
+      <FaceGalleryScanPanel
+        v-if="!isTrashed"
+        :show-upload="false"
+        :attach-person-id="person.id"
+        @attached="load"
+      />
 
       <div class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -584,13 +725,6 @@ async function purgePerson() {
           </div>
         </div>
       </div>
-
-      <FaceGalleryScanPanel
-        v-if="!isTrashed"
-        :show-upload="false"
-        :attach-person-id="person.id"
-        @attached="load"
-      />
     </template>
 
     <Dialog :open="deleteOpen" @update:open="(open) => { if (!open && !saving) deleteOpen = false }">

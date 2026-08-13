@@ -12,6 +12,10 @@ vi.mock('../../api/client', async () => {
     adminApi: {
       listPeople: vi.fn(),
       listMergeSuggestions: vi.fn(),
+      searchPeopleByFace: vi.fn(),
+      searchPeopleByPerson: vi.fn(),
+      listFaceScans: vi.fn(),
+      mergePerson: vi.fn(),
     },
   }
 })
@@ -19,6 +23,10 @@ vi.mock('../../api/client', async () => {
 const mockedApi = adminApi as unknown as {
   listPeople: ReturnType<typeof vi.fn>
   listMergeSuggestions: ReturnType<typeof vi.fn>
+  searchPeopleByFace: ReturnType<typeof vi.fn>
+  searchPeopleByPerson: ReturnType<typeof vi.fn>
+  listFaceScans: ReturnType<typeof vi.fn>
+  mergePerson: ReturnType<typeof vi.fn>
 }
 
 function makePerson(overrides: Partial<AdminPerson> = {}): AdminPerson {
@@ -103,6 +111,11 @@ describe('PeopleView', () => {
         durationMs: 42,
       },
     })
+    mockedApi.listFaceScans.mockResolvedValue({
+      data: [],
+      meta: { page: 1, perPage: 30, total: 0 },
+    })
+    mockedApi.searchPeopleByPerson.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -236,6 +249,79 @@ describe('PeopleView', () => {
       perPage: 50,
       sort: 'faces',
     })
+  })
+
+  it('searches similar people from the person picker', async () => {
+    mockedApi.listPeople
+      .mockResolvedValueOnce({
+        data: [
+          makePerson(),
+          makePerson({
+            id: 'cluster-1',
+            name: null,
+            isNamed: false,
+            faceCount: 2,
+            avatarFaceId: null,
+            avatarCropPath: null,
+          }),
+        ],
+        meta: {
+          page: 1,
+          perPage: 50,
+          total: 75,
+          counts: { all: 75, named: 40, unnamed: 35, trashed: 3 },
+        },
+      })
+      .mockResolvedValue({
+        data: [makePerson({ id: 'person-2', name: 'Grace Hopper' })],
+        meta: { page: 1, perPage: 20, total: 1, counts: { all: 1, named: 1, unnamed: 0, trashed: 0 } },
+      })
+    mockedApi.searchPeopleByPerson.mockResolvedValue([
+      {
+        personId: 'person-3',
+        isNamed: true,
+        name: 'Ada',
+        distance: 0.11,
+        avatarCropPath: null,
+      },
+    ])
+
+    const { wrapper } = await mountView()
+    vi.useFakeTimers()
+    try {
+      const input = wrapper.find('[data-testid="face-person-search"]')
+      await input.setValue('Grace')
+      await vi.advanceTimersByTimeAsync(200)
+      await flushPromises()
+
+      await wrapper.find('[data-testid="face-person-suggestion"]').trigger('click')
+      await wrapper.find('[data-testid="face-person-search-submit"]').trigger('click')
+      await flushPromises()
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(mockedApi.searchPeopleByPerson).toHaveBeenCalledWith('person-2')
+    expect(wrapper.find('[data-testid="face-search-results"]').text()).toContain('Ada')
+  })
+
+  it('searches similar people from a list row action', async () => {
+    mockedApi.searchPeopleByPerson.mockResolvedValue([
+      {
+        personId: 'person-9',
+        isNamed: true,
+        name: 'Nearby',
+        distance: 0.2,
+        avatarCropPath: null,
+      },
+    ])
+    const { wrapper } = await mountView()
+
+    await wrapper.findAll('[data-testid="person-similar"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.searchPeopleByPerson).toHaveBeenCalledWith('person-1')
+    expect(wrapper.find('[data-testid="face-search-results"]').text()).toContain('Nearby')
   })
 
   it('allows returning from an empty later page', async () => {

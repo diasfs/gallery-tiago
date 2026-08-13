@@ -20,6 +20,7 @@ vi.mock('../../api/client', async () => {
       addPersonFaces: vi.fn(),
       deletePersonFace: vi.fn(),
       listFaceScans: vi.fn(),
+      listPersonMergeSuggestions: vi.fn(),
     },
   }
 })
@@ -35,6 +36,7 @@ const mockedApi = adminApi as unknown as {
   addPersonFaces: ReturnType<typeof vi.fn>
   deletePersonFace: ReturnType<typeof vi.fn>
   listFaceScans: ReturnType<typeof vi.fn>
+  listPersonMergeSuggestions: ReturnType<typeof vi.fn>
 }
 
 function makeDetail(overrides: Partial<AdminPersonDetail> = {}): AdminPersonDetail {
@@ -86,6 +88,7 @@ async function mountView(id = 'person-1') {
         component: PersonEditView,
         props: true,
       },
+      { path: '/people/:id', name: 'person', component: { template: '<div />' } },
     ],
   })
   await router.push({ name: 'admin-person-edit', params: { id } })
@@ -120,6 +123,7 @@ describe('PersonEditView', () => {
       data: [],
       meta: { page: 1, perPage: 30, total: 0 },
     })
+    mockedApi.listPersonMergeSuggestions.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -138,6 +142,39 @@ describe('PersonEditView', () => {
 
     expect(mockedApi.updatePerson).toHaveBeenCalledWith('person-1', { avatarFaceId: 'face-2' })
     expect(wrapper.find('[data-testid="primary-badge"]').exists()).toBe(true)
+  })
+
+  it('links to the public person page', async () => {
+    const { wrapper } = await mountView()
+    const link = wrapper.get('[data-testid="person-public-link"]')
+    expect(link.attributes('href')).toBe('/people/person-1')
+    expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('lists merge candidates and merges into the named survivor', async () => {
+    mockedApi.listPersonMergeSuggestions.mockResolvedValue([
+      {
+        personId: 'person-named',
+        isNamed: true,
+        name: 'Ada Lovelace',
+        distance: 0.12,
+        faceCount: 3,
+        avatarCropPath: 'faces/aa/named.jpg',
+      },
+    ])
+    mockedApi.mergePerson.mockResolvedValue(makeNamed())
+    const { wrapper, router } = await mountView()
+    await flushPromises()
+
+    expect(mockedApi.listPersonMergeSuggestions).toHaveBeenCalledWith('person-1')
+    expect(wrapper.get('[data-testid="person-merge-candidate"]').text()).toContain('Ada Lovelace')
+
+    await wrapper.get('[data-testid="person-merge-candidate-accept"]').trigger('click')
+    await flushPromises()
+
+    // current is unnamed, candidate named → merge current into named
+    expect(mockedApi.mergePerson).toHaveBeenCalledWith('person-1', 'person-named')
+    expect(router.currentRoute.value.params.id).toBe('person-named')
   })
 
   it('saves a name via updatePerson', async () => {

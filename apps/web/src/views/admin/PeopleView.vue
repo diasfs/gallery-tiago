@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ExternalLink } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -25,6 +26,7 @@ import { adminApi, ApiError, mediaUrl } from '../../api/client'
 import type { AdminPerson, FaceSearchMatch, MergeSuggestion, PeopleScope, PeopleScopeCounts, PeopleSort } from '../../api/types'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
+import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,6 +45,19 @@ const mergeSuggestionsMeta = ref<{
 const faceMatches = ref<FaceSearchMatch[]>([])
 const faceSearchLoading = ref(false)
 const faceSearchError = ref<string | null>(null)
+const faceSearchPanel = ref<HTMLElement | null>(null)
+const facePersonForm = reactive({ personId: '' })
+const {
+  query: facePersonQuery,
+  results: facePersonResults,
+  loading: facePersonLoading,
+  error: facePersonSearchError,
+  search: searchFacePeople,
+  clear: clearFacePersonSearch,
+} = useAdminPersonSearch()
+let facePersonSearchTimer: ReturnType<typeof setTimeout> | null = null
+const facePersonSearchOpen = ref(false)
+const facePersonSearchRoot = ref<HTMLElement | null>(null)
 const mergeLoadingId = ref<string | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -137,7 +152,6 @@ async function load() {
   }
 }
 
-onMounted(load)
 watch([scope, () => route.query.q, () => route.query.sort, page], load)
 watch(scope, (next, previous) => {
   if (next !== previous) {
@@ -260,6 +274,70 @@ async function onFaceSearch(event: Event) {
     faceSearchLoading.value = false
   }
 }
+
+function onFacePersonSearchInput(event: Event) {
+  facePersonQuery.value = (event.target as HTMLInputElement).value
+  facePersonForm.personId = ''
+  facePersonSearchOpen.value = true
+  if (facePersonSearchTimer) clearTimeout(facePersonSearchTimer)
+  facePersonSearchTimer = setTimeout(() => void searchFacePeople(), 200)
+}
+
+function onFacePersonSearchFocus() {
+  facePersonSearchOpen.value = true
+  if (facePersonSearchTimer) clearTimeout(facePersonSearchTimer)
+  void searchFacePeople()
+}
+
+function closeFacePersonSearch() {
+  facePersonSearchOpen.value = false
+}
+
+function onDocumentPointerDown(event: Event) {
+  const root = facePersonSearchRoot.value
+  if (root && !root.contains(event.target as Node)) closeFacePersonSearch()
+}
+
+function selectFacePerson(candidate: AdminPerson) {
+  facePersonForm.personId = candidate.id
+  facePersonQuery.value = candidate.name ?? ''
+  facePersonResults.value = []
+  closeFacePersonSearch()
+}
+
+async function runFaceSearchByPerson(personId: string) {
+  faceSearchLoading.value = true
+  faceSearchError.value = null
+  faceMatches.value = []
+  try {
+    faceMatches.value = await adminApi.searchPeopleByPerson(personId)
+    faceSearchPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  } catch (err) {
+    faceSearchError.value =
+      err instanceof ApiError ? err.message : 'Não foi possível buscar por rosto.'
+  } finally {
+    faceSearchLoading.value = false
+  }
+}
+
+async function onFacePersonSearchSubmit() {
+  if (!facePersonForm.personId) {
+    faceSearchError.value = 'Escolha uma pessoa para buscar.'
+    return
+  }
+  await runFaceSearchByPerson(facePersonForm.personId)
+}
+
+onMounted(() => {
+  void load()
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+  if (facePersonSearchTimer) clearTimeout(facePersonSearchTimer)
+  clearFacePersonSearch()
+})
 </script>
 
 <template>
@@ -330,10 +408,17 @@ async function onFaceSearch(event: Event) {
       </form>
     </div>
 
-    <div v-if="scope !== 'trashed'" class="admin-panel space-y-3 rounded-xl p-4">
+    <div
+      v-if="scope !== 'trashed'"
+      ref="faceSearchPanel"
+      class="admin-panel space-y-3 rounded-xl p-4"
+      data-testid="face-search-panel"
+    >
       <div>
         <h2 class="text-sm font-medium">Busca por rosto</h2>
-        <p class="text-sm text-muted-foreground">Envie um recorte com um rosto para encontrar pessoas parecidas.</p>
+        <p class="text-sm text-muted-foreground">
+          Envie um recorte com um rosto ou escolha uma pessoa existente para encontrar semelhantes.
+        </p>
       </div>
       <Input
         type="file"
@@ -341,6 +426,55 @@ async function onFaceSearch(event: Event) {
         data-testid="face-search-input"
         @change="onFaceSearch"
       />
+      <div class="space-y-2 border-t border-border/60 pt-3">
+        <Label for="face-person-search">Ou buscar a partir de uma pessoa</Label>
+        <div class="flex flex-wrap items-center gap-2">
+          <div ref="facePersonSearchRoot" class="relative min-w-0 max-w-md flex-1">
+            <Input
+              id="face-person-search"
+              v-model="facePersonQuery"
+              type="search"
+              placeholder="Buscar pessoa nomeada…"
+              :disabled="faceSearchLoading"
+              autocomplete="off"
+              data-testid="face-person-search"
+              @focus="onFacePersonSearchFocus"
+              @input="onFacePersonSearchInput"
+              @keydown.esc="closeFacePersonSearch"
+            />
+            <ul
+              v-if="facePersonSearchOpen && facePersonResults.length > 0"
+              class="admin-suggestions"
+              data-testid="face-person-suggestions"
+            >
+              <li v-for="candidate in facePersonResults" :key="candidate.id">
+                <button
+                  type="button"
+                  class="admin-suggestion"
+                  data-testid="face-person-suggestion"
+                  @click="selectFacePerson(candidate)"
+                >
+                  {{ candidate.name }}
+                </button>
+              </li>
+            </ul>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            :disabled="faceSearchLoading || !facePersonForm.personId"
+            data-testid="face-person-search-submit"
+            @click="onFacePersonSearchSubmit"
+          >
+            Buscar
+          </Button>
+        </div>
+        <p v-if="facePersonLoading" class="text-xs text-muted-foreground">Buscando pessoas…</p>
+        <p v-else-if="facePersonSearchError" class="text-sm text-destructive">
+          {{ facePersonSearchError }}
+        </p>
+      </div>
       <p v-if="faceSearchLoading" class="text-sm text-muted-foreground">Buscando…</p>
       <Alert v-if="faceSearchError" variant="destructive">
         <AlertDescription>{{ faceSearchError }}</AlertDescription>
@@ -514,7 +648,7 @@ async function onFaceSearch(event: Event) {
             <TableHead>Nome</TableHead>
             <TableHead class="w-28">Status</TableHead>
             <TableHead class="w-24 text-right">Rostos</TableHead>
-            <TableHead class="w-36 text-right">Ações</TableHead>
+            <TableHead class="w-52 text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -582,18 +716,30 @@ async function onFaceSearch(event: Event) {
                   Excluir
                 </Button>
               </div>
-              <Button v-else as-child variant="outline" size="sm">
-                <RouterLink
-                  :to="{ name: 'person', params: { id: person.id } }"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="person-public-link"
-                  title="Ver fotos no site público"
+              <div v-else class="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="faceSearchLoading"
+                  data-testid="person-similar"
+                  @click="runFaceSearchByPerson(person.id)"
                 >
-                  <ExternalLink class="size-3.5" />
-                  Ver no site
-                </RouterLink>
-              </Button>
+                  Semelhantes
+                </Button>
+                <Button as-child variant="outline" size="sm">
+                  <RouterLink
+                    :to="{ name: 'person', params: { id: person.id } }"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="person-public-link"
+                    title="Ver fotos no site público"
+                  >
+                    <ExternalLink class="size-3.5" />
+                    Ver no site
+                  </RouterLink>
+                </Button>
+              </div>
             </TableCell>
           </TableRow>
         </TableBody>
