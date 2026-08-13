@@ -243,6 +243,105 @@ final class FaceAiFeaturesTest extends WebTestCase
         $this->assertSame('Ana', $data[0]['name']);
     }
 
+    public function testSimilarPeopleByPersonReturnsNearestAndOmitsSelf(): void
+    {
+        $album = new Album('Similar', 'faces-similar-person');
+        $album->setVisibility(AlbumVisibility::Private);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/a.jpg');
+        $this->em->persist($photo);
+
+        $query = new Person();
+        $query->setName('Query');
+        $query->setIsNamed(true);
+        $close = new Person();
+        $close->setName('Ana');
+        $close->setIsNamed(true);
+        $far = new Person();
+        $far->setName('Bruno');
+        $far->setIsNamed(true);
+        $this->em->persist($query);
+        $this->em->persist($close);
+        $this->em->persist($far);
+        $this->faceWithEmbedding($photo, $query, 3);
+        $this->faceWithEmbedding($photo, $close, 3);
+        $this->faceWithEmbedding($photo, $far, 40);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people/'.$query->getId().'/similar');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $ids = array_map(static fn (array $row): string => $row['personId'], $data);
+        $this->assertNotContains((string) $query->getId(), $ids);
+        $this->assertSame((string) $close->getId(), $data[0]['personId']);
+        $this->assertSame('Ana', $data[0]['name']);
+    }
+
+    public function testSimilarPeopleByPersonRequiresEmbedding(): void
+    {
+        $person = new Person();
+        $person->setName('No Embed');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people/'.$person->getId().'/similar');
+
+        $this->assertResponseStatusCodeSame(400);
+    }
+
+    public function testPersonMergeSuggestionsReturnsClosePeople(): void
+    {
+        $album = new Album('Person merge', 'person-merge-sug');
+        $album->setVisibility(AlbumVisibility::Private);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/a.jpg');
+        $this->em->persist($photo);
+
+        $current = new Person();
+        $closeNamed = new Person();
+        $closeNamed->setName('Ana');
+        $closeNamed->setIsNamed(true);
+        $far = new Person();
+        $this->em->persist($current);
+        $this->em->persist($closeNamed);
+        $this->em->persist($far);
+        $this->faceWithEmbedding($photo, $current, 3);
+        $this->faceWithEmbedding($photo, $closeNamed, 3);
+        $this->faceWithEmbedding($photo, $far, 40);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people/'.$current->getId().'/merge-suggestions');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertCount(1, $data);
+        $this->assertSame((string) $closeNamed->getId(), $data[0]['personId']);
+        $this->assertTrue($data[0]['isNamed']);
+        $this->assertSame('Ana', $data[0]['name']);
+        $this->assertSame(1, $data[0]['faceCount']);
+        $this->assertArrayHasKey('distance', $data[0]);
+        $this->assertArrayHasKey('avatarCropPath', $data[0]);
+    }
+
+    public function testPersonMergeSuggestionsEmptyWithoutEmbedding(): void
+    {
+        $person = new Person();
+        $this->em->persist($person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/people/'.$person->getId().'/merge-suggestions');
+
+        $this->assertResponseIsSuccessful();
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame([], $data);
+    }
+
     private function loadAdmin(): void
     {
         $hasher = static::getContainer()->get(UserPasswordHasherInterface::class);

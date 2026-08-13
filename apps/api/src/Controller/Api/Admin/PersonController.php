@@ -346,6 +346,30 @@ class PersonController
         return new JsonResponse(['data' => $this->normalizePerson($person)]);
     }
 
+    #[Route('/api/admin/people/{id}/merge-suggestions', name: 'admin_people_person_merge_suggestions', methods: ['GET'])]
+    public function personMergeSuggestions(string $id): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+
+        return new JsonResponse([
+            'data' => $this->similarity->findMergeCandidatesForPerson($person->getId()),
+        ]);
+    }
+
+    #[Route('/api/admin/people/{id}/similar', name: 'admin_people_similar', methods: ['GET'])]
+    public function similar(string $id): JsonResponse
+    {
+        $person = $this->findPersonOrFail($id);
+
+        try {
+            $data = $this->similarity->searchPeopleByPerson($person->getId());
+        } catch (\InvalidArgumentException $e) {
+            throw new BadRequestHttpException($e->getMessage());
+        }
+
+        return new JsonResponse(['data' => $data]);
+    }
+
     #[Route('/api/admin/people/{id}/merge', name: 'admin_people_merge', methods: ['POST'])]
     public function merge(string $id, Request $request): JsonResponse
     {

@@ -56,10 +56,41 @@ final class FaceSimilarityService
         );
     }
 
+    /**
+     * @return list<array{personId: string, isNamed: bool, distance: float, name: ?string, avatarCropPath: ?string, faceCount: int}>
+     */
+    public function findMergeCandidatesForPerson(Uuid $personId, int $limit = 10): array
+    {
+        return $this->faces->findMergeCandidatesForPerson($personId, $this->clusterThreshold, $limit);
+    }
+
     /** @return list<array{personId: string, isNamed: bool, distance: float, name: ?string, avatarCropPath: ?string}> */
     public function searchPeopleByEmbedding(array $embedding, int $limit = 20): array
     {
         return $this->faces->findNearestPeople($embedding, $limit);
+    }
+
+    /**
+     * Nearest people to a person's representative face embedding (excludes self).
+     *
+     * @return list<array{personId: string, isNamed: bool, distance: float, name: ?string, avatarCropPath: ?string}>
+     *
+     * @throws \InvalidArgumentException when the person has no embedding
+     */
+    public function searchPeopleByPerson(Uuid $personId, int $limit = 20): array
+    {
+        $embedding = $this->faces->findRepresentativeEmbedding($personId);
+        if (null === $embedding) {
+            throw new \InvalidArgumentException('This person has no face embedding.');
+        }
+
+        $matches = $this->faces->findNearestPeople($embedding, $limit + 1);
+        $self = $personId->toRfc4122();
+
+        return array_slice(array_values(array_filter(
+            $matches,
+            static fn (array $row): bool => $row['personId'] !== $self,
+        )), 0, $limit);
     }
 
     /**

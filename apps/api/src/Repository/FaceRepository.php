@@ -140,6 +140,110 @@ class FaceRepository extends ServiceEntityRepository
         );
     }
 
+    /** Representative face embedding for a non-trashed person (avatar preferred). */
+    public function findRepresentativeEmbedding(Uuid $personId): ?array
+    {
+        $person = $this->getEntityManager()->find(Person::class, $personId);
+        if (null === $person || null !== $person->getDeletedAt()) {
+            return null;
+        }
+
+        $avatar = $person->getAvatarFace();
+        if (null !== $avatar && $avatar->hasEmbedding()) {
+            $embedding = $avatar->getEmbedding();
+            if (null !== $embedding) {
+                return $embedding;
+            }
+        }
+
+        /** @var Face|null $face */
+        $face = $this->createQueryBuilder('f')
+            ->andWhere('f.person = :person')
+            ->andWhere('f.hasEmbedding = true')
+            ->setParameter('person', $personId, 'uuid')
+            ->orderBy('f.confidence', 'DESC')
+            ->addOrderBy('f.id', 'ASC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        return $face?->getEmbedding();
+    }
+
+    /**
+     * People similar to $personId (named or unnamed), excluding self and trash.
+     *
+     * @return list<array{personId: string, isNamed: bool, distance: float, name: ?string, avatarCropPath: ?string, faceCount: int}>
+     */
+    public function findMergeCandidatesForPerson(Uuid $personId, float $maxDistance, int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+        $personKey = $personId->toRfc4122();
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            <<<SQL
+                WITH rep AS (
+                    SELECT f.embedding
+                    FROM face f
+                    INNER JOIN person p ON p.id = f.person_id
+                    WHERE p.id = :personId
+                      AND p.deleted_at IS NULL
+                      AND f.has_embedding = true
+                    ORDER BY
+                        CASE WHEN f.id = p.avatar_face_id THEN 0 ELSE 1 END,
+                        f.confidence DESC NULLS LAST,
+                        f.id
+                    LIMIT 1
+                ),
+                nearest AS (
+                    SELECT DISTINCT ON (face.person_id)
+                        face.person_id,
+                        face.crop_path,
+                        face.embedding <=> (SELECT embedding FROM rep) AS dist
+                    FROM face
+                    WHERE face.has_embedding = true
+                      AND face.person_id IS NOT NULL
+                      AND face.person_id <> :personId
+                      AND EXISTS (SELECT 1 FROM rep)
+                    ORDER BY face.person_id, dist ASC
+                )
+                SELECT
+                    person.id::text AS person_id,
+                    person.is_named,
+                    person.name,
+                    COALESCE(person.avatar_path, avatar_face.crop_path, nearest.crop_path) AS avatar_crop_path,
+                    nearest.dist,
+                    (
+                        SELECT COUNT(*)::int
+                        FROM face fc
+                        WHERE fc.person_id = person.id
+                    ) AS face_count
+                FROM nearest
+                INNER JOIN person ON person.id = nearest.person_id
+                LEFT JOIN face avatar_face ON avatar_face.id = person.avatar_face_id
+                WHERE person.deleted_at IS NULL
+                  AND nearest.dist <= :maxDistance
+                ORDER BY nearest.dist ASC
+                LIMIT {$limit}
+            SQL,
+            [
+                'personId' => $personKey,
+                'maxDistance' => $maxDistance,
+            ],
+        );
+
+        return array_map(
+            static fn (array $row): array => [
+                'personId' => (string) $row['person_id'],
+                'isNamed' => (bool) $row['is_named'],
+                'distance' => (float) $row['dist'],
+                'name' => $row['name'],
+                'avatarCropPath' => $row['avatar_crop_path'] ?: null,
+                'faceCount' => (int) $row['face_count'],
+            ],
+            $rows,
+        );
+    }
+
     public function countUnnamedClustersWithEmbeddings(): int
     {
         return (int) $this->getEntityManager()->getConnection()->fetchOne(
