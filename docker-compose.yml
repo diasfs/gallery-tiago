@@ -91,6 +91,8 @@ services:
     restart: unless-stopped
     environment:
       FACES_EMBED_PORT: "8090"
+      # Keep assignment clustering stricter than API merge/similar UI (FACE_CLUSTER_THRESHOLD in .env).
+      FACE_CLUSTER_THRESHOLD: "0.40"
     volumes:
       - ./apps/worker-faces:/app
       - ./volumes/media_data:/var/gallery/media
