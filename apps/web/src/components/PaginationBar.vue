@@ -81,6 +81,8 @@ function submitJump() {
           size="sm"
           :variant="item.page === page ? 'default' : 'outline'"
           class="min-w-9 tabular-nums"
+          :class="{ 'pagination-page--current': item.page === page }"
+          :aria-current="item.page === page ? 'page' : undefined"
           :data-testid="`pagination-page-${item.page}`"
           @click="goTo(item.page)"
         >
@@ -115,3 +117,13 @@ function submitJump() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Admin has --primary; public falls back to --fg/--bg so the current page fills. */
+.pagination-page--current {
+  background-color: var(--primary, var(--fg, #eee)) !important;
+  color: var(--primary-foreground, var(--bg, #0f0f0f)) !important;
+  border-color: var(--primary, var(--fg, #eee)) !important;
+  font-weight: 700;
+}
+</style>

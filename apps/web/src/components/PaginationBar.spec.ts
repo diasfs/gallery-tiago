@@ -43,6 +43,14 @@ describe('PaginationBar', () => {
     expect(wrapper.props('page')).toBe(3)
   })
 
+  it('marks the current page for screen readers and styling', () => {
+    const wrapper = mountBar(2, 50, 10)
+    const current = wrapper.get('[data-testid="pagination-page-2"]')
+    expect(current.attributes('aria-current')).toBe('page')
+    expect(current.classes()).toContain('pagination-page--current')
+    expect(wrapper.find('[data-testid="pagination-page-1"]').attributes('aria-current')).toBeUndefined()
+  })
+
   it('jumps to a specific page from the input', async () => {
     const wrapper = mountBar(1, 120, 10)
     const input = wrapper.find('[data-testid="pagination-jump"]')

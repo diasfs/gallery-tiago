@@ -248,6 +248,8 @@ router.afterEach((to) => {
   color: var(--muted, #888);
   text-decoration: none;
   font-size: 0.85rem;
+  padding-block: 0.15rem;
+  border-bottom: 2px solid transparent;
 }
 
 .app__nav-link:hover {
@@ -255,8 +257,9 @@ router.afterEach((to) => {
 }
 
 .app__nav-link.router-link-active {
-  color: var(--fg, #eee);
-  font-weight: 600;
+  color: #fff;
+  font-weight: 700;
+  border-bottom-color: #fff;
 }
 
 .sr-only {
@@ -301,6 +304,14 @@ router.afterEach((to) => {
   .app__nav-link {
     padding: 0.7rem 0;
     font-size: 0.95rem;
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    padding-left: 0.75rem;
+  }
+
+  .app__nav-link.router-link-active {
+    border-left-color: #fff;
+    background: rgba(255, 255, 255, 0.06);
   }
 }
 
