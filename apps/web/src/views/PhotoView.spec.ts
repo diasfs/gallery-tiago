@@ -389,7 +389,7 @@ describe('PhotoView', () => {
 
     expect(mockedAdminApi.mergePerson).toHaveBeenCalledWith('person-1', 'person-named')
     expect(mockedApi.getPhoto).toHaveBeenCalledWith('photo-1')
-    expect(wrapper.find('[data-testid="person-edit-dialog"]').exists()).toBe(false)
+    expect(document.querySelector('[data-testid="person-edit-dialog"]')).toBeNull()
     expect(wrapper.text()).toContain('Ada Lovelace')
 
     wrapper.unmount()

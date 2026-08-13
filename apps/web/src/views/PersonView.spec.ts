@@ -190,6 +190,10 @@ describe('PersonView', () => {
     const { wrapper, router } = await mountView()
     await flushPromises()
 
+    const publicLink = wrapper.get('[data-testid="person-merge-candidate-public"]')
+    expect(publicLink.attributes('href')).toBe('/people/person-named')
+    expect(publicLink.attributes('target')).toBe('_blank')
+
     await wrapper.get('[data-testid="person-merge-candidate-accept"]').trigger('click')
     await flushPromises()
 

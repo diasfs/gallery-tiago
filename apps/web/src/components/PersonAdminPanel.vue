@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { adminApi, mediaUrl } from '../api/client'
 import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../api/types'
 import { useAdminPersonSearch } from '../composables/useAdminPersonSearch'
 import { mergePair } from '../lib/personMerge'
 
-const props = defineProps<{ personId: string }>()
+const props = defineProps<{
+  personId: string
+  /** Drop outer card chrome when already inside a public dialog panel. */
+  flush?: boolean
+}>()
 const emit = defineEmits<{
   named: [payload: { id: string; name: string | null }]
   merged: [payload: { survivorId: string }]
@@ -180,7 +185,7 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
 </script>
 
 <template>
-  <div class="person-admin" data-testid="person-admin">
+  <div class="person-admin" :class="{ 'person-admin--flush': flush }" data-testid="person-admin">
     <p v-if="adminError" class="person-admin__error" data-testid="person-admin-error">
       {{ adminError }}
     </p>
@@ -288,15 +293,26 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
               {{ candidate.faceCount }} rosto(s) · distância {{ candidate.distance.toFixed(3) }}
             </span>
           </div>
-          <button
-            type="button"
-            class="person-admin__btn"
-            :disabled="saving || mergeCandidateBusyId === candidate.personId"
-            data-testid="person-merge-candidate-accept"
-            @click="acceptMergeCandidate(candidate)"
-          >
-            {{ mergeCandidateBusyId === candidate.personId ? 'Mesclando…' : 'Mesclar' }}
-          </button>
+          <div class="person-admin__candidate-actions">
+            <RouterLink
+              :to="{ name: 'person', params: { id: candidate.personId } }"
+              class="person-admin__btn person-admin__btn--link"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="person-merge-candidate-public"
+            >
+              Ver no site
+            </RouterLink>
+            <button
+              type="button"
+              class="person-admin__btn"
+              :disabled="saving || mergeCandidateBusyId === candidate.personId"
+              data-testid="person-merge-candidate-accept"
+              @click="acceptMergeCandidate(candidate)"
+            >
+              {{ mergeCandidateBusyId === candidate.personId ? 'Mesclando…' : 'Mesclar' }}
+            </button>
+          </div>
         </li>
       </ul>
     </div>
@@ -319,6 +335,13 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.person-admin--flush {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .person-admin__row {
@@ -369,6 +392,19 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
 .person-admin__btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.person-admin__btn--link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.person-admin__candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .person-admin__search {
@@ -446,8 +482,8 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
 }
 
 .person-admin__avatar {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 7.5rem;
+  height: 7.5rem;
   border-radius: 8px;
   object-fit: cover;
   background: #111;
