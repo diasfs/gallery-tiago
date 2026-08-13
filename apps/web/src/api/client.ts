@@ -25,6 +25,7 @@ import type {
   PeopleListMeta,
   PeopleScope,
   PeopleSort,
+  PersonMergeCandidate,
   PersonSummary,
   PhotoDetail,
   PhotoSummary,
@@ -476,6 +477,10 @@ export const adminApi = {
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
   listMergeSuggestions: () =>
     adminRequestRaw<MergeSuggestionsResponse>('/api/admin/people/merge-suggestions'),
+  listPersonMergeSuggestions: (id: string) =>
+    adminRequest<PersonMergeCandidate[]>(
+      `/api/admin/people/${encodeURIComponent(id)}/merge-suggestions`,
+    ),
   searchPeopleByFace: (file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -485,6 +490,8 @@ export const adminApi = {
       isForm: true,
     })
   },
+  searchPeopleByPerson: (id: string) =>
+    adminRequest<FaceSearchMatch[]>(`/api/admin/people/${encodeURIComponent(id)}/similar`),
   createFaceScan: (file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -644,7 +651,9 @@ export const adminApi = {
       | { photoIds: string[]; scope?: ReprocessScope }
       | { allWithAvif: true; scope?: ReprocessScope },
   ) =>
-    adminRequest<{ processed: number; skipped: number } | { enqueued: number; remaining: number }>(
+    adminRequest<
+      { processed: number; skipped: number } | { enqueued: number; remaining: number } | { accepted: true }
+    >(
       '/api/admin/processing/reprocess',
       {
         method: 'POST',

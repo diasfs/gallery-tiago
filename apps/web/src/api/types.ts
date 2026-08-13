@@ -364,6 +364,15 @@ export interface MergeSuggestionsResponse {
   meta: MergeSuggestionsMeta
 }
 
+export interface PersonMergeCandidate {
+  personId: string
+  isNamed: boolean
+  name: string | null
+  distance: number
+  faceCount: number
+  avatarCropPath: string | null
+}
+
 export interface FaceSearchMatch {
   personId: string
   isNamed: boolean
