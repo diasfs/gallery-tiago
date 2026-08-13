@@ -14,6 +14,7 @@ vi.mock('../../api/client', async () => {
       processingPhotos: vi.fn(),
       processingReprocess: vi.fn(),
       processingEnqueueConvert: vi.fn(),
+      listFaceScans: vi.fn(),
     },
     mediaUrl: (path: string | null | undefined) => (path ? `/media/${path}` : null),
   }
@@ -24,6 +25,7 @@ const mockedApi = adminApi as unknown as {
   processingPhotos: ReturnType<typeof vi.fn>
   processingReprocess: ReturnType<typeof vi.fn>
   processingEnqueueConvert: ReturnType<typeof vi.fn>
+  listFaceScans: ReturnType<typeof vi.fn>
 }
 
 function makeSummary(overrides: Partial<ProcessingSummary> = {}): ProcessingSummary {
@@ -59,6 +61,7 @@ async function mountView(query: Record<string, string> = { stage: 'media', statu
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/processing', name: 'admin-processing', component: ProcessingView },
+      { path: '/admin/people', name: 'admin-people', component: { template: '<div />' } },
       { path: '/admin/albums/:albumId/photos', name: 'admin-album-photos', component: { template: '<div />' } },
       { path: '/admin/photos/:id', name: 'admin-photo-edit', component: { template: '<div />' } },
     ],
@@ -84,6 +87,7 @@ describe('ProcessingView', () => {
     })
     mockedApi.processingReprocess.mockResolvedValue({ processed: 1, skipped: 0 })
     mockedApi.processingEnqueueConvert.mockResolvedValue({ enqueued: 1, remaining: 0 })
+    mockedApi.listFaceScans.mockResolvedValue({ data: [], meta: { page: 1, perPage: 20, total: 0 } })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
@@ -127,5 +131,19 @@ describe('ProcessingView', () => {
     await flushPromises()
 
     expect(mockedApi.processingEnqueueConvert).toHaveBeenCalledWith({ allPendingWithOriginal: true })
+  })
+
+  it('reprocesses all AVIF faces with one request', async () => {
+    mockedApi.processingReprocess.mockResolvedValue({ accepted: true })
+    const { wrapper } = await mountView()
+
+    await wrapper.get('[data-testid="reprocess-all-faces"]').trigger('click')
+    await flushPromises()
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Reprocessar detecção de rostos em todas as fotos com AVIF?',
+    )
+    expect(mockedApi.processingReprocess).toHaveBeenCalledTimes(1)
+    expect(mockedApi.processingReprocess).toHaveBeenCalledWith({ allWithAvif: true, scope: 'faces' })
   })
 })

@@ -6,9 +6,12 @@ use App\Entity\AdminUser;
 use App\Entity\Album;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
+use App\Enum\FacesStatus;
 use App\Enum\MediaStatus;
 use App\Message\ConvertMediaMessage;
 use App\Message\DetectFacesMessage;
+use App\Message\ReprocessAvifMessage;
+use App\MessageHandler\ReprocessAvifHandler;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -124,13 +127,49 @@ final class ProcessingAdminTest extends WebTestCase
         ]);
         $this->assertResponseIsSuccessful();
         $data = json_decode($this->client->getResponse()->getContent(), true)['data'];
-        $this->assertSame(1, $data['enqueued']);
-        $this->assertSame(0, $data['remaining']);
+        $this->assertTrue($data['accepted']);
 
-        $sent = $this->facesTransport()->getSent();
-        $this->assertCount(1, $sent);
-        $this->assertInstanceOf(DetectFacesMessage::class, $sent[0]->getMessage());
-        $this->assertSame((string) $done->getId(), $sent[0]->getMessage()->getPhotoId());
+        $kickoff = $this->facesTransport()->getSent();
+        $this->assertCount(1, $kickoff);
+        $this->assertInstanceOf(ReprocessAvifMessage::class, $kickoff[0]->getMessage());
+        $this->assertSame('faces', $kickoff[0]->getMessage()->getScope());
+
+        static::getContainer()->get(ReprocessAvifHandler::class)($kickoff[0]->getMessage());
+        $detect = array_values(array_filter(
+            $this->facesTransport()->getSent(),
+            static fn ($envelope) => $envelope->getMessage() instanceof DetectFacesMessage,
+        ));
+        $this->assertCount(1, $detect);
+        $this->assertSame((string) $done->getId(), $detect[0]->getMessage()->getPhotoId());
+    }
+
+    public function testReprocessAllWithAvifSkipsAlreadyQueued(): void
+    {
+        $queued = new Photo($this->album, null);
+        $queued->setTitle('Already queued faces');
+        $queued->setMediaStatus(MediaStatus::Done);
+        $queued->setAvifPath('converted/aa/queued-faces/master.avif');
+        $queued->setFacesStatus(FacesStatus::Queued);
+        $this->em->persist($queued);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->facesTransport()->reset();
+        $this->client->jsonRequest('POST', '/api/admin/processing/reprocess', [
+            'allWithAvif' => true,
+            'scope' => 'faces',
+        ]);
+        $this->assertResponseIsSuccessful();
+        $this->assertTrue(json_decode($this->client->getResponse()->getContent(), true)['data']['accepted']);
+
+        $kickoff = $this->facesTransport()->getSent();
+        $this->assertCount(1, $kickoff);
+        static::getContainer()->get(ReprocessAvifHandler::class)($kickoff[0]->getMessage());
+        $detect = array_values(array_filter(
+            $this->facesTransport()->getSent(),
+            static fn ($envelope) => $envelope->getMessage() instanceof DetectFacesMessage,
+        ));
+        $this->assertCount(1, $detect);
     }
 
     public function testSummaryAndPhotosIncludeQueuedStatus(): void
@@ -140,7 +179,7 @@ final class ProcessingAdminTest extends WebTestCase
         $queued->setMediaStatus(MediaStatus::Done);
         $queued->setAvifPath('converted/aa/queued/master.avif');
         $queued->setTagsStatus(\App\Enum\TagsStatus::Queued);
-        $queued->setFacesStatus(\App\Enum\FacesStatus::Queued);
+        $queued->setFacesStatus(FacesStatus::Queued);
         $this->em->persist($queued);
         $this->em->flush();
 

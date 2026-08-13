@@ -5,10 +5,13 @@ namespace App\Repository;
 use App\Entity\Album;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
+use App\Enum\FacesStatus;
 use App\Enum\MediaStatus;
+use App\Enum\TagsStatus;
 use App\Service\SearchText;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ParameterType;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Uid\Uuid;
 
@@ -358,17 +361,49 @@ class PhotoRepository extends ServiceEntityRepository
     }
 
     /**
+     * AVIF photos not already in-flight for $scope (queued/detecting).
+     *
      * @return Photo[]
      */
-    public function findWithAvif(int $limit): array
+    public function findWithAvifIdleFor(string $scope, int $limit): array
     {
-        return $this->createQueryBuilder('p')
-            ->andWhere('p.avifPath IS NOT NULL')
-            ->andWhere("p.avifPath <> ''")
+        return $this->withAvifIdle($scope)
             ->orderBy('p.createdAt', 'ASC')
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
+    }
+
+    public function countWithAvifIdleFor(string $scope): int
+    {
+        return (int) $this->withAvifIdle($scope)
+            ->select('COUNT(p.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    private function withAvifIdle(string $scope): QueryBuilder
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->andWhere('p.avifPath IS NOT NULL')
+            ->andWhere("p.avifPath <> ''");
+
+        match ($scope) {
+            'faces' => $qb
+                ->andWhere('p.facesStatus NOT IN (:busy)')
+                ->setParameter('busy', [FacesStatus::Queued->value, FacesStatus::Detecting->value]),
+            'tags' => $qb
+                ->andWhere('p.tagsStatus NOT IN (:busy)')
+                ->setParameter('busy', [TagsStatus::Queued->value, TagsStatus::Detecting->value]),
+            'all' => $qb
+                ->andWhere('p.facesStatus NOT IN (:facesBusy)')
+                ->andWhere('p.tagsStatus NOT IN (:tagsBusy)')
+                ->setParameter('facesBusy', [FacesStatus::Queued->value, FacesStatus::Detecting->value])
+                ->setParameter('tagsBusy', [TagsStatus::Queued->value, TagsStatus::Detecting->value]),
+            default => throw new \InvalidArgumentException(\sprintf('Invalid scope "%s"; expected all|faces|tags.', $scope)),
+        };
+
+        return $qb;
     }
 
     /**

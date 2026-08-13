@@ -214,23 +214,13 @@ async function bulkEnqueue() {
 }
 
 async function reprocessAllFaces() {
-  if (
-    !window.confirm(
-      'Reprocessar detecção de rostos em até 500 fotos com AVIF? Execute novamente se ainda restarem fotos.',
-    )
-  ) {
+  if (!window.confirm('Reprocessar detecção de rostos em todas as fotos com AVIF?')) {
     return
   }
   actionBusy.value = true
   error.value = null
   try {
-    const result = await adminApi.processingReprocess({ allWithAvif: true, scope: 'faces' })
-    if ('remaining' in result) {
-      error.value =
-        result.remaining > 0
-          ? `Enfileiradas ${result.enqueued}; ${result.remaining} ainda com AVIF — execute novamente para continuar.`
-          : null
-    }
+    await adminApi.processingReprocess({ allWithAvif: true, scope: 'faces' })
     await refresh()
   } catch {
     error.value = 'Falha ao reprocessar rostos em lote.'
