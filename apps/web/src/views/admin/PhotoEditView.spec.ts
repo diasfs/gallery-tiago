@@ -12,6 +12,7 @@ vi.mock('../../api/client', async () => {
     adminApi: {
       getPhoto: vi.fn(),
       updatePhoto: vi.fn(),
+      reprocessPhoto: vi.fn(),
       searchTags: vi.fn(),
       listPeople: vi.fn(),
       addPersonToPhoto: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../../api/client', async () => {
 const mockedApi = adminApi as unknown as {
   getPhoto: ReturnType<typeof vi.fn>
   updatePhoto: ReturnType<typeof vi.fn>
+  reprocessPhoto: ReturnType<typeof vi.fn>
   searchTags: ReturnType<typeof vi.fn>
   listPeople: ReturnType<typeof vi.fn>
   addPersonToPhoto: ReturnType<typeof vi.fn>
@@ -113,6 +115,47 @@ describe('PhotoEditView people list', () => {
     wrapper.unmount()
   })
 
+  it('shows face overlays with person names on the preview', async () => {
+    const wrapper = await mountView(
+      makePhoto({
+        width: 200,
+        height: 100,
+        avifPath: 'avifs/aa/photo-1.avif',
+        faces: [
+          {
+            id: 'face-1',
+            personId: 'person-1',
+            name: 'Ana',
+            x: 20,
+            y: 10,
+            width: 40,
+            height: 40,
+          },
+          {
+            id: 'face-2',
+            personId: null,
+            name: null,
+            x: 100,
+            y: 10,
+            width: 40,
+            height: 40,
+          },
+        ],
+      }),
+    )
+
+    const overlays = wrapper.findAll('[data-testid="photo-face-overlay"]')
+    expect(overlays).toHaveLength(1)
+    expect(overlays[0].attributes('title')).toBe('Ana')
+    expect(overlays[0].text()).toContain('Ana')
+    expect(overlays[0].attributes('style')).toContain('left: 10%')
+    expect(overlays[0].attributes('style')).toContain('top: 10%')
+    expect(overlays[0].attributes('style')).toContain('width: 20%')
+    expect(overlays[0].attributes('style')).toContain('height: 40%')
+
+    wrapper.unmount()
+  })
+
   it('creates a person by name when clicking Adicionar / criar', async () => {
     mockedApi.addPersonToPhoto.mockResolvedValue({
       id: 'face-new',
@@ -169,5 +212,18 @@ describe('PhotoEditView people list', () => {
 
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('reprocesses with the selected scope', async () => {
+    mockedApi.reprocessPhoto.mockResolvedValue(makePhoto({ facesStatus: 'queued' }))
+    const wrapper = await mountView(makePhoto())
+
+    await wrapper.get('[data-testid="reprocess-photo"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.reprocessPhoto).toHaveBeenCalledWith('photo-1', 'all')
+    expect(wrapper.get('[data-testid="status-faces"]').text()).toContain('queued')
+
+    wrapper.unmount()
   })
 })

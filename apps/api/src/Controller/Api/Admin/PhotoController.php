@@ -207,6 +207,7 @@ class PhotoController
             'processingError' => $photo->getProcessingError(),
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
+            'faces' => $this->normalizeFaces($photo),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
     }
@@ -234,6 +235,40 @@ class PhotoController
         }
 
         return $people;
+    }
+
+    /**
+     * Faces with bbox + person label for admin photo overlays.
+     *
+     * @return list<array{id: string, personId: ?string, name: ?string, x: float, y: float, width: float, height: float}>
+     */
+    private function normalizeFaces(Photo $photo): array
+    {
+        $faces = [];
+        foreach ($photo->getFaces() as $face) {
+            $x = $face->getX();
+            $y = $face->getY();
+            $width = $face->getWidth();
+            $height = $face->getHeight();
+            if (null === $x || null === $y || null === $width || null === $height) {
+                continue;
+            }
+            if ($width <= 0.0 || $height <= 0.0) {
+                continue;
+            }
+            $person = $face->getPerson();
+            $faces[] = [
+                'id' => (string) $face->getId(),
+                'personId' => null !== $person ? (string) $person->getId() : null,
+                'name' => $person?->getName(),
+                'x' => $x,
+                'y' => $y,
+                'width' => $width,
+                'height' => $height,
+            ];
+        }
+
+        return $faces;
     }
 
     /** @return array<string, mixed> */

@@ -278,6 +278,16 @@ export interface AdminPhotoSummary {
   createdAt: string
 }
 
+export interface AdminPhotoFace {
+  id: string
+  personId: string | null
+  name: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface AdminPhotoDetail {
   id: string
   albumId: string
@@ -293,6 +303,7 @@ export interface AdminPhotoDetail {
   processingError: string | null
   tags: Tag[]
   people: PersonSummary[]
+  faces?: AdminPhotoFace[]
   createdAt: string
 }
 

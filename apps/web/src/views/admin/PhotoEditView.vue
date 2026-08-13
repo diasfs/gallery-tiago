@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { RefreshCw } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ApiError, adminApi, mediaUrl, photoDisplayUrl } from '../../api/client'
-import type { AdminPerson, AdminPhotoDetail, PersonSummary, Tag } from '../../api/types'
+import type { AdminPerson, AdminPhotoDetail, AdminPhotoFace, PersonSummary, ReprocessScope, Tag } from '../../api/types'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
 const props = defineProps<{ id: string }>()
@@ -25,6 +26,14 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const saving = ref(false)
 const saved = ref(false)
+const reprocessing = ref(false)
+const reprocessScope = ref<ReprocessScope>('all')
+
+const SCOPE_LABEL: Record<ReprocessScope, string> = {
+  all: 'Rostos + tags',
+  faces: 'Apenas rostos',
+  tags: 'Apenas tags',
+}
 
 const form = reactive<{ title: string }>({ title: '' })
 const selectedTags = ref<Tag[]>([])
@@ -47,6 +56,33 @@ onMounted(load)
 watch(() => props.id, load)
 
 const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
+
+const faceOverlays = computed(() => {
+  const detail = photo.value
+  if (!detail?.width || !detail.height || detail.width <= 0 || detail.height <= 0) {
+    return []
+  }
+  return (detail.faces ?? []).filter(
+    (face) => face.personId !== null && face.width > 0 && face.height > 0,
+  )
+})
+
+function faceOverlayStyle(face: AdminPhotoFace): Record<string, string> {
+  const detail = photo.value
+  if (!detail?.width || !detail.height) {
+    return { display: 'none' }
+  }
+  return {
+    left: `${(face.x / detail.width) * 100}%`,
+    top: `${(face.y / detail.height) * 100}%`,
+    width: `${(face.width / detail.width) * 100}%`,
+    height: `${(face.height / detail.height) * 100}%`,
+  }
+}
+
+function faceOverlayLabel(face: AdminPhotoFace): string {
+  return face.name?.trim() || 'Sem nome'
+}
 
 async function save() {
   saving.value = true
@@ -234,6 +270,21 @@ function selectPersonResult(person: AdminPerson) {
 function personAvatarSrc(person: PersonSummary): string | null {
   return mediaUrl(person.avatarCropPath)
 }
+
+async function reprocess() {
+  if (!photo.value || reprocessing.value) return
+  reprocessing.value = true
+  error.value = null
+  saved.value = false
+  try {
+    photo.value = await adminApi.reprocessPhoto(photo.value.id, reprocessScope.value)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao reprocessar: ${err.message}` : 'Falha ao reprocessar.'
+  } finally {
+    reprocessing.value = false
+  }
+}
 </script>
 
 <template>
@@ -256,6 +307,31 @@ function personAvatarSrc(person: PersonSummary): string | null {
         <Badge data-testid="status-tags" variant="secondary" class="admin-status-badge">
           Tags: {{ photo.tagsStatus }}
         </Badge>
+        <Select
+          :model-value="reprocessScope"
+          :disabled="reprocessing || saving"
+          @update:model-value="(v) => (reprocessScope = (v ?? 'all') as ReprocessScope)"
+        >
+          <SelectTrigger size="sm" class="w-full max-w-[9.5rem] sm:w-36" data-testid="reprocess-scope">
+            <SelectValue>{{ SCOPE_LABEL[reprocessScope] }}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Rostos + tags</SelectItem>
+            <SelectItem value="faces">Apenas rostos</SelectItem>
+            <SelectItem value="tags">Apenas tags</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          :disabled="reprocessing || saving"
+          data-testid="reprocess-photo"
+          @click="reprocess"
+        >
+          <RefreshCw class="size-3.5 shrink-0" :class="{ 'animate-spin': reprocessing }" />
+          {{ reprocessing ? 'Reprocessando…' : 'Reprocessar' }}
+        </Button>
       </div>
     </div>
 
@@ -282,12 +358,24 @@ function personAvatarSrc(person: PersonSummary): string | null {
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] lg:items-start">
         <Card class="overflow-hidden">
           <CardContent class="p-0">
-            <img
-              v-if="fullSrc"
-              :src="fullSrc"
-              :alt="photo.title ?? 'Foto'"
-              class="block aspect-[4/3] w-full bg-muted object-contain"
-            />
+            <div v-if="fullSrc" class="relative w-full bg-muted">
+              <img
+                :src="fullSrc"
+                :alt="photo.title ?? 'Foto'"
+                class="block h-auto w-full"
+                data-testid="admin-photo-preview"
+              />
+              <div
+                v-for="face in faceOverlays"
+                :key="face.id"
+                class="photo-face-overlay"
+                :style="faceOverlayStyle(face)"
+                :title="faceOverlayLabel(face)"
+                data-testid="photo-face-overlay"
+              >
+                <span class="photo-face-overlay__label">{{ faceOverlayLabel(face) }}</span>
+              </div>
+            </div>
             <div v-else class="flex aspect-[4/3] items-center justify-center text-sm text-muted-foreground">
               Sem prévia disponível
             </div>
@@ -449,3 +537,38 @@ function personAvatarSrc(person: PersonSummary): string | null {
     </template>
   </section>
 </template>
+
+<style scoped>
+.photo-face-overlay {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid rgba(250, 250, 250, 0.9);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.photo-face-overlay__label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  max-width: min(12rem, 40vw);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.photo-face-overlay:hover .photo-face-overlay__label,
+.photo-face-overlay:focus-visible .photo-face-overlay__label {
+  opacity: 1;
+}
+</style>

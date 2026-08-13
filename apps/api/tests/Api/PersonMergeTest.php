@@ -870,6 +870,35 @@ final class PersonMergeTest extends WebTestCase
         $this->assertSame($cropPath, $payload['people'][0]['avatarCropPath']);
     }
 
+    public function testAdminPhotoDetailIncludesFaceBboxesWithPersonNames(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $withBox = $this->detectedFace($this->publicPhoto, $person);
+        $withBox->setX(10.0);
+        $withBox->setY(20.0);
+        $withBox->setWidth(30.0);
+        $withBox->setHeight(40.0);
+        $withoutBox = $this->detectedFace($this->publicPhoto, $person);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+        $this->client->request('GET', '/api/admin/photos/'.(string) $this->publicPhoto->getId());
+        $this->assertResponseIsSuccessful();
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertArrayHasKey('faces', $payload);
+        $this->assertCount(1, $payload['faces']);
+        $this->assertSame((string) $withBox->getId(), $payload['faces'][0]['id']);
+        $this->assertSame((string) $person->getId(), $payload['faces'][0]['personId']);
+        $this->assertSame('Ana', $payload['faces'][0]['name']);
+        $this->assertEqualsWithDelta(10.0, $payload['faces'][0]['x'], 0.001);
+        $this->assertEqualsWithDelta(20.0, $payload['faces'][0]['y'], 0.001);
+        $this->assertEqualsWithDelta(30.0, $payload['faces'][0]['width'], 0.001);
+        $this->assertEqualsWithDelta(40.0, $payload['faces'][0]['height'], 0.001);
+    }
+
     public function testDeletingPhotoKeepsFaceRowsAndCropPaths(): void
     {
         $person = new Person();
