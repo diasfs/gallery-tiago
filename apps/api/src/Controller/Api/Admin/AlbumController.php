@@ -325,6 +325,11 @@ class AlbumController
             return;
         }
 
+        // New albums have no id yet — they cannot already sit in the parent chain.
+        if (!$album->hasId()) {
+            return;
+        }
+
         if ($parent->getId()->equals($album->getId())) {
             throw new BadRequestHttpException('An album cannot be its own parent.');
         }

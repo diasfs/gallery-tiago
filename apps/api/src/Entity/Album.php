@@ -96,6 +96,12 @@ class Album
         return $this->id;
     }
 
+    /** False until Doctrine assigns the UUID (e.g. brand-new album before flush). */
+    public function hasId(): bool
+    {
+        return isset($this->id);
+    }
+
     public function getParent(): ?self
     {
         return $this->parent;

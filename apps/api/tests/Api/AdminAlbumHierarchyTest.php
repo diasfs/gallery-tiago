@@ -282,6 +282,20 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame(48, $data['photosPerPage']);
     }
 
+    public function testCreateWithParentIdSucceeds(): void
+    {
+        $this->loginAsAdmin();
+        $this->client->jsonRequest('POST', '/api/admin/albums', [
+            'title' => 'Nested New',
+            'slug' => 'nested-new',
+            'parentId' => (string) $this->parent->getId(),
+        ]);
+
+        $this->assertResponseStatusCodeSame(201);
+        $data = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame((string) $this->parent->getId(), $data['parentId']);
+    }
+
     public function testUpdatePhotosPerPage(): void
     {
         $this->loginAsAdmin();
