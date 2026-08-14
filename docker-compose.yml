@@ -1,11 +1,12 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gallery}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gallery}
       POSTGRES_DB: ${POSTGRES_DB:-gallery}
-    ports: ["5433:5432"]
+    #ports: ["5433:5432"]
     volumes:
       - ./volumes/pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,16 +18,18 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    restart: unless-stopped
+    #ports: ["6379:6379"]
     networks: [gallery]
 
   api:
     build: ./apps/api
+    restart: unless-stopped
     volumes:
       - ./apps/api:/app
       - ./volumes/media_data:/var/gallery/media
-      # Read-only v3 image tree for `app:import-v3` (host: ../old/_img).
-      - ../old/_img:/var/gallery/v3-img:ro
+      # Read-only v3 image tree for `app:import-v3` (host: ./old/_img).
+      - ./old/_img:/var/gallery/v3-img:ro
       # Bind php.ini so memory_limit etc. apply without image rebuild.
       - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
       - ./apps/api/docker/nginx.conf:/etc/nginx/sites-available/default:ro
@@ -36,7 +39,7 @@ services:
     environment:
       FACES_EMBED_URL: ${FACES_EMBED_URL:-http://worker-faces:8090}
     # Host 8080 is often taken (e.g. phpMyAdmin); use 8081 for the gallery API.
-    ports: ["8081:80"]
+    # ports: ["8081:80"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
@@ -58,7 +61,7 @@ services:
     volumes:
       - ./apps/api:/app
       - ./volumes/media_data:/var/gallery/media
-      - ../old/_img:/var/gallery/v3-img:ro
+      - ./old/_img:/var/gallery/v3-img:ro
       - ./apps/api/docker/php.ini:/usr/local/etc/php/conf.d/gallery.ini:ro
       - ./apps/api/docker/entrypoint.sh:/usr/local/bin/gallery-entrypoint.sh:ro
     env_file: .env
@@ -117,6 +120,7 @@ services:
 
   frontend:
     build: ./apps/web
+    restart: unless-stopped
     volumes:
       - ./apps/web:/app
       - frontend_node_modules:/app/node_modules
