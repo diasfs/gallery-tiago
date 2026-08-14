@@ -258,6 +258,58 @@ final class PublicSearchTest extends WebTestCase
         $this->assertNotContains('Hidden beach', array_column($body['data']['photos'], 'title'));
     }
 
+    public function testSearchAlbumsOrderMostRecentFirst(): void
+    {
+        $older = new Album('Older trip', 'older-trip-'.uniqid());
+        $older->setVisibility(AlbumVisibility::Public);
+        $older->setTakenAt(new \DateTimeImmutable('2020-01-01T12:00:00Z'));
+        $this->em->persist($older);
+
+        $newer = new Album('Newer trip', 'newer-trip-'.uniqid());
+        $newer->setVisibility(AlbumVisibility::Public);
+        $newer->setTakenAt(new \DateTimeImmutable('2024-12-01T12:00:00Z'));
+        $this->em->persist($newer);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/search?q=trip');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $titles = array_column($body['data']['albums'], 'title');
+        $this->assertSame(['Newer trip', 'Older trip'], array_values(array_intersect($titles, ['Newer trip', 'Older trip'])));
+    }
+
+    public function testSearchPhotosOrderMostRecentFirst(): void
+    {
+        $olderAlbum = new Album('Older photos', 'older-photos-'.uniqid());
+        $olderAlbum->setVisibility(AlbumVisibility::Public);
+        $olderAlbum->setTakenAt(new \DateTimeImmutable('2019-06-01T12:00:00Z'));
+        $this->em->persist($olderAlbum);
+
+        $newerAlbum = new Album('Newer photos', 'newer-photos-'.uniqid());
+        $newerAlbum->setVisibility(AlbumVisibility::Public);
+        $newerAlbum->setTakenAt(new \DateTimeImmutable('2024-08-01T12:00:00Z'));
+        $this->em->persist($newerAlbum);
+
+        $olderPhoto = new Photo($olderAlbum, 'originals/older.jpg');
+        $olderPhoto->setTitle('Ordered beach old');
+        $olderPhoto->setAvifPath('converted/older.avif');
+        $this->em->persist($olderPhoto);
+
+        $newerPhoto = new Photo($newerAlbum, 'originals/newer.jpg');
+        $newerPhoto->setTitle('Ordered beach new');
+        $newerPhoto->setAvifPath('converted/newer.avif');
+        $this->em->persist($newerPhoto);
+        $this->em->flush();
+
+        $this->client->request('GET', '/api/search?q=Ordered+beach');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $titles = array_column($body['data']['photos'], 'title');
+        $this->assertSame(['Ordered beach new', 'Ordered beach old'], array_values(array_intersect($titles, ['Ordered beach new', 'Ordered beach old'])));
+    }
+
     public function testSuggestPeopleAndTagsHidePrivateOnly(): void
     {
         $this->client->request('GET', '/api/people?q=fabio');

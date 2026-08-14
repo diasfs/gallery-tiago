@@ -543,7 +543,9 @@ class PhotoRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         $items = $qb
-            ->orderBy('p.createdAt', 'DESC')
+            ->addSelect('COALESCE(a.takenAt, a.createdAt, p.createdAt) AS HIDDEN timelineAt')
+            ->orderBy('timelineAt', 'DESC')
+            ->addOrderBy('p.createdAt', 'DESC')
             ->setFirstResult(max(0, ($page - 1) * $perPage))
             ->setMaxResults($perPage)
             ->getQuery()

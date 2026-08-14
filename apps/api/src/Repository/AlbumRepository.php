@@ -620,9 +620,9 @@ class AlbumRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
 
+        $this->orderByAlbumDate($qb);
+
         $items = $qb
-            ->orderBy('a.sortOrder', 'ASC')
-            ->addOrderBy('a.title', 'ASC')
             ->setFirstResult(max(0, ($page - 1) * $perPage))
             ->setMaxResults($perPage)
             ->getQuery()
