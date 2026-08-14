@@ -19,6 +19,7 @@ import ViewCount from '../components/ViewCount.vue'
 import { useAdminSession } from '../composables/useAdminSession'
 import { usePageMeta } from '../composables/usePageMeta'
 import { photoPath } from '../lib/publicPaths'
+import type { PersonMergedPayload } from '../lib/personMerge'
 
 const props = defineProps<{
   id?: string
@@ -201,10 +202,32 @@ function onPersonNamed(payload: { id: string; name: string | null }) {
   }
 }
 
-async function onPersonMerged() {
-  editDialogOpen.value = false
-  editTarget.value = null
-  await load()
+function onPersonMerged(payload: PersonMergedPayload) {
+  if (!photo.value) {
+    return
+  }
+
+  const { survivorId, removedId, survivorName, survivorAvatarCropPath } = payload
+  const hadRemoved = photo.value.people.some((person) => person.id === removedId)
+  const hadSurvivor = photo.value.people.some((person) => person.id === survivorId)
+
+  let people = photo.value.people.filter((person) => person.id !== removedId)
+  if (hadSurvivor) {
+    people = people.map((person) =>
+      person.id === survivorId
+        ? {
+            ...person,
+            name: survivorName ?? person.name,
+            avatarCropPath: survivorAvatarCropPath ?? person.avatarCropPath,
+          }
+        : person,
+    )
+  } else if (hadRemoved && removedId !== survivorId) {
+    people.push({ id: survivorId, name: survivorName, avatarCropPath: survivorAvatarCropPath })
+  }
+
+  photo.value.people = people
+  editTarget.value = { id: survivorId, name: survivorName, avatarCropPath: survivorAvatarCropPath }
 }
 </script>
 

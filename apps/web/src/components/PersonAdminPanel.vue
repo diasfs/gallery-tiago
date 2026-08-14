@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { adminApi, mediaUrl } from '../api/client'
 import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../api/types'
 import { useAdminPersonSearch } from '../composables/useAdminPersonSearch'
-import { mergePair } from '../lib/personMerge'
+import { mergePair, type PersonMergedPayload } from '../lib/personMerge'
 
 const props = defineProps<{
   personId: string
@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   named: [payload: { id: string; name: string | null }]
-  merged: [payload: { survivorId: string }]
+  merged: [payload: PersonMergedPayload]
 }>()
 
 const adminPerson = ref<AdminPersonDetail | null>(null)
@@ -151,6 +151,38 @@ async function saveName() {
   }
 }
 
+async function onMergeComplete(
+  survivorId: string,
+  sourceId: string,
+  candidate?: PersonMergeCandidate,
+) {
+  const snapshot = survivorSnapshot(survivorId, candidate)
+  emit('merged', { survivorId, removedId: sourceId, ...snapshot })
+  form.mergeTargetId = ''
+  clearMergeSearch()
+  if (survivorId === props.personId) {
+    await loadMergeCandidates()
+  }
+}
+
+function survivorSnapshot(
+  survivorId: string,
+  candidate?: PersonMergeCandidate,
+): Pick<PersonMergedPayload, 'survivorName' | 'survivorAvatarCropPath'> {
+  const person = adminPerson.value
+  if (person?.id === survivorId) {
+    return { survivorName: person.name, survivorAvatarCropPath: person.avatarCropPath }
+  }
+  if (candidate?.personId === survivorId) {
+    return { survivorName: candidate.name, survivorAvatarCropPath: candidate.avatarCropPath }
+  }
+  const fromSearch = mergeResults.value.find((entry) => entry.id === survivorId)
+  if (fromSearch) {
+    return { survivorName: fromSearch.name, survivorAvatarCropPath: fromSearch.avatarCropPath ?? null }
+  }
+  return { survivorName: null, survivorAvatarCropPath: null }
+}
+
 async function mergeInto() {
   if (!adminPerson.value || !form.mergeTargetId) {
     adminError.value = 'Escolha uma pessoa para mesclar.'
@@ -160,7 +192,7 @@ async function mergeInto() {
   adminError.value = null
   try {
     await adminApi.mergePerson(adminPerson.value.id, form.mergeTargetId)
-    emit('merged', { survivorId: form.mergeTargetId })
+    await onMergeComplete(form.mergeTargetId, adminPerson.value.id)
   } catch {
     adminError.value = 'Falha ao mesclar pessoa.'
   } finally {
@@ -175,7 +207,7 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
   adminError.value = null
   try {
     await adminApi.mergePerson(sourceId, targetId)
-    emit('merged', { survivorId: targetId })
+    await onMergeComplete(targetId, sourceId, candidate)
   } catch {
     adminError.value = 'Falha ao mesclar pessoa.'
   } finally {

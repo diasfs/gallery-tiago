@@ -346,17 +346,27 @@ describe('PhotoView', () => {
     wrapper.unmount()
   })
 
-  it('reloads the photo after merging a person from the edit dialog', async () => {
+  it('keeps the edit dialog open and follows the survivor after merging', async () => {
     mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
-    mockedAdminApi.getPerson.mockResolvedValue({
-      id: 'person-1',
-      name: null,
-      isNamed: false,
-      faceCount: 1,
-      avatarFaceId: null,
-      avatarCropPath: null,
-      faces: [{ id: 'face-1', photoId: 'photo-1', personId: 'person-1', cropPath: null, hasEmbedding: true }],
-    })
+    mockedAdminApi.getPerson
+      .mockResolvedValueOnce({
+        id: 'person-1',
+        name: null,
+        isNamed: false,
+        faceCount: 1,
+        avatarFaceId: null,
+        avatarCropPath: null,
+        faces: [{ id: 'face-1', photoId: 'photo-1', personId: 'person-1', cropPath: null, hasEmbedding: true }],
+      })
+      .mockResolvedValueOnce({
+        id: 'person-named',
+        name: 'Ada Lovelace',
+        isNamed: true,
+        faceCount: 4,
+        avatarFaceId: null,
+        avatarCropPath: null,
+        faces: [{ id: 'face-1', photoId: 'photo-1', personId: 'person-named', cropPath: null, hasEmbedding: true }],
+      })
     mockedAdminApi.listPersonMergeSuggestions.mockResolvedValue([
       {
         personId: 'person-named',
@@ -372,24 +382,22 @@ describe('PhotoView', () => {
     const initial = makePhoto({
       people: [{ id: 'person-1', name: null, avatarCropPath: null }],
     })
-    const afterMerge = makePhoto({
-      people: [{ id: 'person-named', name: 'Ada Lovelace', avatarCropPath: null }],
-    })
-    mockedApi.getPhoto.mockResolvedValueOnce(initial).mockResolvedValueOnce(afterMerge)
 
     const wrapper = await mountLegacyView(initial)
-    mockedApi.getPhoto.mockClear()
-    mockedApi.getPhoto.mockResolvedValue(afterMerge)
 
     await wrapper.find('[data-testid="photo-person-edit"]').trigger('click')
     await flushPromises()
+
+    mockedApi.getPhoto.mockClear()
 
     testId('person-merge-candidate-accept').click()
     await flushPromises()
 
     expect(mockedAdminApi.mergePerson).toHaveBeenCalledWith('person-1', 'person-named')
-    expect(mockedApi.getPhoto).toHaveBeenCalledWith('photo-1')
-    expect(document.querySelector('[data-testid="person-edit-dialog"]')).toBeNull()
+    expect(mockedApi.getPhoto).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="person-edit-dialog"]')).toBeTruthy()
+    expect(mockedAdminApi.getPerson).toHaveBeenLastCalledWith('person-named')
+    expect(document.body.textContent).toContain('Editar Ada Lovelace')
     expect(wrapper.text()).toContain('Ada Lovelace')
 
     wrapper.unmount()

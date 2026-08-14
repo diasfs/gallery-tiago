@@ -11,6 +11,13 @@ export type MergeCandidateSide = {
   faceCount: number
 }
 
+export type PersonMergedPayload = {
+  survivorId: string
+  removedId: string
+  survivorName: string | null
+  survivorAvatarCropPath: string | null
+}
+
 export function mergePair(
   current: MergePersonSide,
   candidate: MergeCandidateSide,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import type { PersonSummary } from '../api/types'
+import type { PersonMergedPayload } from '../lib/personMerge'
 import PersonAdminPanel from './PersonAdminPanel.vue'
 
 const props = defineProps<{
@@ -11,7 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [open: boolean]
   named: [payload: { id: string; name: string | null }]
-  merged: [payload: { survivorId: string }]
+  merged: [payload: PersonMergedPayload]
 }>()
 
 const personLabel = computed(() => props.person?.name?.trim() || 'Sem nome')
