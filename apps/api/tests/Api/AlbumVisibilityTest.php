@@ -222,34 +222,35 @@ final class AlbumVisibilityTest extends WebTestCase
         $this->assertSame(['newer-child', 'older-child', 'undated-child'], $slugs);
     }
 
-    public function testPublicRecentAlbumsOrderedByLegacyIdDescWithLimit(): void
+    public function testPublicRecentAlbumsOrderedByAlbumDateWithLimit(): void
     {
         $parent = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'landscapes']);
         $this->assertNotNull($parent);
-        $parent->setLegacyId(50);
 
-        $nested = new Album('Nested Recent', 'nested-recent');
-        $nested->setVisibility(AlbumVisibility::Public);
-        $nested->setParent($parent);
-        $nested->setLegacyId(500);
-        $this->em->persist($nested);
+        $newer = new Album('Newer Dated', 'newer-dated');
+        $newer->setVisibility(AlbumVisibility::Public);
+        $newer->setParent($parent);
+        $newer->setTakenAt(new \DateTimeImmutable('2025-06-01'));
+        $this->em->persist($newer);
 
-        $olderLegacy = new Album('Older Legacy', 'older-legacy');
-        $olderLegacy->setVisibility(AlbumVisibility::Public);
-        $olderLegacy->setParent($parent);
-        $olderLegacy->setLegacyId(100);
-        $this->em->persist($olderLegacy);
+        $older = new Album('Older Dated', 'older-dated');
+        $older->setVisibility(AlbumVisibility::Public);
+        $older->setParent($parent);
+        $older->setTakenAt(new \DateTimeImmutable('2024-01-01'));
+        $this->em->persist($older);
 
-        $native = new Album('Native Recent', 'native-recent');
-        $native->setVisibility(AlbumVisibility::Public);
-        $this->em->persist($native);
+        $undated = new Album('Undated Recent', 'undated-recent');
+        $undated->setVisibility(AlbumVisibility::Public);
+        $undated->setParent($parent);
+        $undated->setLegacyId(999);
+        $this->em->persist($undated);
 
         $unlisted = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'family-hidden']);
         $private = $this->em->getRepository(Album::class)->findOneBy(['slug' => 'secret']);
         $this->assertNotNull($unlisted);
         $this->assertNotNull($private);
-        $unlisted->setLegacyId(999);
-        $private->setLegacyId(1000);
+        $unlisted->setTakenAt(new \DateTimeImmutable('2026-01-01'));
+        $private->setTakenAt(new \DateTimeImmutable('2026-01-01'));
 
         $this->em->flush();
 
@@ -257,10 +258,11 @@ final class AlbumVisibilityTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
-        $this->assertSame(['native-recent', 'nested-recent'], array_column($body['data'], 'slug'));
+        $this->assertSame(['newer-dated', 'older-dated'], array_column($body['data'], 'slug'));
         $this->assertSame(2, $body['meta']['limit']);
         $this->assertNotContains('family-hidden', array_column($body['data'], 'slug'));
         $this->assertNotContains('secret', array_column($body['data'], 'slug'));
+        $this->assertNotContains('undated-recent', array_column($body['data'], 'slug'));
     }
 
     // --- Admin endpoints ----------------------------------------------------

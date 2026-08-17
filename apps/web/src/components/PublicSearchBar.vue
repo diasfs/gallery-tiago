@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { api } from '../api/client'
-import type { Tag } from '../api/types'
+import { api, mediaUrl } from '../api/client'
+import type { PersonSummary, Tag } from '../api/types'
 
 export type SearchDateMode = 'year' | 'range'
 
+export interface PublicSearchPerson {
+  id: string
+  name: string
+  avatarCropPath?: string | null
+}
+
 export interface PublicSearchBarState {
   q: string
-  person: string
+  people: PublicSearchPerson[]
   tags: Array<{ id: string; name: string; slug: string }>
   dateMode: SearchDateMode
   year: string
@@ -32,10 +38,14 @@ const emit = defineEmits<{
 
 const state = ref<PublicSearchBarState>(
   props.modelValue
-    ? { ...props.modelValue, tags: [...props.modelValue.tags] }
+    ? {
+        ...props.modelValue,
+        people: [...props.modelValue.people],
+        tags: [...props.modelValue.tags],
+      }
     : {
         q: '',
-        person: '',
+        people: [],
         tags: [],
         dateMode: 'year',
         year: '',
@@ -50,6 +60,7 @@ watch(
     if (!next) return
     state.value = {
       ...next,
+      people: [...next.people],
       tags: [...next.tags],
     }
   },
@@ -59,6 +70,7 @@ watch(
 function sync() {
   emit('update:modelValue', {
     ...state.value,
+    people: [...state.value.people],
     tags: [...state.value.tags],
   })
 }
@@ -68,6 +80,12 @@ const tagSuggestions = ref<Tag[]>([])
 const showTags = ref(false)
 let tagTimer: ReturnType<typeof setTimeout> | null = null
 
+const personQuery = ref('')
+const personSuggestions = ref<PersonSummary[]>([])
+const showPersonSuggest = ref(false)
+let personTimer: ReturnType<typeof setTimeout> | null = null
+
+const selectedPersonIds = computed(() => new Set(state.value.people.map((person) => person.id)))
 const selectedTagSlugs = computed(() => new Set(state.value.tags.map((t) => t.slug)))
 
 async function loadTags(q: string) {
@@ -100,6 +118,55 @@ function removeTag(slug: string) {
   sync()
 }
 
+function personAvatar(person: PersonSummary): string | null {
+  return mediaUrl(person.avatarCropPath)
+}
+
+async function loadPeople(q: string) {
+  const trimmed = q.trim()
+  if (!trimmed) {
+    personSuggestions.value = []
+    return
+  }
+  try {
+    personSuggestions.value = (await api.searchPeople(trimmed)).filter(
+      (person) => !selectedPersonIds.value.has(person.id),
+    )
+  } catch {
+    personSuggestions.value = []
+  }
+}
+
+function onPersonInput() {
+  const q = personQuery.value.trim()
+  if (!q) {
+    personSuggestions.value = []
+    showPersonSuggest.value = false
+    return
+  }
+  showPersonSuggest.value = true
+  if (personTimer) clearTimeout(personTimer)
+  personTimer = setTimeout(() => void loadPeople(q), 200)
+}
+
+function selectPerson(person: PersonSummary) {
+  if (selectedPersonIds.value.has(person.id)) return
+  state.value.people.push({
+    id: person.id,
+    name: person.name ?? '',
+    avatarCropPath: person.avatarCropPath,
+  })
+  personQuery.value = ''
+  personSuggestions.value = []
+  showPersonSuggest.value = false
+  sync()
+}
+
+function removePerson(id: string) {
+  state.value.people = state.value.people.filter((person) => person.id !== id)
+  sync()
+}
+
 function setDateMode(mode: SearchDateMode) {
   state.value.dateMode = mode
   if (mode === 'year') {
@@ -122,6 +189,7 @@ function submit() {
   sync()
   emit('submit', {
     ...state.value,
+    people: [...state.value.people],
     tags: [...state.value.tags],
   })
 }
@@ -129,12 +197,14 @@ function submit() {
 function onDocClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   if (!target?.closest('[data-search-tags]')) showTags.value = false
+  if (!target?.closest('[data-search-person]')) showPersonSuggest.value = false
 }
 
 onMounted(() => document.addEventListener('click', onDocClick))
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
   if (tagTimer) clearTimeout(tagTimer)
+  if (personTimer) clearTimeout(personTimer)
 })
 </script>
 
@@ -153,14 +223,36 @@ onUnmounted(() => {
     </div>
 
     <div class="search-bar__filters">
-      <input
-        v-model="state.person"
-        type="text"
-        class="search-bar__filter-input search-bar__person"
-        placeholder="Pessoa…"
-        data-testid="search-person-input"
-        @input="sync"
-      />
+      <div class="search-bar__suggest search-bar__person" data-search-person>
+        <input
+          v-model="personQuery"
+          type="search"
+          class="search-bar__filter-input"
+          placeholder="Pessoa…"
+          autocomplete="off"
+          data-testid="search-person-input"
+          @input="onPersonInput"
+          @keydown.esc="showPersonSuggest = false"
+        />
+        <ul
+          v-if="showPersonSuggest && personSuggestions.length"
+          class="search-bar__dropdown"
+          data-testid="search-person-suggest"
+        >
+          <li v-for="person in personSuggestions" :key="person.id">
+            <button type="button" class="search-bar__person-option" @click="selectPerson(person)">
+              <img
+                v-if="personAvatar(person)"
+                :src="personAvatar(person)!"
+                alt=""
+                class="search-bar__person-avatar"
+              />
+              <span v-else class="search-bar__person-avatar search-bar__person-avatar--empty" aria-hidden="true" />
+              <span class="search-bar__person-name">{{ person.name }}</span>
+            </button>
+          </li>
+        </ul>
+      </div>
 
       <div class="search-bar__suggest" data-search-tags>
         <input
@@ -250,7 +342,25 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="state.tags.length" class="search-bar__pills" data-testid="search-pills">
+    <div v-if="state.people.length || state.tags.length" class="search-bar__pills" data-testid="search-pills">
+      <button
+        v-for="person in state.people"
+        :key="person.id"
+        type="button"
+        class="search-bar__pill search-bar__pill--person"
+        data-testid="search-person-pill"
+        @click="removePerson(person.id)"
+      >
+        <img
+          v-if="personAvatar(person)"
+          :src="personAvatar(person)!"
+          alt=""
+          class="search-bar__pill-avatar"
+        />
+        <span v-else class="search-bar__pill-avatar search-bar__pill-avatar--empty" aria-hidden="true" />
+        <span class="search-bar__pill-label">{{ person.name }}</span>
+        <span aria-hidden="true"> ×</span>
+      </button>
       <button
         v-for="tag in state.tags"
         :key="tag.slug"
@@ -317,6 +427,32 @@ onUnmounted(() => {
 .search-bar__person {
   min-width: 10rem;
   flex: 1 1 10rem;
+}
+
+.search-bar__person-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.search-bar__person-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.35rem;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #e7e5e4;
+}
+
+.search-bar__person-avatar--empty {
+  display: inline-block;
+}
+
+.search-bar__person-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .search-bar__suggest {
@@ -460,6 +596,32 @@ onUnmounted(() => {
 
 .search-bar__pill--tag {
   background: #d6d3d1;
+}
+
+.search-bar__pill--person {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+
+.search-bar__pill-avatar {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.25rem;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #d6d3d1;
+}
+
+.search-bar__pill-avatar--empty {
+  display: inline-block;
+}
+
+.search-bar__pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .search-bar--compact .search-bar__filters {

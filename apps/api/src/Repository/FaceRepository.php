@@ -57,7 +57,7 @@ class FaceRepository extends ServiceEntityRepository
     /**
      * @return list<string> visible photo ids, closest first
      */
-    public function findSimilarVisiblePhotoIds(Uuid $photoId, int $limit = 12, float $maxDistance = 0.45): array
+    public function findSimilarVisiblePhotoIds(Uuid $photoId, int $limit = 15, float $maxDistance = 0.45): array
     {
         $limit = max(1, min(100, $limit));
         $perFaceLimit = max(50, $limit * 5);

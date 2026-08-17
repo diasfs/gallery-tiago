@@ -18,7 +18,7 @@ final class FaceSimilarityService
     }
 
     /** @return Photo[] */
-    public function findSimilarVisiblePhotos(Photo $photo, int $limit = 12): array
+    public function findSimilarVisiblePhotos(Photo $photo, int $limit = 15): array
     {
         $ids = $this->faces->findSimilarVisiblePhotoIds($photo->getId(), $limit, $this->clusterThreshold);
         if (\count($ids) < $limit) {

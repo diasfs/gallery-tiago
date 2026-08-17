@@ -56,7 +56,7 @@ class Album
     #[ORM\Column(options: ['default' => 48])]
     private int $photosPerPage = 48;
 
-    /** Legacy gallery `id_album` when imported; used for “recent” ordering like old (`id_album DESC`). */
+    /** Legacy gallery `id_album` when imported from v3. */
     #[ORM\Column(nullable: true, unique: true)]
     private ?int $legacyId = null;
 

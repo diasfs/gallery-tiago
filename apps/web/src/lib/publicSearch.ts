@@ -23,7 +23,7 @@ export function searchStateFromQuery(query: LocationQuery): PublicSearchBarState
 
   return {
     q: asString(query.q) ?? '',
-    person: asString(query.person) ?? '',
+    people: asStringList(query.person).map((id) => ({ id, name: id })),
     tags: asStringList(query.tag).map((slug) => ({ id: slug, name: slug, slug })),
     dateMode,
     year,
@@ -32,8 +32,25 @@ export function searchStateFromQuery(query: LocationQuery): PublicSearchBarState
   }
 }
 
-/** Resolve tag pill labels when the URL only has slugs. */
+/** Resolve tag pill labels and person display names when the URL only has ids/slugs. */
 export async function resolveSearchPillLabels(state: PublicSearchBarState): Promise<PublicSearchBarState> {
+  const people = (
+    await Promise.all(
+      state.people.map(async (person) => {
+        try {
+          const detail = await api.getPerson(person.id)
+          return {
+            id: detail.id,
+            name: detail.name ?? person.id,
+            avatarCropPath: detail.avatarCropPath,
+          }
+        } catch {
+          return null
+        }
+      }),
+    )
+  ).filter((person): person is NonNullable<typeof person> => person !== null)
+
   const tags = await Promise.all(
     state.tags.map(async (tag) => {
       if (tag.name !== tag.slug) return tag
@@ -45,7 +62,7 @@ export async function resolveSearchPillLabels(state: PublicSearchBarState): Prom
       }
     }),
   )
-  return { ...state, tags }
+  return { ...state, people, tags }
 }
 
 export function searchParamsFromState(
@@ -54,7 +71,7 @@ export function searchParamsFromState(
 ): PublicSearchParams {
   const params: PublicSearchParams = {
     q: state.q.trim() || undefined,
-    person: state.person.trim() || undefined,
+    person: state.people.map((person) => person.id),
     tag: state.tags.map((t) => t.slug),
     albumPage: pages.albumPage,
     photoPage: pages.photoPage,
@@ -67,6 +84,7 @@ export function searchParamsFromState(
     if (state.to) params.to = state.to
   }
 
+  if (!params.person?.length) delete params.person
   if (!params.tag?.length) delete params.tag
 
   return params
@@ -76,7 +94,7 @@ export function searchRouteQuery(state: PublicSearchBarState, pages: { albumPage
   const params = searchParamsFromState(state, pages)
   const query: Record<string, string | string[]> = {}
   if (params.q) query.q = params.q
-  if (params.person) query.person = params.person
+  if (params.person?.length) query.person = params.person
   if (params.tag?.length) query.tag = params.tag
   if (params.year) query.year = params.year
   if (params.from) query.from = params.from
@@ -89,7 +107,7 @@ export function searchRouteQuery(state: PublicSearchBarState, pages: { albumPage
 export function hasSearchCriteria(state: PublicSearchBarState): boolean {
   return Boolean(
     state.q.trim()
-      || state.person.trim()
+      || state.people.length
       || state.tags.length
       || (state.dateMode === 'year' && /^\d{4}$/.test(state.year.trim()))
       || (state.dateMode === 'range' && (state.from || state.to)),

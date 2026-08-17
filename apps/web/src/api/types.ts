@@ -115,7 +115,7 @@ export interface MostViewedMeta extends PageMeta {
 
 export interface PublicSearchParams {
   q?: string
-  person?: string
+  person?: string[]
   tag?: string[]
   year?: string
   from?: string

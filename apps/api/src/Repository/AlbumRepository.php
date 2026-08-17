@@ -66,7 +66,7 @@ class AlbumRepository extends ServiceEntityRepository
         $qb = $this->createQueryBuilder('a')
             ->andWhere('a.visibility = :visibility')
             ->setParameter('visibility', AlbumVisibility::Public);
-        $this->orderByPublicRecency($qb);
+        $this->orderByAlbumDate($qb);
 
         return $qb
             ->setMaxResults(max(1, $limit))
@@ -261,20 +261,6 @@ class AlbumRepository extends ServiceEntityRepository
             ->addSelect('COALESCE(a.takenAtEnd, a.takenAt) AS HIDDEN albumDate')
             ->orderBy('hasDate', 'DESC')
             ->addOrderBy('albumDate', 'DESC');
-    }
-
-    /**
-     * Native albums (no legacyId) first by createdAt; imported by legacyId DESC
-     * (old gallery id_album DESC). Used for public recent albums only.
-     */
-    private function orderByPublicRecency(QueryBuilder $qb): void
-    {
-        $qb
-            ->addSelect('CASE WHEN a.legacyId IS NULL THEN 1 ELSE 0 END AS HIDDEN legacyNull')
-            ->orderBy('legacyNull', 'DESC')
-            ->addOrderBy('a.createdAt', 'DESC')
-            ->addOrderBy('a.legacyId', 'DESC')
-            ->addOrderBy('a.title', 'ASC');
     }
 
     /** @return Album[] */
@@ -562,7 +548,7 @@ class AlbumRepository extends ServiceEntityRepository
      *
      * @param array{
      *   q?: string|null,
-     *   personName?: string|null,
+     *   personIds?: list<Uuid>,
      *   tagSlugs?: list<string>,
      *   year?: int|null,
      *   from?: string|null,
@@ -591,18 +577,22 @@ class AlbumRepository extends ServiceEntityRepository
 
         $this->applyTakenAtFilters($qb, $filters);
 
-        $personName = isset($filters['personName']) && \is_string($filters['personName']) ? trim($filters['personName']) : '';
+        $personIds = $filters['personIds'] ?? [];
         $tagSlugs = $filters['tagSlugs'] ?? [];
-        if ('' !== $personName || [] !== $tagSlugs) {
+        if ([] !== $personIds || [] !== $tagSlugs) {
             $photoExists = 'EXISTS (SELECT 1 FROM App\Entity\Photo p WHERE p.album = a';
-            if ('' !== $personName) {
-                $photoExists .= ' AND EXISTS (
-                    SELECT 1 FROM App\Entity\Face f
-                    JOIN f.person person
-                    WHERE f.photo = p
-                    AND LOWER(UNACCENT(COALESCE(person.name, \'\'))) LIKE :personName
-                )';
-                $qb->setParameter('personName', SearchText::likePattern($personName));
+            if ([] !== $personIds) {
+                $or = [];
+                foreach (array_values($personIds) as $i => $personId) {
+                    $param = 'personId'.$i;
+                    $or[] = 'EXISTS (
+                        SELECT 1 FROM App\Entity\Face f'.$i.'
+                        WHERE f'.$i.'.photo = p
+                        AND f'.$i.'.person = :'.$param.'
+                    )';
+                    $qb->setParameter($param, $personId, 'uuid');
+                }
+                $photoExists .= ' AND ('.implode(' OR ', $or).')';
             }
             $j = 0;
             foreach ($tagSlugs as $slug) {

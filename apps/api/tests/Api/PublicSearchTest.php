@@ -249,13 +249,60 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByPersonAndTag(): void
     {
-        $this->client->request('GET', '/api/search?person=Fábio&tag=beach');
+        $this->client->request('GET', '/api/search?person='.$this->namedPerson->getId().'&tag=beach');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertContains('Summer in Paris', array_column($body['data']['albums'], 'title'));
         $this->assertContains('Eiffel sunset', array_column($body['data']['photos'], 'title'));
         $this->assertNotContains('Hidden beach', array_column($body['data']['photos'], 'title'));
+    }
+
+    public function testSearchByMultiplePeopleUsesOrSemantics(): void
+    {
+        $secondPerson = new Person();
+        $secondPerson->setName('Ana Costa');
+        $secondPerson->setIsNamed(true);
+        $this->em->persist($secondPerson);
+
+        $secondPhoto = new Photo($this->publicAlbum, 'originals/aa/second.jpg');
+        $secondPhoto->setTitle('Louvre hall');
+        $secondPhoto->setAvifPath('converted/aa/second.avif');
+        $this->em->persist($secondPhoto);
+        $this->em->flush();
+
+        $this->attachFace($secondPhoto, $secondPerson);
+
+        $this->client->request(
+            'GET',
+            '/api/search?person='.$this->namedPerson->getId().'&person='.$secondPerson->getId(),
+        );
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $titles = array_column($body['data']['photos'], 'title');
+        $this->assertContains('Eiffel sunset', $titles);
+        $this->assertContains('Louvre hall', $titles);
+    }
+
+    public function testPublicPersonDetailIncludesAvatarCropPath(): void
+    {
+        $this->client->request('GET', '/api/people/'.$this->namedPerson->getId());
+
+        $this->assertResponseIsSuccessful();
+        $person = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertSame('Fábio Silva', $person['name']);
+        $this->assertSame('faces/aa/'.$this->publicPhoto->getId().'/1.jpg', $person['avatarCropPath']);
+    }
+
+    public function testSearchByPersonNameIsIgnored(): void
+    {
+        $this->client->request('GET', '/api/search?person=Fábio');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame([], $body['data']['albums']);
+        $this->assertSame([], $body['data']['photos']);
     }
 
     public function testSearchAlbumsOrderMostRecentFirst(): void
@@ -317,6 +364,8 @@ final class PublicSearchTest extends WebTestCase
         $people = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $names = array_column($people, 'name');
         $this->assertContains('Fábio Silva', $names);
+        $fabio = array_values(array_filter($people, static fn (array $row): bool => 'Fábio Silva' === $row['name']))[0];
+        $this->assertSame('faces/aa/'.$this->publicPhoto->getId().'/1.jpg', $fabio['avatarCropPath']);
 
         $this->client->request('GET', '/api/people?q=Secret');
         $people = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];

@@ -39,6 +39,7 @@ class PersonController
             'data' => array_map(static fn ($person) => [
                 'id' => (string) $person->getId(),
                 'name' => $person->getName(),
+                'avatarCropPath' => $person->getEffectiveAvatarPath(),
             ], $people),
         ]);
     }
@@ -57,6 +58,7 @@ class PersonController
         return new JsonResponse(['data' => [
             'id' => (string) $person->getId(),
             'name' => $person->getName(),
+            'avatarCropPath' => $person->getEffectiveAvatarPath(),
         ]]);
     }
 
