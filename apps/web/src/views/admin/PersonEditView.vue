@@ -13,13 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
 import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../../api/types'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
-import { mergePair } from '../../lib/personMerge'
+import { pickMergeSurvivor } from '../../lib/personMerge'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -32,7 +33,10 @@ const deleteOpen = ref(false)
 const mergeCandidates = ref<PersonMergeCandidate[]>([])
 const mergeCandidatesLoading = ref(false)
 const mergeCandidatesError = ref<string | null>(null)
-const mergeCandidateBusyId = ref<string | null>(null)
+const selectedCandidateIds = ref<string[]>([])
+const mergingCandidates = ref(false)
+
+const selectedCandidateCount = computed(() => selectedCandidateIds.value.length)
 
 const form = reactive({
   name: '',
@@ -112,9 +116,14 @@ async function loadMergeCandidates() {
   }
 }
 
+function clearCandidateSelection() {
+  selectedCandidateIds.value = []
+}
+
 async function load() {
   loading.value = true
   error.value = null
+  clearCandidateSelection()
   try {
     const detail = await adminApi.getPerson(props.id)
     person.value = detail
@@ -154,22 +163,34 @@ function candidateLabel(candidate: PersonMergeCandidate): string {
   return 'Sem nome'
 }
 
-async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
+async function mergeSelectedCandidates() {
   if (!person.value) return
-  const { sourceId, targetId } = mergePair(person.value, candidate)
-  mergeCandidateBusyId.value = candidate.personId
+  const selected = mergeCandidates.value.filter((c) => selectedCandidateIds.value.includes(c.personId))
+  if (selected.length === 0) {
+    error.value = 'Selecione ao menos uma duplicata para mesclar.'
+    return
+  }
+  const survivorId = pickMergeSurvivor(person.value, selected)
+  const sourceIds = [
+    ...(person.value.id !== survivorId ? [person.value.id] : []),
+    ...selected.filter((c) => c.personId !== survivorId).map((c) => c.personId),
+  ]
+  mergingCandidates.value = true
   error.value = null
   try {
-    await adminApi.mergePerson(sourceId, targetId)
-    if (targetId !== person.value.id) {
-      await router.push({ name: 'admin-person-edit', params: { id: targetId } })
+    for (const sourceId of sourceIds) {
+      await adminApi.mergePerson(sourceId, survivorId)
+    }
+    clearCandidateSelection()
+    if (survivorId !== person.value.id) {
+      await router.push({ name: 'admin-person-edit', params: { id: survivorId } })
       return
     }
     await load()
   } catch (err) {
     error.value = err instanceof ApiError ? `Falha ao mesclar: ${err.message}` : 'Falha ao mesclar pessoa.'
   } finally {
-    mergeCandidateBusyId.value = null
+    mergingCandidates.value = false
   }
 }
 
@@ -513,7 +534,20 @@ async function purgePerson() {
           class="space-y-3 border-t border-border/60 pt-4"
           data-testid="person-merge-candidates"
         >
-          <h3 class="text-sm font-medium text-foreground">Possíveis duplicatas</h3>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-sm font-medium text-foreground">Possíveis duplicatas</h3>
+            <Button
+              v-if="mergeCandidates.length > 0"
+              type="button"
+              size="sm"
+              variant="outline"
+              :disabled="saving || mergingCandidates || selectedCandidateCount === 0"
+              data-testid="person-merge-candidates-submit"
+              @click="mergeSelectedCandidates"
+            >
+              {{ mergingCandidates ? 'Mesclando…' : `Mesclar selecionadas (${selectedCandidateCount})` }}
+            </Button>
+          </div>
           <p v-if="mergeCandidatesLoading" class="text-sm text-muted-foreground">Buscando…</p>
           <Alert v-else-if="mergeCandidatesError" variant="destructive">
             <AlertDescription>{{ mergeCandidatesError }}</AlertDescription>
@@ -532,10 +566,21 @@ async function purgePerson() {
               class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
               data-testid="person-merge-candidate"
             >
-              <RouterLink
-                :to="{ name: 'admin-person-edit', params: { id: candidate.personId } }"
-                class="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:opacity-80"
-              >
+              <div class="flex min-w-0 flex-1 items-center gap-3">
+                <Checkbox
+                  :model-value="selectedCandidateIds.includes(candidate.personId)"
+                  :disabled="saving || mergingCandidates"
+                  data-testid="person-merge-candidate-select"
+                  :aria-label="`Selecionar ${candidateLabel(candidate)}`"
+                  @update:model-value="(checked) => {
+                    if (checked) selectedCandidateIds.push(candidate.personId)
+                    else selectedCandidateIds = selectedCandidateIds.filter((id) => id !== candidate.personId)
+                  }"
+                />
+                <RouterLink
+                  :to="{ name: 'admin-person-edit', params: { id: candidate.personId } }"
+                  class="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:opacity-80"
+                >
                 <img
                   v-if="faceSrc(candidate.avatarCropPath)"
                   :src="faceSrc(candidate.avatarCropPath)!"
@@ -555,16 +600,7 @@ async function purgePerson() {
                   </p>
                 </div>
               </RouterLink>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                :disabled="saving || mergeCandidateBusyId === candidate.personId"
-                data-testid="person-merge-candidate-accept"
-                @click="acceptMergeCandidate(candidate)"
-              >
-                {{ mergeCandidateBusyId === candidate.personId ? 'Mesclando…' : 'Mesclar' }}
-              </Button>
+              </div>
             </li>
           </ul>
         </div>

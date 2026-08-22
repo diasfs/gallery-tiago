@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import PhotoView from './PhotoView.vue'
 import { adminApi, api } from '../api/client'
@@ -390,7 +390,13 @@ describe('PhotoView', () => {
 
     mockedApi.getPhoto.mockClear()
 
-    testId('person-merge-candidate-accept').click()
+    const checkbox = new DOMWrapper(
+      document.querySelector('[data-testid="person-merge-candidate-select"]')!,
+    )
+    await checkbox.setValue(true)
+    await new DOMWrapper(
+      document.querySelector('[data-testid="person-merge-candidates-submit"]')!,
+    ).trigger('click')
     await flushPromises()
 
     expect(mockedAdminApi.mergePerson).toHaveBeenCalledWith('person-1', 'person-named')

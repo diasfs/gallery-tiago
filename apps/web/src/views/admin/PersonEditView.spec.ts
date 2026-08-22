@@ -169,7 +169,8 @@ describe('PersonEditView', () => {
     expect(mockedApi.listPersonMergeSuggestions).toHaveBeenCalledWith('person-1')
     expect(wrapper.get('[data-testid="person-merge-candidate"]').text()).toContain('Ada Lovelace')
 
-    await wrapper.get('[data-testid="person-merge-candidate-accept"]').trigger('click')
+    await wrapper.get('[data-testid="person-merge-candidate-select"]').trigger('click')
+    await wrapper.get('[data-testid="person-merge-candidates-submit"]').trigger('click')
     await flushPromises()
 
     // current is unnamed, candidate named → merge current into named

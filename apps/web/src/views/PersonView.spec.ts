@@ -194,7 +194,8 @@ describe('PersonView', () => {
     expect(publicLink.attributes('href')).toBe('/people/person-named')
     expect(publicLink.attributes('target')).toBe('_blank')
 
-    await wrapper.get('[data-testid="person-merge-candidate-accept"]').trigger('click')
+    await wrapper.get('[data-testid="person-merge-candidate-select"]').setValue(true)
+    await wrapper.get('[data-testid="person-merge-candidates-submit"]').trigger('click')
     await flushPromises()
 
     expect(mockedAdminApi.mergePerson).toHaveBeenCalledWith('person-1', 'person-named')

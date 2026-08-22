@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { adminApi, mediaUrl } from '../api/client'
 import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../api/types'
 import { useAdminPersonSearch } from '../composables/useAdminPersonSearch'
-import { mergePair, type PersonMergedPayload } from '../lib/personMerge'
+import { pickMergeSurvivor, type PersonMergedPayload } from '../lib/personMerge'
 
 const props = defineProps<{
   personId: string
@@ -24,7 +24,10 @@ const adminError = ref<string | null>(null)
 const mergeCandidates = ref<PersonMergeCandidate[]>([])
 const mergeCandidatesLoading = ref(false)
 const mergeCandidatesError = ref<string | null>(null)
-const mergeCandidateBusyId = ref<string | null>(null)
+const selectedCandidateIds = ref<string[]>([])
+const mergingCandidates = ref(false)
+
+const selectedCandidateCount = computed(() => selectedCandidateIds.value.length)
 
 const form = reactive({ mergeTargetId: '' })
 const {
@@ -100,10 +103,15 @@ async function loadMergeCandidates() {
   }
 }
 
+function clearCandidateSelection() {
+  selectedCandidateIds.value = []
+}
+
 async function load() {
   adminError.value = null
   form.mergeTargetId = ''
   clearMergeSearch()
+  clearCandidateSelection()
   try {
     adminPerson.value = await adminApi.getPerson(props.personId)
     nameDraft.value = adminPerson.value.name ?? ''
@@ -155,12 +163,13 @@ async function onMergeComplete(
   survivorId: string,
   sourceId: string,
   candidate?: PersonMergeCandidate,
+  options?: { reloadCandidates?: boolean },
 ) {
   const snapshot = survivorSnapshot(survivorId, candidate)
   emit('merged', { survivorId, removedId: sourceId, ...snapshot })
   form.mergeTargetId = ''
   clearMergeSearch()
-  if (survivorId === props.personId) {
+  if (options?.reloadCandidates !== false && survivorId === props.personId) {
     await loadMergeCandidates()
   }
 }
@@ -200,18 +209,34 @@ async function mergeInto() {
   }
 }
 
-async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
+async function mergeSelectedCandidates() {
   if (!adminPerson.value) return
-  const { sourceId, targetId } = mergePair(adminPerson.value, candidate)
-  mergeCandidateBusyId.value = candidate.personId
+  const selected = mergeCandidates.value.filter((c) => selectedCandidateIds.value.includes(c.personId))
+  if (selected.length === 0) {
+    adminError.value = 'Selecione ao menos uma duplicata para mesclar.'
+    return
+  }
+  const survivorId = pickMergeSurvivor(adminPerson.value, selected)
+  const sourceIds = [
+    ...(adminPerson.value.id !== survivorId ? [adminPerson.value.id] : []),
+    ...selected.filter((c) => c.personId !== survivorId).map((c) => c.personId),
+  ]
+  mergingCandidates.value = true
   adminError.value = null
   try {
-    await adminApi.mergePerson(sourceId, targetId)
-    await onMergeComplete(targetId, sourceId, candidate)
+    for (const sourceId of sourceIds) {
+      const candidate = selected.find((c) => c.personId === sourceId || c.personId === survivorId)
+      await adminApi.mergePerson(sourceId, survivorId)
+      await onMergeComplete(survivorId, sourceId, candidate, { reloadCandidates: false })
+    }
+    clearCandidateSelection()
+    if (survivorId === props.personId) {
+      await loadMergeCandidates()
+    }
   } catch {
     adminError.value = 'Falha ao mesclar pessoa.'
   } finally {
-    mergeCandidateBusyId.value = null
+    mergingCandidates.value = false
   }
 }
 </script>
@@ -295,7 +320,19 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
     </div>
 
     <div v-if="hasEmbeddings" class="person-admin__dupes" data-testid="person-merge-candidates">
-      <h2 class="person-admin__label">Possíveis duplicatas</h2>
+      <div class="person-admin__dupes-header">
+        <h2 class="person-admin__label">Possíveis duplicatas</h2>
+        <button
+          v-if="mergeCandidates.length > 0"
+          type="button"
+          class="person-admin__btn"
+          :disabled="saving || mergingCandidates || selectedCandidateCount === 0"
+          data-testid="person-merge-candidates-submit"
+          @click="mergeSelectedCandidates"
+        >
+          {{ mergingCandidates ? 'Mesclando…' : `Mesclar selecionadas (${selectedCandidateCount})` }}
+        </button>
+      </div>
       <p v-if="mergeCandidatesLoading" class="person-admin__hint">Buscando…</p>
       <p v-else-if="mergeCandidatesError" class="person-admin__error">{{ mergeCandidatesError }}</p>
       <p
@@ -312,6 +349,17 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
           class="person-admin__candidate"
           data-testid="person-merge-candidate"
         >
+          <label class="person-admin__candidate-check">
+            <input
+              v-model="selectedCandidateIds"
+              type="checkbox"
+              class="person-admin__checkbox"
+              :value="candidate.personId"
+              :disabled="saving || mergingCandidates"
+              data-testid="person-merge-candidate-select"
+            />
+            <span class="person-admin__sr-only">Selecionar {{ candidateLabel(candidate) }}</span>
+          </label>
           <img
             v-if="faceSrc(candidate.avatarCropPath)"
             :src="faceSrc(candidate.avatarCropPath)!"
@@ -335,15 +383,6 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
             >
               Ver no site
             </RouterLink>
-            <button
-              type="button"
-              class="person-admin__btn"
-              :disabled="saving || mergeCandidateBusyId === candidate.personId"
-              data-testid="person-merge-candidate-accept"
-              @click="acceptMergeCandidate(candidate)"
-            >
-              {{ mergeCandidateBusyId === candidate.personId ? 'Mesclando…' : 'Mesclar' }}
-            </button>
           </div>
         </li>
       </ul>
@@ -495,6 +534,39 @@ async function acceptMergeCandidate(candidate: PersonMergeCandidate) {
   gap: 0.5rem;
   padding-top: 0.35rem;
   border-top: 1px solid #2a2a2a;
+}
+
+.person-admin__dupes-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.person-admin__candidate-check {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.person-admin__checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.person-admin__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .person-admin__candidate-list {

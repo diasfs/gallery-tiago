@@ -18,6 +18,36 @@ export type PersonMergedPayload = {
   survivorAvatarCropPath: string | null
 }
 
+type MergeParty = {
+  id: string
+  isNamed: boolean
+  faceCount: number
+}
+
+function betterSurvivor(currentId: string, a: MergeParty, b: MergeParty): MergeParty {
+  if (a.isNamed !== b.isNamed) return a.isNamed ? a : b
+  if (a.faceCount !== b.faceCount) return a.faceCount > b.faceCount ? a : b
+  if (a.id === currentId) return a
+  if (b.id === currentId) return b
+  return a
+}
+
+/** Pick survivor when merging current person with one or more candidates (same rules as mergePair). */
+export function pickMergeSurvivor(
+  current: MergePersonSide,
+  candidates: MergeCandidateSide[],
+): string {
+  const parties: MergeParty[] = [
+    { id: current.id, isNamed: current.isNamed, faceCount: current.faceCount },
+    ...candidates.map((c) => ({
+      id: c.personId,
+      isNamed: c.isNamed,
+      faceCount: c.faceCount,
+    })),
+  ]
+  return parties.reduce((best, party) => betterSurvivor(current.id, best, party)).id
+}
+
 export function mergePair(
   current: MergePersonSide,
   candidate: MergeCandidateSide,
