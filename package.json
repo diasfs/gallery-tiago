@@ -1,0 +1,6 @@
+{
+    "scripts": {
+        "upload:dry": "rsync --exclude=.git --exclude=*.log --exclude=.phpunit.cache --exclude=vite.config.ts --exclude=node_modules --exclude=__pycache__ --exclude=.superpowers --exclude=.vscode --exclude=old --exclude=volumes --exclude=graphify-out --exclude=docs --exclude=.pytest_cache --exclude=cache -rcPvzn ./ plesk49.openwebhost.com.br:/var/www/vhosts/gallery.meuser.com.br/",
+        "upload": "rsync --exclude=.git --exclude=*.log --exclude=.phpunit.cache --exclude=vite.config.ts --exclude=node_modules --exclude=__pycache__ --exclude=.superpowers --exclude=.vscode --exclude=old --exclude=volumes --exclude=graphify-out --exclude=docs --exclude=.pytest_cache --exclude=cache -rcPvz ./ plesk49.openwebhost.com.br:/var/www/vhosts/gallery.meuser.com.br/"
+    }
+}
