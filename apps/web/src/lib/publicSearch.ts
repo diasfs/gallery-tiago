@@ -1,5 +1,5 @@
 import type { LocationQuery, LocationQueryValue } from 'vue-router'
-import type { PublicSearchBarState } from '../components/PublicSearchBar.vue'
+import type { PublicSearchBarState, SearchScope } from '../components/PublicSearchBar.vue'
 import { api } from '../api/client'
 import type { PublicSearchParams } from '../api/types'
 
@@ -15,6 +15,22 @@ function asStringList(value: LocationQueryValue | LocationQueryValue[]): string[
   return []
 }
 
+function listFromQuery(query: LocationQuery, key: string): string[] {
+  const raw = query[key]
+  if (Array.isArray(raw)) {
+    return [...new Set(asStringList(raw))]
+  }
+  const scalar = asString(raw)
+  if (!scalar) return []
+  return [...new Set(scalar.split(',').map((item) => item.trim()).filter(Boolean))]
+}
+
+function parseScope(value: LocationQueryValue | LocationQueryValue[]): SearchScope {
+  const raw = asString(value)
+  if ('albums' === raw || 'both' === raw) return raw
+  return 'photos'
+}
+
 export function searchStateFromQuery(query: LocationQuery): PublicSearchBarState {
   const year = asString(query.year) ?? ''
   const from = asString(query.from) ?? ''
@@ -23,8 +39,9 @@ export function searchStateFromQuery(query: LocationQuery): PublicSearchBarState
 
   return {
     q: asString(query.q) ?? '',
-    people: asStringList(query.person).map((id) => ({ id, name: id })),
-    tags: asStringList(query.tag).map((slug) => ({ id: slug, name: slug, slug })),
+    scope: parseScope(query.scope),
+    people: listFromQuery(query, 'person').map((id) => ({ id, name: id })),
+    tags: listFromQuery(query, 'tag').map((slug) => ({ id: slug, name: slug, slug })),
     dateMode,
     year,
     from,
@@ -71,6 +88,7 @@ export function searchParamsFromState(
 ): PublicSearchParams {
   const params: PublicSearchParams = {
     q: state.q.trim() || undefined,
+    scope: state.scope,
     person: state.people.map((person) => person.id),
     tag: state.tags.map((t) => t.slug),
     albumPage: pages.albumPage,
@@ -94,8 +112,9 @@ export function searchRouteQuery(state: PublicSearchBarState, pages: { albumPage
   const params = searchParamsFromState(state, pages)
   const query: Record<string, string | string[]> = {}
   if (params.q) query.q = params.q
-  if (params.person?.length) query.person = params.person
-  if (params.tag?.length) query.tag = params.tag
+  if ('photos' !== params.scope) query.scope = params.scope ?? 'photos'
+  if (params.person?.length) query.person = params.person.join(',')
+  if (params.tag?.length) query.tag = params.tag.join(',')
   if (params.year) query.year = params.year
   if (params.from) query.from = params.from
   if (params.to) query.to = params.to

@@ -94,6 +94,7 @@ describe('PublicSearchBar', () => {
       props: {
         modelValue: {
           q: '',
+          scope: 'photos',
           people: [
             { id: 'p1', name: 'Fábio Silva', avatarCropPath: 'faces/aa/face-1.jpg' },
           ],
@@ -113,12 +114,23 @@ describe('PublicSearchBar', () => {
     wrapper.unmount()
   })
 
+  it('changes search scope', async () => {
+    const wrapper = mount(PublicSearchBar, { attachTo: document.body })
+    await wrapper.get('[data-testid="search-scope-albums"]').trigger('click')
+
+    const submitted = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as { scope: string }
+    expect(submitted.scope).toBe('albums')
+
+    wrapper.unmount()
+  })
+
   it('emits submit with person ids and year date mode', async () => {
     const wrapper = mount(PublicSearchBar, {
       attachTo: document.body,
       props: {
         modelValue: {
           q: 'Paris',
+          scope: 'photos',
           people: [{ id: 'p2', name: 'Ana', avatarCropPath: null }],
           tags: [],
           dateMode: 'year',

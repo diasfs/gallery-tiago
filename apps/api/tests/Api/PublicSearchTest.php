@@ -162,7 +162,7 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByTitleAndExcludesPrivateUnlisted(): void
     {
-        $this->client->request('GET', '/api/search?q=Paris');
+        $this->client->request('GET', '/api/search?q=Paris&scope=albums');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -174,12 +174,12 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByDescriptionAndLocation(): void
     {
-        $this->client->request('GET', '/api/search?q=Louvre');
+        $this->client->request('GET', '/api/search?q=Louvre&scope=albums');
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertNotEmpty($body['data']['albums']);
 
-        $this->client->request('GET', '/api/search?q=Holiday');
+        $this->client->request('GET', '/api/search?q=Holiday&scope=albums');
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertNotEmpty($body['data']['albums']);
@@ -198,7 +198,7 @@ final class PublicSearchTest extends WebTestCase
         $this->em->persist($album);
         $this->em->flush();
 
-        $this->client->request('GET', '/api/search?q=borussia');
+        $this->client->request('GET', '/api/search?q=borussia&scope=albums');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -220,7 +220,7 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByYear(): void
     {
-        $this->client->request('GET', '/api/search?year=2024');
+        $this->client->request('GET', '/api/search?year=2024&scope=both');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -235,7 +235,7 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByDateRange(): void
     {
-        $this->client->request('GET', '/api/search?from=2024-06-01&to=2024-06-30');
+        $this->client->request('GET', '/api/search?from=2024-06-01&to=2024-06-30&scope=both');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -249,7 +249,7 @@ final class PublicSearchTest extends WebTestCase
 
     public function testSearchByPersonAndTag(): void
     {
-        $this->client->request('GET', '/api/search?person='.$this->namedPerson->getId().'&tag=beach');
+        $this->client->request('GET', '/api/search?person='.$this->namedPerson->getId().'&tag=beach&scope=both');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
@@ -258,20 +258,52 @@ final class PublicSearchTest extends WebTestCase
         $this->assertNotContains('Hidden beach', array_column($body['data']['photos'], 'title'));
     }
 
-    public function testSearchByMultiplePeopleUsesOrSemantics(): void
+    public function testSearchByMultiplePeopleUsesAndSemantics(): void
     {
         $secondPerson = new Person();
         $secondPerson->setName('Ana Costa');
         $secondPerson->setIsNamed(true);
         $this->em->persist($secondPerson);
 
-        $secondPhoto = new Photo($this->publicAlbum, 'originals/aa/second.jpg');
-        $secondPhoto->setTitle('Louvre hall');
-        $secondPhoto->setAvifPath('converted/aa/second.avif');
-        $this->em->persist($secondPhoto);
+        $soloPhoto = new Photo($this->publicAlbum, 'originals/aa/solo.jpg');
+        $soloPhoto->setTitle('Louvre hall');
+        $soloPhoto->setAvifPath('converted/aa/solo.avif');
+        $this->em->persist($soloPhoto);
+
+        $bothPhoto = new Photo($this->publicAlbum, 'originals/aa/both.jpg');
+        $bothPhoto->setTitle('Group photo');
+        $bothPhoto->setAvifPath('converted/aa/both.avif');
+        $this->em->persist($bothPhoto);
         $this->em->flush();
 
-        $this->attachFace($secondPhoto, $secondPerson);
+        $this->attachFace($soloPhoto, $secondPerson);
+        $this->attachFace($bothPhoto, $this->namedPerson);
+        $this->attachFace($bothPhoto, $secondPerson);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/api/search?person='.$this->namedPerson->getId().','.$secondPerson->getId().'&scope=both',
+        );
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $photoTitles = array_column($body['data']['photos'], 'title');
+        $this->assertNotContains('Eiffel sunset', $photoTitles);
+        $this->assertNotContains('Louvre hall', $photoTitles);
+        $this->assertContains('Group photo', $photoTitles);
+
+        $albumTitles = array_column($body['data']['albums'], 'title');
+        $this->assertContains('Summer in Paris', $albumTitles);
+    }
+
+    public function testRepeatedPersonQueryWithoutBracketsKeepsOnlyLastValue(): void
+    {
+        $secondPerson = new Person();
+        $secondPerson->setName('Ana Costa');
+        $secondPerson->setIsNamed(true);
+        $this->em->persist($secondPerson);
+        $this->em->flush();
 
         $this->client->request(
             'GET',
@@ -280,9 +312,30 @@ final class PublicSearchTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);
-        $titles = array_column($body['data']['photos'], 'title');
-        $this->assertContains('Eiffel sunset', $titles);
-        $this->assertContains('Louvre hall', $titles);
+        $photoTitles = array_column($body['data']['photos'], 'title');
+        // Legacy duplicate keys keep only the last id (Ana); Fabio's photo must not match.
+        $this->assertNotContains('Eiffel sunset', $photoTitles);
+    }
+
+    public function testSearchScopeDefaultsToPhotosOnly(): void
+    {
+        $this->client->request('GET', '/api/search?q=Paris');
+
+        $this->assertResponseIsSuccessful();
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertSame([], $body['data']['albums']);
+        $this->assertSame(0, $body['meta']['albums']['total']);
+
+        $this->client->request('GET', '/api/search?q=Paris&scope=albums');
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertContains('Summer in Paris', array_column($body['data']['albums'], 'title'));
+        $this->assertSame([], $body['data']['photos']);
+        $this->assertSame(0, $body['meta']['photos']['total']);
+
+        $this->client->request('GET', '/api/search?q=Paris&scope=both');
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertContains('Summer in Paris', array_column($body['data']['albums'], 'title'));
+        $this->assertNotEmpty($body['data']['photos']);
     }
 
     public function testPublicPersonDetailIncludesAvatarCropPath(): void
@@ -318,7 +371,7 @@ final class PublicSearchTest extends WebTestCase
         $this->em->persist($newer);
         $this->em->flush();
 
-        $this->client->request('GET', '/api/search?q=trip');
+        $this->client->request('GET', '/api/search?q=trip&scope=albums');
 
         $this->assertResponseIsSuccessful();
         $body = json_decode((string) $this->client->getResponse()->getContent(), true);

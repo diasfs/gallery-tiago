@@ -26,10 +26,11 @@ describe('publicSearch', () => {
 
   it('reads person ids from the query', () => {
     const state = searchStateFromQuery({
-      person: ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'],
+      person: '00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002',
       tag: 'swim',
     })
 
+    expect(state.scope).toBe('photos')
     expect(state.people).toEqual([
       { id: '00000000-0000-0000-0000-000000000001', name: '00000000-0000-0000-0000-000000000001' },
       { id: '00000000-0000-0000-0000-000000000002', name: '00000000-0000-0000-0000-000000000002' },
@@ -55,7 +56,7 @@ describe('publicSearch', () => {
     mockedApi.getTag.mockResolvedValue({ tag: { id: 't1', name: 'Swim', slug: 'swim' } })
 
     const state = searchStateFromQuery({
-      person: ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'],
+      person: '00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002',
       tag: 'swim',
     })
     const resolved = await resolveSearchPillLabels(state)
@@ -73,5 +74,23 @@ describe('publicSearch', () => {
       },
     ])
     expect(resolved.tags[0]).toEqual({ id: 't1', name: 'Swim', slug: 'swim' })
+  })
+
+  it('reads and serializes search scope', () => {
+    expect(searchStateFromQuery({ scope: 'albums' }).scope).toBe('albums')
+    expect(searchStateFromQuery({ scope: 'both' }).scope).toBe('both')
+    expect(searchStateFromQuery({ scope: 'invalid' }).scope).toBe('photos')
+
+    const params = searchParamsFromState({
+      q: 'Paris',
+      scope: 'both',
+      people: [],
+      tags: [],
+      dateMode: 'year',
+      year: '',
+      from: '',
+      to: '',
+    })
+    expect(params.scope).toBe('both')
   })
 })

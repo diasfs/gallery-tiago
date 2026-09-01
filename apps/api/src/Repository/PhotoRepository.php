@@ -519,17 +519,17 @@ class PhotoRepository extends ServiceEntityRepository
 
         $personIds = $filters['personIds'] ?? [];
         if ([] !== $personIds) {
-            $or = [];
+            $and = [];
             foreach (array_values($personIds) as $i => $personId) {
                 $param = 'personId'.$i;
-                $or[] = 'EXISTS (
+                $and[] = 'EXISTS (
                     SELECT 1 FROM App\Entity\Face f'.$i.'
                     WHERE f'.$i.'.photo = p
                     AND f'.$i.'.person = :'.$param.'
                 )';
                 $qb->setParameter($param, $personId, 'uuid');
             }
-            $qb->andWhere('('.implode(' OR ', $or).')');
+            $qb->andWhere('('.implode(' AND ', $and).')');
         }
 
         $j = 0;

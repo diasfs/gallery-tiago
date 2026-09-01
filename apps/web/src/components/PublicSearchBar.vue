@@ -4,6 +4,7 @@ import { api, mediaUrl } from '../api/client'
 import type { PersonSummary, Tag } from '../api/types'
 
 export type SearchDateMode = 'year' | 'range'
+export type SearchScope = 'photos' | 'albums' | 'both'
 
 export interface PublicSearchPerson {
   id: string
@@ -13,6 +14,7 @@ export interface PublicSearchPerson {
 
 export interface PublicSearchBarState {
   q: string
+  scope: SearchScope
   people: PublicSearchPerson[]
   tags: Array<{ id: string; name: string; slug: string }>
   dateMode: SearchDateMode
@@ -45,6 +47,7 @@ const state = ref<PublicSearchBarState>(
       }
     : {
         q: '',
+        scope: 'photos',
         people: [],
         tags: [],
         dateMode: 'year',
@@ -178,6 +181,11 @@ function setDateMode(mode: SearchDateMode) {
   sync()
 }
 
+function setScope(scope: SearchScope) {
+  state.value.scope = scope
+  sync()
+}
+
 function clearDate() {
   state.value.year = ''
   state.value.from = ''
@@ -223,6 +231,41 @@ onUnmounted(() => {
     </div>
 
     <div class="search-bar__filters">
+      <div class="search-bar__scope" data-testid="search-scope">
+        <div class="search-bar__scope-modes" role="group" aria-label="O que buscar">
+          <button
+            type="button"
+            class="search-bar__mode"
+            :class="{ 'search-bar__mode--active': state.scope === 'photos' }"
+            :aria-pressed="state.scope === 'photos'"
+            data-testid="search-scope-photos"
+            @click="setScope('photos')"
+          >
+            Fotos
+          </button>
+          <button
+            type="button"
+            class="search-bar__mode"
+            :class="{ 'search-bar__mode--active': state.scope === 'albums' }"
+            :aria-pressed="state.scope === 'albums'"
+            data-testid="search-scope-albums"
+            @click="setScope('albums')"
+          >
+            Álbuns
+          </button>
+          <button
+            type="button"
+            class="search-bar__mode"
+            :class="{ 'search-bar__mode--active': state.scope === 'both' }"
+            :aria-pressed="state.scope === 'both'"
+            data-testid="search-scope-both"
+            @click="setScope('both')"
+          >
+            Fotos e álbuns
+          </button>
+        </div>
+      </div>
+
       <div class="search-bar__suggest search-bar__person" data-search-person>
         <input
           v-model="personQuery"
@@ -422,6 +465,20 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: flex-start;
+}
+
+.search-bar__scope {
+  flex: 1 1 100%;
+}
+
+.search-bar__scope-modes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.18);
 }
 
 .search-bar__person {

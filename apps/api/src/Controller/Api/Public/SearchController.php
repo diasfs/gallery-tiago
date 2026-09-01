@@ -34,6 +34,7 @@ class SearchController
     public function search(Request $request): JsonResponse
     {
         $filters = $this->filtersFromRequest($request);
+        $scope = $this->scopeFromRequest($request);
         $albumPage = max(1, (int) $request->query->get('albumPage', 1));
         $photoPage = max(1, (int) $request->query->get('photoPage', 1));
         $albumPerPage = min(100, max(1, (int) $request->query->get('albumPerPage', self::DEFAULT_ALBUM_PER_PAGE)));
@@ -49,8 +50,15 @@ class SearchController
             ]);
         }
 
-        $albumResult = $this->albums->searchPublicPaginated($albumPage, $albumPerPage, $filters);
-        $photoResult = $this->photos->searchPublicPaginated($photoPage, $photoPerPage, $filters);
+        $searchAlbums = 'albums' === $scope || 'both' === $scope;
+        $searchPhotos = 'photos' === $scope || 'both' === $scope;
+
+        $albumResult = $searchAlbums
+            ? $this->albums->searchPublicPaginated($albumPage, $albumPerPage, $filters)
+            : ['items' => [], 'total' => 0];
+        $photoResult = $searchPhotos
+            ? $this->photos->searchPublicPaginated($photoPage, $photoPerPage, $filters)
+            : ['items' => [], 'total' => 0];
 
         return new JsonResponse([
             'data' => [
@@ -83,31 +91,15 @@ class SearchController
         }
 
         $personIds = [];
-        $rawPeople = $request->query->all()['person'] ?? [];
-        if (\is_string($rawPeople)) {
-            $rawPeople = [$rawPeople];
-        }
-        foreach ($rawPeople as $raw) {
-            if (!\is_string($raw) || '' === trim($raw)) {
-                continue;
-            }
+        foreach ($this->queryStringList($request, 'person') as $raw) {
             try {
-                $personIds[] = Uuid::fromString(trim($raw));
+                $personIds[] = Uuid::fromString($raw);
             } catch (\InvalidArgumentException) {
                 continue;
             }
         }
 
-        $tagSlugs = [];
-        $rawTags = $request->query->all()['tag'] ?? [];
-        if (\is_string($rawTags)) {
-            $rawTags = [$rawTags];
-        }
-        foreach ($rawTags as $raw) {
-            if (\is_string($raw) && '' !== trim($raw)) {
-                $tagSlugs[] = trim($raw);
-            }
-        }
+        $tagSlugs = $this->queryStringList($request, 'tag');
 
         $year = null;
         $yearRaw = $request->query->get('year');
@@ -152,6 +144,43 @@ class SearchController
             || null !== $filters['year']
             || null !== $filters['from']
             || null !== $filters['to'];
+    }
+
+    /** @return 'photos'|'albums'|'both' */
+    private function scopeFromRequest(Request $request): string
+    {
+        $raw = $request->query->get('scope');
+        if (!\is_string($raw)) {
+            return 'photos';
+        }
+
+        return match ($raw) {
+            'albums', 'both' => $raw,
+            default => 'photos',
+        };
+    }
+
+    /**
+     * Comma-separated scalars avoid Symfony rejecting array query params (`person[]=…`).
+     *
+     * @return list<string>
+     */
+    private function queryStringList(Request $request, string $key): array
+    {
+        $raw = $request->query->get($key);
+        if (null === $raw || !\is_string($raw)) {
+            return [];
+        }
+
+        $raw = trim($raw);
+        if ('' === $raw) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $value): bool => '' !== $value,
+        ));
     }
 
     /** @return array<string, mixed> */

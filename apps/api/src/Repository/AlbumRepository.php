@@ -582,17 +582,17 @@ class AlbumRepository extends ServiceEntityRepository
         if ([] !== $personIds || [] !== $tagSlugs) {
             $photoExists = 'EXISTS (SELECT 1 FROM App\Entity\Photo p WHERE p.album = a';
             if ([] !== $personIds) {
-                $or = [];
+                $and = [];
                 foreach (array_values($personIds) as $i => $personId) {
                     $param = 'personId'.$i;
-                    $or[] = 'EXISTS (
+                    $and[] = 'EXISTS (
                         SELECT 1 FROM App\Entity\Face f'.$i.'
                         WHERE f'.$i.'.photo = p
                         AND f'.$i.'.person = :'.$param.'
                     )';
                     $qb->setParameter($param, $personId, 'uuid');
                 }
-                $photoExists .= ' AND ('.implode(' OR ', $or).')';
+                $photoExists .= ' AND ('.implode(' AND ', $and).')';
             }
             $j = 0;
             foreach ($tagSlugs as $slug) {

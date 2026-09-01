@@ -286,8 +286,9 @@ export const PHOTO_DETAIL_SIZES = '(max-width: 1200px) 100vw, 1200px'
 function searchQueryString(params: PublicSearchParams): string {
   const q = new URLSearchParams()
   if (params.q) q.set('q', params.q)
-  for (const id of params.person ?? []) q.append('person', id)
-  for (const slug of params.tag ?? []) q.append('tag', slug)
+  if (params.scope && params.scope !== 'photos') q.set('scope', params.scope)
+  if (params.person?.length) q.set('person', params.person.join(','))
+  if (params.tag?.length) q.set('tag', params.tag.join(','))
   if (params.year) q.set('year', params.year)
   if (params.from) q.set('from', params.from)
   if (params.to) q.set('to', params.to)
@@ -453,6 +454,11 @@ export const adminApi = {
     adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}/reprocess`, {
       method: 'POST',
       body: { scope },
+    }),
+  rotatePhoto: (id: string, degrees = 90) =>
+    adminRequest<AdminPhotoDetail>(`/api/admin/photos/${encodeURIComponent(id)}/rotate`, {
+      method: 'POST',
+      body: { degrees },
     }),
   reprocessAlbum: (albumId: string, scope: ReprocessScope = 'all') =>
     adminRequest<AdminPhotoSummary[]>(`/api/admin/albums/${encodeURIComponent(albumId)}/photos/reprocess`, {

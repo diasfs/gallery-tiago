@@ -37,6 +37,9 @@ const photoPage = computed(() => {
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1
 })
 
+const showAlbums = computed(() => bar.value.scope === 'albums' || bar.value.scope === 'both')
+const showPhotos = computed(() => bar.value.scope === 'photos' || bar.value.scope === 'both')
+
 async function loadFromRoute() {
   const next = searchStateFromQuery(route.query)
   bar.value = await resolveSearchPillLabels(next)
@@ -111,12 +114,12 @@ watch(
     <PublicSearchBar v-model="bar" data-testid="search-page-bar" @submit="onSubmit" />
 
     <p v-if="idle" class="search-page__hint" data-testid="search-idle">
-      Digite uma consulta, pessoas, tags ou uma data para encontrar álbuns e fotos públicos.
+      Digite uma consulta, pessoas, tags ou uma data para encontrar fotos e álbuns públicos.
     </p>
     <p v-else-if="loading" data-testid="search-loading">Buscando…</p>
     <p v-else-if="error" class="error" data-testid="search-error">{{ error }}</p>
     <template v-else>
-      <section class="search-page__section" data-testid="search-albums">
+      <section v-if="showAlbums" class="search-page__section" data-testid="search-albums">
         <h2>Álbuns <span class="search-page__count">({{ albumTotal }})</span></h2>
         <p v-if="albums.length === 0" class="search-page__empty">Nenhum álbum encontrado.</p>
         <template v-else>
@@ -131,7 +134,7 @@ watch(
         </template>
       </section>
 
-      <section class="search-page__section" data-testid="search-photos">
+      <section v-if="showPhotos" class="search-page__section" data-testid="search-photos">
         <h2>Fotos <span class="search-page__count">({{ photoTotal }})</span></h2>
         <p v-if="photos.length === 0" class="search-page__empty">Nenhuma foto encontrada.</p>
         <template v-else>
