@@ -9,6 +9,7 @@ use App\Repository\TagRepository;
 use App\Exception\ProcessingStageDisabledException;
 use App\Service\PhotoDeleter;
 use App\Service\PhotoReprocessor;
+use App\Service\PhotoRotator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -30,6 +31,7 @@ class PhotoController
         private readonly EntityManagerInterface $em,
         private readonly PhotoDeleter $photoDeleter,
         private readonly PhotoReprocessor $reprocessor,
+        private readonly PhotoRotator $rotator,
     ) {
     }
 
@@ -104,6 +106,31 @@ class PhotoController
         try {
             $this->reprocessor->reprocess($photo, $scope);
         } catch (ProcessingStageDisabledException $e) {
+            throw new ConflictHttpException($e->getMessage(), $e);
+        }
+
+        return new JsonResponse(['data' => $this->normalize($photo)]);
+    }
+
+    #[Route('/{id}/rotate', name: 'admin_photos_rotate', methods: ['POST'])]
+    public function rotate(string $id, Request $request): JsonResponse
+    {
+        $photo = $this->findOrFail($id);
+        $degrees = 90;
+        if ('' !== $request->getContent()) {
+            $payload = $this->decode($request);
+            $raw = $payload['degrees'] ?? 90;
+            if (!\is_int($raw) && !(\is_string($raw) && is_numeric($raw))) {
+                throw new BadRequestHttpException('degrees must be an integer.');
+            }
+            $degrees = (int) $raw;
+        }
+
+        try {
+            $this->rotator->rotate($photo, $degrees);
+        } catch (\InvalidArgumentException $e) {
+            throw new BadRequestHttpException($e->getMessage(), $e);
+        } catch (\RuntimeException $e) {
             throw new ConflictHttpException($e->getMessage(), $e);
         }
 

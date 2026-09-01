@@ -37,7 +37,7 @@ final class AvifConverter
             throw new \RuntimeException(\sprintf('Source image "%s" does not exist.', $sourceAbsolutePath));
         }
 
-        [$width, $height] = $this->readDimensions($sourceAbsolutePath);
+        [$width, $height] = $this->readDimensionsFromHeader($sourceAbsolutePath);
 
         $this->ensureDirectoryFor($masterAbsolutePath);
         $this->run([
@@ -46,6 +46,16 @@ final class AvifConverter
             \sprintf('%s[Q=%d]', $masterAbsolutePath, $this->masterQuality),
         ]);
 
+        $this->generateThumbnails($sourceAbsolutePath, $thumbAbsolutePathsBySize);
+
+        return new AvifConversionResult($width, $height);
+    }
+
+    /**
+     * @param array<int, string> $thumbAbsolutePathsBySize map of size => absolute destination path
+     */
+    public function generateThumbnails(string $sourceAbsolutePath, array $thumbAbsolutePathsBySize): void
+    {
         foreach ($thumbAbsolutePathsBySize as $size => $path) {
             $this->ensureDirectoryFor($path);
             $this->run([
@@ -55,12 +65,16 @@ final class AvifConverter
                 '-o', \sprintf('%s[Q=%d]', $path, $this->thumbQuality),
             ]);
         }
-
-        return new AvifConversionResult($width, $height);
     }
 
     /** @return array{0: int, 1: int} */
-    private function readDimensions(string $path): array
+    public function readDimensions(string $path): array
+    {
+        return $this->readDimensionsFromHeader($path);
+    }
+
+    /** @return array{0: int, 1: int} */
+    private function readDimensionsFromHeader(string $path): array
     {
         $width = (int) $this->run([$this->vipsHeaderBinary, '-f', 'width', $path]);
         $height = (int) $this->run([$this->vipsHeaderBinary, '-f', 'height', $path]);

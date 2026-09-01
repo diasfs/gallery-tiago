@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { RefreshCw } from '@lucide/vue'
+import { RefreshCw, RotateCw } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,8 @@ const error = ref<string | null>(null)
 const saving = ref(false)
 const saved = ref(false)
 const reprocessing = ref(false)
+const rotating = ref(false)
+const previewVersion = ref(0)
 const reprocessScope = ref<ReprocessScope>('all')
 
 const SCOPE_LABEL: Record<ReprocessScope, string> = {
@@ -55,7 +57,12 @@ async function load() {
 onMounted(load)
 watch(() => props.id, load)
 
-const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
+const fullSrc = computed(() => {
+  if (!photo.value) return null
+  const src = photoDisplayUrl(photo.value)
+  if (!src) return null
+  return previewVersion.value > 0 ? `${src}${src.includes('?') ? '&' : '?'}v=${previewVersion.value}` : src
+})
 
 const faceOverlays = computed(() => {
   const detail = photo.value
@@ -285,6 +292,21 @@ async function reprocess() {
     reprocessing.value = false
   }
 }
+
+async function rotate() {
+  if (!photo.value || rotating.value || reprocessing.value || saving.value) return
+  rotating.value = true
+  error.value = null
+  saved.value = false
+  try {
+    photo.value = await adminApi.rotatePhoto(photo.value.id, 90)
+    previewVersion.value += 1
+  } catch (err) {
+    error.value = err instanceof ApiError ? `Falha ao rotacionar: ${err.message}` : 'Falha ao rotacionar.'
+  } finally {
+    rotating.value = false
+  }
+}
 </script>
 
 <template>
@@ -331,6 +353,17 @@ async function reprocess() {
         >
           <RefreshCw class="size-3.5 shrink-0" :class="{ 'animate-spin': reprocessing }" />
           {{ reprocessing ? 'Reprocessando…' : 'Reprocessar' }}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          :disabled="rotating || reprocessing || saving || !fullSrc"
+          data-testid="rotate-photo"
+          @click="rotate"
+        >
+          <RotateCw class="size-3.5 shrink-0" :class="{ 'animate-spin': rotating }" />
+          {{ rotating ? 'Rotacionando…' : 'Rotacionar 90°' }}
         </Button>
       </div>
     </div>

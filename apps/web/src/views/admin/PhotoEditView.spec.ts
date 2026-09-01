@@ -13,6 +13,7 @@ vi.mock('../../api/client', async () => {
       getPhoto: vi.fn(),
       updatePhoto: vi.fn(),
       reprocessPhoto: vi.fn(),
+      rotatePhoto: vi.fn(),
       searchTags: vi.fn(),
       listPeople: vi.fn(),
       addPersonToPhoto: vi.fn(),
@@ -25,6 +26,7 @@ const mockedApi = adminApi as unknown as {
   getPhoto: ReturnType<typeof vi.fn>
   updatePhoto: ReturnType<typeof vi.fn>
   reprocessPhoto: ReturnType<typeof vi.fn>
+  rotatePhoto: ReturnType<typeof vi.fn>
   searchTags: ReturnType<typeof vi.fn>
   listPeople: ReturnType<typeof vi.fn>
   addPersonToPhoto: ReturnType<typeof vi.fn>
@@ -223,6 +225,19 @@ describe('PhotoEditView people list', () => {
 
     expect(mockedApi.reprocessPhoto).toHaveBeenCalledWith('photo-1', 'all')
     expect(wrapper.get('[data-testid="status-faces"]').text()).toContain('queued')
+
+    wrapper.unmount()
+  })
+
+  it('rotates the photo ninety degrees clockwise', async () => {
+    mockedApi.rotatePhoto.mockResolvedValue(makePhoto({ width: 100, height: 200, avifPath: 'avifs/aa/photo-1.avif' }))
+    const wrapper = await mountView(makePhoto({ width: 200, height: 100, avifPath: 'avifs/aa/photo-1.avif' }))
+
+    await wrapper.get('[data-testid="rotate-photo"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.rotatePhoto).toHaveBeenCalledWith('photo-1', 90)
+    expect(wrapper.get('[data-testid="admin-photo-preview"]').attributes('src')).toContain('v=1')
 
     wrapper.unmount()
   })
