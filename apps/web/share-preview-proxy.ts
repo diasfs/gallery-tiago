@@ -12,6 +12,11 @@ const SHARE_PREVIEW_PATH = new RegExp(
     `|/albums/[^/?]+` +
     `|/(?!${RESERVED_ALBUM_SLUGS})[^/?]+/[^/?]+\\.[a-z0-9]{2,5}` +
     `|/(?!${RESERVED_ALBUM_SLUGS})[^/?]+` +
+    `|/people/[0-9a-f-]{36}` +
+    `|/tags/[^/?]+` +
+    `|/locations/[0-9a-f-]{36}` +
+    `|/(?:search|map|timeline|memories|popular|tags)` +
+    `|/?` +
     `)/?$`,
   'i',
 )

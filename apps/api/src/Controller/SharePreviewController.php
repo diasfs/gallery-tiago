@@ -3,9 +3,13 @@
 namespace App\Controller;
 
 use App\Entity\Album;
+use App\Entity\Location;
 use App\Entity\Photo;
 use App\Repository\AlbumRepository;
+use App\Repository\LocationRepository;
+use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
+use App\Repository\TagRepository;
 use App\Service\PublicPhotoDisplay;
 use App\Service\PublicSiteUrlBuilder;
 use App\Service\SharePreview;
@@ -26,6 +30,9 @@ final class SharePreviewController
     public function __construct(
         private readonly PhotoRepository $photos,
         private readonly AlbumRepository $albums,
+        private readonly PersonRepository $people,
+        private readonly TagRepository $tags,
+        private readonly LocationRepository $locations,
         private readonly PublicPhotoDisplay $photoDisplay,
         private readonly PublicSiteUrlBuilder $siteUrls,
         private readonly SharePreviewRenderer $renderer,
@@ -50,6 +57,135 @@ final class SharePreviewController
         }
 
         return $this->respond($request, $this->previewForPhoto($photo, $request));
+    }
+
+    #[Route('/', name: 'share_preview_home', methods: ['GET'], priority: 40)]
+    public function home(Request $request): Response
+    {
+        return $this->respond($request, $this->previewForStaticPage('Gallery', 'Galeria de fotos', $request, ''));
+    }
+
+    #[Route(
+        '/{page}',
+        name: 'share_preview_static_page',
+        methods: ['GET'],
+        requirements: ['page' => 'search|map|timeline|memories|popular|tags'],
+        priority: 30,
+    )]
+    public function staticPage(Request $request, string $page): Response
+    {
+        $titles = [
+            'search' => 'Busca',
+            'map' => 'Mapa',
+            'timeline' => 'Linha do tempo',
+            'memories' => 'Memórias',
+            'popular' => 'Populares',
+            'tags' => 'Tags',
+        ];
+
+        return $this->respond(
+            $request,
+            $this->previewForStaticPage(sprintf('%s · Gallery', $titles[$page]), $titles[$page], $request, $page),
+        );
+    }
+
+    #[Route('/people/{id}', name: 'share_preview_person', methods: ['GET'])]
+    public function person(Request $request, string $id): Response
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $person = $this->people->findActive($uuid);
+        if (null === $person) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $cover = $this->photos->findVisibleByPersonIdPaginated($uuid, 1, 1)['items'][0] ?? null;
+        if (null === $cover) {
+            throw new NotFoundHttpException('Person not found.');
+        }
+
+        $image = $this->previewImageMeta($cover, $request);
+
+        return $this->respond(
+            $request,
+            new SharePreview(
+                title: sprintf('%s · Gallery', $person->getName()),
+                description: sprintf('Fotos de %s', $person->getName()),
+                canonicalUrl: $this->siteUrls->page('people/'.$id, $request),
+                imageUrl: $image['imageUrl'] ?? null,
+                imageType: $image['imageType'] ?? null,
+                imageWidth: $image['imageWidth'] ?? null,
+                imageHeight: $image['imageHeight'] ?? null,
+            ),
+        );
+    }
+
+    #[Route('/tags/{slug}', name: 'share_preview_tag', methods: ['GET'])]
+    public function tag(Request $request, string $slug): Response
+    {
+        $tag = $this->tags->findOneBy(['slug' => $slug]);
+        if (null === $tag) {
+            throw new NotFoundHttpException('Tag not found.');
+        }
+
+        $cover = $this->photos->findVisibleByTagSlugPaginated($slug, 1, 1)['items'][0] ?? null;
+        if (null === $cover) {
+            throw new NotFoundHttpException('Tag not found.');
+        }
+
+        $image = $this->previewImageMeta($cover, $request);
+
+        return $this->respond(
+            $request,
+            new SharePreview(
+                title: sprintf('%s · Gallery', $tag->getName()),
+                description: sprintf('Fotos com a tag %s', $tag->getName()),
+                canonicalUrl: $this->siteUrls->page('tags/'.$slug, $request),
+                imageUrl: $image['imageUrl'] ?? null,
+                imageType: $image['imageType'] ?? null,
+                imageWidth: $image['imageWidth'] ?? null,
+                imageHeight: $image['imageHeight'] ?? null,
+            ),
+        );
+    }
+
+    #[Route('/locations/{id}', name: 'share_preview_location', methods: ['GET'])]
+    public function location(Request $request, string $id): Response
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
+        $location = $this->locations->find($uuid);
+        if (null === $location) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
+        $cover = $this->photos->findVisibleByLocationIdPaginated($uuid, 1, 1)['items'][0] ?? null;
+        if (null === $cover) {
+            throw new NotFoundHttpException('Location not found.');
+        }
+
+        $image = $this->previewImageMeta($cover, $request);
+
+        return $this->respond(
+            $request,
+            new SharePreview(
+                title: sprintf('%s · Gallery', $location->getName()),
+                description: $this->locationDescription($location),
+                canonicalUrl: $this->siteUrls->page('locations/'.$id, $request),
+                imageUrl: $image['imageUrl'] ?? null,
+                imageType: $image['imageType'] ?? null,
+                imageWidth: $image['imageWidth'] ?? null,
+                imageHeight: $image['imageHeight'] ?? null,
+            ),
+        );
     }
 
     #[Route(
@@ -112,6 +248,26 @@ final class SharePreviewController
             Response::HTTP_OK,
             ['Content-Type' => 'text/html; charset=UTF-8'],
         );
+    }
+
+    private function previewForStaticPage(string $title, string $description, Request $request, string $path): SharePreview
+    {
+        return new SharePreview(
+            title: $title,
+            description: $description,
+            canonicalUrl: $this->siteUrls->page($path, $request),
+            imageUrl: null,
+        );
+    }
+
+    private function locationDescription(Location $location): string
+    {
+        $parts = array_filter([$location->getCity(), $location->getCountry()]);
+        if ([] === $parts) {
+            return sprintf('Fotos em %s', $location->getName());
+        }
+
+        return sprintf('Fotos em %s — %s', $location->getName(), implode(', ', $parts));
     }
 
     private function previewForPhoto(Photo $photo, Request $request): SharePreview

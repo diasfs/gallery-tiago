@@ -3,7 +3,10 @@
 namespace App\Tests\Api;
 
 use App\Entity\Album;
+use App\Entity\Location;
+use App\Entity\Person;
 use App\Entity\Photo;
+use App\Entity\Tag;
 use App\Enum\AlbumVisibility;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -36,6 +39,15 @@ final class SharePreviewTest extends WebTestCase
         }
         foreach ($this->em->getRepository(Album::class)->findAll() as $album) {
             $this->em->remove($album);
+        }
+        foreach ($this->em->getRepository(Person::class)->findAll() as $person) {
+            $this->em->remove($person);
+        }
+        foreach ($this->em->getRepository(Tag::class)->findAll() as $tag) {
+            $this->em->remove($tag);
+        }
+        foreach ($this->em->getRepository(Location::class)->findAll() as $location) {
+            $this->em->remove($location);
         }
         $this->em->flush();
     }
@@ -181,8 +193,185 @@ final class SharePreviewTest extends WebTestCase
     {
         $this->client->request(
             'GET',
+            '/admin',
+            server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseStatusCodeSame(404);
+    }
+
+    public function testHomeSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
+    {
+        $this->client->request(
+            'GET',
+            '/',
+            server: ['HTTP_USER_AGENT' => 'WhatsApp/2.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('og:title', $html);
+        $this->assertStringContainsString('Gallery', $html);
+        $this->assertStringContainsString('http://localhost:5173/', $html);
+    }
+
+    public function testStaticPageSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
+    {
+        $this->client->request(
+            'GET',
             '/search',
             server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('Busca · Gallery', $html);
+        $this->assertStringContainsString('http://localhost:5173/search', $html);
+    }
+
+    public function testStaticPageSharePreviewRedirectsBrowsers(): void
+    {
+        $this->client->request('GET', '/map');
+
+        $this->assertResponseRedirects('http://localhost:5173/map');
+    }
+
+    public function testPersonSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
+    {
+        $album = new Album('Trip', 'person-album');
+        $album->setVisibility(AlbumVisibility::Public);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/person.jpg');
+        $photo->setFilename('person.jpg');
+        $photo->setTitle('Group');
+        $photo->setThumbPaths(['1280' => 'converted/ab/person.avif']);
+        $photo->setWidth(1280);
+        $photo->setHeight(960);
+        $this->em->persist($photo);
+
+        $person = new Person();
+        $person->setName('Ana Costa');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+
+        $face = new \App\Entity\Face($photo);
+        $face->setPerson($person);
+        $this->em->persist($face);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/people/'.$person->getId()->toRfc4122(),
+            server: ['HTTP_USER_AGENT' => 'facebookexternalhit/1.1'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('Ana Costa · Gallery', $html);
+        $this->assertStringContainsString('og:image', $html);
+        $this->assertStringContainsString('/converted/ab/person.avif', $html);
+    }
+
+    public function testPersonSharePreviewHidesPersonWithoutVisiblePhotos(): void
+    {
+        $person = new Person();
+        $person->setName('Solo');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/people/'.$person->getId()->toRfc4122(),
+            server: ['HTTP_USER_AGENT' => 'facebookexternalhit/1.1'],
+        );
+
+        $this->assertResponseStatusCodeSame(404);
+    }
+
+    public function testTagSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
+    {
+        $album = new Album('Trip', 'tag-album');
+        $album->setVisibility(AlbumVisibility::Public);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/tag.jpg');
+        $photo->setFilename('tag.jpg');
+        $photo->setTitle('Beach day');
+        $photo->setThumbPaths(['1280' => 'converted/ab/tag.avif']);
+        $this->em->persist($photo);
+
+        $tag = new Tag('Beach', 'beach');
+        $photo->addTag($tag);
+        $this->em->persist($tag);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/tags/beach',
+            server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('Beach · Gallery', $html);
+        $this->assertStringContainsString('og:image', $html);
+    }
+
+    public function testTagSharePreviewHidesTagWithoutVisiblePhotos(): void
+    {
+        $tag = new Tag('Beach', 'beach-empty');
+        $this->em->persist($tag);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/tags/beach-empty',
+            server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseStatusCodeSame(404);
+    }
+
+    public function testLocationSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
+    {
+        $location = new Location('Paris');
+        $location->setCity('Paris');
+        $location->setCountry('França');
+        $this->em->persist($location);
+
+        $album = new Album('Trip', 'location-album');
+        $album->setVisibility(AlbumVisibility::Public);
+        $album->setLocation($location);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/location.jpg');
+        $photo->setFilename('location.jpg');
+        $photo->setTitle('Eiffel');
+        $photo->setThumbPaths(['1280' => 'converted/ab/location.avif']);
+        $this->em->persist($photo);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/locations/'.$location->getId()->toRfc4122(),
+            server: ['HTTP_USER_AGENT' => 'WhatsApp/2.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('Paris · Gallery', $html);
+        $this->assertStringContainsString('og:image', $html);
+    }
+
+    public function testLocationSharePreviewHidesLocationWithoutVisiblePhotos(): void
+    {
+        $location = new Location('Empty');
+        $this->em->persist($location);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/locations/'.$location->getId()->toRfc4122(),
+            server: ['HTTP_USER_AGENT' => 'WhatsApp/2.0'],
         );
 
         $this->assertResponseStatusCodeSame(404);
