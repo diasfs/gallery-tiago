@@ -254,6 +254,7 @@ export interface AdminAlbum {
   takenAt: string | null
   takenAtEnd: string | null
   location: Location | null
+  reviewedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -277,6 +278,7 @@ export interface AdminPhotoSummary {
   processingError: string | null
   sortOrder?: number
   createdAt: string
+  people?: PersonSummary[]
 }
 
 export interface AdminPhotoFace {

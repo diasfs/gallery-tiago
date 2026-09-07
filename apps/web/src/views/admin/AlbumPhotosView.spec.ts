@@ -26,6 +26,9 @@ vi.mock('../../api/client', async () => {
       deleteAlbum: vi.fn(),
       searchLocations: vi.fn(),
       createLocation: vi.fn(),
+      listPeople: vi.fn(),
+      addPersonToPhoto: vi.fn(),
+      removePersonFromPhoto: vi.fn(),
     },
   }
 })
@@ -47,6 +50,9 @@ const mockedApi = adminApi as unknown as {
   deleteAlbum: ReturnType<typeof vi.fn>
   searchLocations: ReturnType<typeof vi.fn>
   createLocation: ReturnType<typeof vi.fn>
+  listPeople: ReturnType<typeof vi.fn>
+  addPersonToPhoto: ReturnType<typeof vi.fn>
+  removePersonFromPhoto: ReturnType<typeof vi.fn>
 }
 
 function paginatedAlbums(data: AdminAlbum[], page = 1, perPage = 24): Paginated<AdminAlbum> {
@@ -75,6 +81,7 @@ function makeAlbumDetail(overrides: Partial<AdminAlbumDetail> = {}): AdminAlbumD
     takenAt: null,
     takenAtEnd: null,
     location: null,
+    reviewedAt: null,
     createdAt: '2026-07-20T00:00:00Z',
     updatedAt: '2026-07-20T00:00:00Z',
     ...overrides,
@@ -98,6 +105,7 @@ function makeAlbum(overrides: Partial<AdminAlbum> = {}): AdminAlbum {
     takenAt: null,
     takenAtEnd: null,
     location: null,
+    reviewedAt: null,
     createdAt: '2026-07-20T00:00:00Z',
     updatedAt: '2026-07-20T00:00:00Z',
     ...overrides,
@@ -138,6 +146,7 @@ async function mountView(albumId = 'album-1') {
         props: true,
       },
       { path: '/photos/:id/edit', name: 'admin-photo-edit', component: { template: '<div />' } },
+      { path: '/people/:id', name: 'admin-person-edit', component: { template: '<div />' } },
       { path: '/admin', name: 'admin-albums', component: { template: '<div />' } },
     ],
   })
@@ -156,7 +165,16 @@ async function mountView(albumId = 'album-1') {
 describe('AlbumPhotosView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     mockedApi.getAlbum.mockResolvedValue(makeAlbumDetail())
+    mockedApi.listPeople.mockResolvedValue({ data: [], meta: { page: 1, perPage: 20, total: 0 } })
     mockedApi.listAlbumChildren.mockResolvedValue(paginatedAlbums([]))
     mockedApi.listAlbumPhotos.mockResolvedValue(
       paginatedPhotos([
@@ -595,6 +613,65 @@ describe('AlbumPhotosView', () => {
 
     expect(mockedApi.reorderAlbumPhotos).toHaveBeenCalledWith('album-1', ['photo-2', 'photo-1'])
     expect(wrapper.find('[data-testid="reorder-start"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('enters review mode with large photos and people editors', async () => {
+    mockedApi.listAlbumPhotos.mockImplementation(
+      async (_id: string, params?: { include?: string; page?: number }) => {
+        if (params?.include === 'people') {
+          return paginatedPhotos(
+            [
+              makePhoto({ id: 'photo-1', people: [{ id: 'p1', name: 'Ana', avatarCropPath: null }] }),
+              makePhoto({ id: 'photo-2', people: [] }),
+            ],
+            params.page ?? 1,
+            12,
+          )
+        }
+        return paginatedPhotos([makePhoto(), makePhoto({ id: 'photo-2' })])
+      },
+    )
+    const { wrapper } = await mountView()
+
+    await wrapper.find('[data-testid="review-mode-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.listAlbumPhotos).toHaveBeenCalledWith('album-1', {
+      page: 1,
+      perPage: 12,
+      include: 'people',
+    })
+    expect(wrapper.find('[data-testid="review-mode-stack"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="review-photo-block"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="photos-grid"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="photo-person-row"]').length).toBeGreaterThan(0)
+
+    wrapper.unmount()
+  })
+
+  it('marks and unmarks album as reviewed', async () => {
+    mockedApi.updateAlbum.mockResolvedValueOnce(
+      makeAlbumDetail({ reviewedAt: '2026-09-06T12:00:00Z' }),
+    )
+    mockedApi.updateAlbum.mockResolvedValueOnce(makeAlbumDetail({ reviewedAt: null }))
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('[data-testid="album-reviewed-badge"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="toggle-album-reviewed"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.updateAlbum).toHaveBeenCalledWith('album-1', { reviewed: true })
+    expect(wrapper.find('[data-testid="album-reviewed-badge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="toggle-album-reviewed"]').text()).toContain('Desmarcar')
+
+    await wrapper.find('[data-testid="toggle-album-reviewed"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.updateAlbum).toHaveBeenCalledWith('album-1', { reviewed: false })
+    expect(wrapper.find('[data-testid="album-reviewed-badge"]').exists()).toBe(false)
 
     wrapper.unmount()
   })

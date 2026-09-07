@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -29,10 +29,12 @@ import type {
   AdminPhotoSummary,
   FacesStatus,
   MediaStatus,
+  PersonSummary,
   ReprocessScope,
   TagsStatus,
 } from '../../api/types'
 import AlbumFormDialog from '../../components/admin/AlbumFormDialog.vue'
+import PhotoPeopleEditor from '../../components/admin/PhotoPeopleEditor.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
 
 const props = defineProps<{ albumId: string }>()
@@ -66,6 +68,23 @@ const reorderPhotos = ref<AdminPhotoSummary[]>([])
 const reorderSaving = ref(false)
 const reorderLoading = ref(false)
 const dragFromIndex = ref<number | null>(null)
+
+type ReviewPhoto = AdminPhotoSummary & { people: PersonSummary[] }
+
+const reviewMode = ref(false)
+const reviewPhotos = ref<ReviewPhoto[]>([])
+const reviewPage = ref(0)
+const reviewTotal = ref(0)
+const reviewLoading = ref(false)
+const reviewLoadingMore = ref(false)
+const reviewSaving = ref(false)
+const reviewPerPage = 12
+const reviewSentinel = ref<HTMLElement | null>(null)
+let reviewObserver: IntersectionObserver | null = null
+
+function asReviewPhoto(photo: AdminPhotoSummary): ReviewPhoto {
+  return { ...photo, people: photo.people ?? [] }
+}
 
 const childrenPage = computed(() => {
   const raw = Number(route.query.childrenPage ?? 1)
@@ -373,6 +392,7 @@ onBeforeUnmount(() => {
   if (pollTimer) {
     clearInterval(pollTimer)
   }
+  disconnectReviewObserver()
 })
 
 async function onFilesSelected(event: Event) {
@@ -541,6 +561,9 @@ async function enterReorderMode() {
   if (reorderLoading.value || photosTotal.value === 0) {
     return
   }
+  if (reviewMode.value) {
+    exitReviewMode()
+  }
   reorderLoading.value = true
   error.value = null
   try {
@@ -618,6 +641,130 @@ function onReorderDrop(toIndex: number, event: DragEvent) {
 function onReorderDragEnd() {
   dragFromIndex.value = null
 }
+
+function disconnectReviewObserver() {
+  reviewObserver?.disconnect()
+  reviewObserver = null
+}
+
+function exitReviewMode() {
+  reviewMode.value = false
+  reviewPhotos.value = []
+  reviewPage.value = 0
+  reviewTotal.value = 0
+  disconnectReviewObserver()
+}
+
+async function loadReviewPage(page: number): Promise<boolean> {
+  const result = await adminApi.listAlbumPhotos(props.albumId, {
+    page,
+    perPage: reviewPerPage,
+    include: 'people',
+  })
+  reviewTotal.value = result.meta.total
+  reviewPhotos.value = [
+    ...reviewPhotos.value,
+    ...result.data.map(asReviewPhoto),
+  ]
+  reviewPage.value = page
+  return reviewPhotos.value.length < result.meta.total && result.data.length > 0
+}
+
+async function enterReviewMode() {
+  if (reviewLoading.value || photosTotal.value === 0) {
+    return
+  }
+  if (reorderMode.value) {
+    cancelReorderMode()
+  }
+  reviewLoading.value = true
+  error.value = null
+  reviewPhotos.value = []
+  reviewPage.value = 0
+  selectedIds.value = new Set()
+  try {
+    await loadReviewPage(1)
+    reviewMode.value = true
+    await nextTick()
+    setupReviewObserver()
+  } catch (err) {
+    error.value =
+      err instanceof ApiError
+        ? `Falha ao entrar no modo revisão: ${err.message}`
+        : 'Falha ao entrar no modo revisão.'
+    exitReviewMode()
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+async function loadMoreReviewPhotos() {
+  if (
+    !reviewMode.value ||
+    reviewLoadingMore.value ||
+    reviewLoading.value ||
+    reviewPhotos.value.length >= reviewTotal.value
+  ) {
+    return
+  }
+  reviewLoadingMore.value = true
+  try {
+    await loadReviewPage(reviewPage.value + 1)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError
+        ? `Falha ao carregar mais fotos: ${err.message}`
+        : 'Falha ao carregar mais fotos.'
+  } finally {
+    reviewLoadingMore.value = false
+  }
+}
+
+function setupReviewObserver() {
+  disconnectReviewObserver()
+  const el = reviewSentinel.value
+  if (!el || typeof IntersectionObserver === 'undefined') {
+    return
+  }
+  reviewObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) {
+      void loadMoreReviewPhotos()
+    }
+  })
+  reviewObserver.observe(el)
+}
+
+watch(reviewSentinel, async (el) => {
+  if (!reviewMode.value || !el) {
+    return
+  }
+  await nextTick()
+  setupReviewObserver()
+})
+
+async function toggleAlbumReviewed() {
+  if (!albumMeta.value || reviewSaving.value) {
+    return
+  }
+  const next = albumMeta.value.reviewedAt === null
+  reviewSaving.value = true
+  error.value = null
+  try {
+    const updated = await adminApi.updateAlbum(props.albumId, { reviewed: next })
+    albumMeta.value = { ...albumMeta.value, reviewedAt: updated.reviewedAt }
+  } catch (err) {
+    error.value =
+      err instanceof ApiError
+        ? `Falha ao atualizar revisão: ${err.message}`
+        : 'Falha ao atualizar revisão.'
+  } finally {
+    reviewSaving.value = false
+  }
+}
+
+function onReviewPeopleError(message: string) {
+  error.value = message
+}
 </script>
 
 <template>
@@ -628,6 +775,39 @@ function onReorderDragEnd() {
         <h1 v-if="albumMeta" class="mt-2 text-xl font-semibold tracking-tight">{{ albumMeta.title }}</h1>
       </div>
       <div v-if="albumMeta" class="flex flex-wrap items-center gap-2">
+        <Badge
+          v-if="albumMeta.reviewedAt"
+          variant="secondary"
+          data-testid="album-reviewed-badge"
+        >
+          Revisado
+        </Badge>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="reviewSaving"
+          data-testid="toggle-album-reviewed"
+          @click="toggleAlbumReviewed"
+        >
+          {{
+            reviewSaving
+              ? 'Salvando…'
+              : albumMeta.reviewedAt
+                ? 'Desmarcar revisão'
+                : 'Marcar como revisado'
+          }}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          :variant="reviewMode ? 'default' : 'outline'"
+          :disabled="reviewLoading || photosTotal === 0"
+          data-testid="review-mode-toggle"
+          @click="reviewMode ? exitReviewMode() : enterReviewMode()"
+        >
+          {{ reviewLoading ? 'Carregando…' : reviewMode ? 'Sair da revisão' : 'Modo revisão' }}
+        </Button>
         <Button type="button" size="sm" variant="outline" @click="startEditCurrent">Editar álbum</Button>
         <Button
           type="button"
@@ -645,7 +825,7 @@ function onReorderDragEnd() {
       </div>
     </div>
 
-    <Card class="admin-panel rounded-2xl border shadow-none">
+    <Card v-if="!reviewMode" class="admin-panel rounded-2xl border shadow-none">
       <CardHeader class="pb-3">
         <CardTitle class="text-base font-semibold">Enviar</CardTitle>
         <CardDescription class="text-sm">JPEG, PNG ou WebP — vários arquivos de uma vez.</CardDescription>
@@ -681,7 +861,7 @@ function onReorderDragEnd() {
     </Alert>
 
     <template v-else>
-      <div class="space-y-3">
+      <div v-if="!reviewMode" class="space-y-3">
         <h2 class="text-sm font-semibold text-foreground">Subálbuns</h2>
         <p v-if="children.length === 0" class="text-sm text-muted-foreground">
           Nenhum subálbum ainda. Crie um com Novo álbum acima.
@@ -752,6 +932,55 @@ function onReorderDragEnd() {
         />
       </div>
 
+      <template v-if="reviewMode">
+        <div class="space-y-8" data-testid="review-mode-stack">
+          <article
+            v-for="photo in reviewPhotos"
+            :key="photo.id"
+            class="space-y-4"
+            data-testid="review-photo-block"
+          >
+            <div class="overflow-hidden rounded-xl bg-muted">
+              <img
+                v-if="photoDisplayUrl(photo)"
+                :src="photoDisplayUrl(photo)!"
+                :alt="photo.title ?? 'Foto'"
+                class="mx-auto max-h-[70vh] w-full object-contain"
+                data-testid="review-photo-image"
+              />
+              <div
+                v-else
+                class="flex min-h-48 items-center justify-center px-3 text-center text-sm text-muted-foreground"
+              >
+                {{ previewPlaceholder(photo) }}
+              </div>
+            </div>
+            <div class="admin-panel space-y-4 rounded-xl p-4">
+              <PhotoPeopleEditor
+                :photo-id="photo.id"
+                v-model:people="photo.people"
+                @error="onReviewPeopleError"
+              />
+            </div>
+          </article>
+          <p
+            v-if="reviewPhotos.length === 0"
+            class="rounded-xl border border-dashed p-12 text-center text-sm text-muted-foreground"
+          >
+            Nenhuma foto neste álbum.
+          </p>
+          <div ref="reviewSentinel" class="h-8" data-testid="review-scroll-sentinel" />
+          <p
+            v-if="reviewLoadingMore"
+            class="text-center text-sm text-muted-foreground"
+            data-testid="review-loading-more"
+          >
+            Carregando mais…
+          </p>
+        </div>
+      </template>
+
+      <template v-else>
       <div class="admin-panel flex flex-col gap-3 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between">
         <label v-if="!reorderMode" class="inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium">
           <Checkbox
@@ -1005,6 +1234,7 @@ function onReorderDragEnd() {
         :per-page="photosPerPage"
         @update:page="setPhotosPage"
       />
+      </template>
     </template>
 
     <AlbumFormDialog

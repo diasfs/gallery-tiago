@@ -520,6 +520,7 @@ function visibilityLabel(visibility: AdminAlbum['visibility']): string {
               <span v-if="album.childCount > 0">
                 · {{ album.childCount }} subálbum{{ album.childCount === 1 ? '' : 's' }}
               </span>
+              <span v-if="album.reviewedAt" data-testid="album-list-reviewed-badge"> · Revisado</span>
             </p>
           </div>
           <Button

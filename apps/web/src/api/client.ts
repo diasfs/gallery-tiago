@@ -377,6 +377,7 @@ export interface AlbumWritePayload {
   takenAt?: string | null
   takenAtEnd?: string | null
   locationId?: string | null
+  reviewed?: boolean
 }
 
 export interface PhotoWritePayload {
@@ -423,7 +424,7 @@ export const adminApi = {
     adminRequest<AdminAlbum>(`/api/admin/albums/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload }),
   deleteAlbum: (id: string) => adminRequest<void>(`/api/admin/albums/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
-  listAlbumPhotos: (albumId: string, params: { page?: number; perPage?: number } = {}) =>
+  listAlbumPhotos: (albumId: string, params: { page?: number; perPage?: number; include?: 'people' } = {}) =>
     adminRequestRaw<Paginated<AdminPhotoSummary>>(
       `/api/admin/albums/${encodeURIComponent(albumId)}/photos${queryString(params)}`,
     ),
