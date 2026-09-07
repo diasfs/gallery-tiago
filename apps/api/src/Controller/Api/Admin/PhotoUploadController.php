@@ -47,10 +47,17 @@ class PhotoUploadController
         $album = $this->findAlbumOrFail($albumId);
         $page = Pagination::page($request);
         $perPage = Pagination::perPage($request, self::DEFAULT_PHOTO_PER_PAGE);
+        $includePeople = 'people' === $request->query->get('include');
         $result = $this->photos->findByAlbumPaginated($album, $page, $perPage);
+        if ($includePeople) {
+            $this->photos->hydrateFacesAndPeople($result['items']);
+        }
 
         return new JsonResponse([
-            'data' => array_map($this->normalize(...), $result['items']),
+            'data' => array_map(
+                fn (Photo $photo) => $this->normalize($photo, $includePeople),
+                $result['items'],
+            ),
             'meta' => Pagination::meta($page, $perPage, $result['total']),
         ]);
     }
@@ -212,9 +219,9 @@ class PhotoUploadController
         return $album;
     }
 
-    private function normalize(Photo $photo): array
+    private function normalize(Photo $photo, bool $includePeople = false): array
     {
-        return [
+        $payload = [
             'id' => (string) $photo->getId(),
             'albumId' => (string) $photo->getAlbum()->getId(),
             'title' => $photo->getTitle(),
@@ -228,5 +235,35 @@ class PhotoUploadController
             'sortOrder' => $photo->getSortOrder(),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
+        if ($includePeople) {
+            $payload['people'] = $this->normalizePeople($photo);
+        }
+
+        return $payload;
+    }
+
+    /** @return list<array{id: string, name: ?string, avatarCropPath: ?string}> */
+    private function normalizePeople(Photo $photo): array
+    {
+        $seen = [];
+        $people = [];
+        foreach ($photo->getFaces() as $face) {
+            $person = $face->getPerson();
+            if (null === $person) {
+                continue;
+            }
+            $personId = (string) $person->getId();
+            if (isset($seen[$personId])) {
+                continue;
+            }
+            $seen[$personId] = true;
+            $people[] = [
+                'id' => $personId,
+                'name' => $person->getName(),
+                'avatarCropPath' => $person->getEffectiveAvatarPath(),
+            ];
+        }
+
+        return $people;
     }
 }

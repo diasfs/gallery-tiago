@@ -165,6 +165,27 @@ class PhotoRepository extends ServiceEntityRepository
         return ['items' => $items, 'total' => $total];
     }
 
+    /**
+     * Eager-load faces + person for already-fetched photos (avoids N+1 when including people).
+     *
+     * @param list<Photo> $photos
+     */
+    public function hydrateFacesAndPeople(array $photos): void
+    {
+        if ([] === $photos) {
+            return;
+        }
+
+        $ids = array_map(static fn (Photo $photo) => $photo->getId(), $photos);
+        $this->createQueryBuilder('p')
+            ->leftJoin('p.faces', 'f')->addSelect('f')
+            ->leftJoin('f.person', 'person')->addSelect('person')
+            ->andWhere('p.id IN (:ids)')
+            ->setParameter('ids', $ids)
+            ->getQuery()
+            ->getResult();
+    }
+
     public function nextSortOrderForAlbum(Album $album): int
     {
         $max = $this->createQueryBuilder('p')

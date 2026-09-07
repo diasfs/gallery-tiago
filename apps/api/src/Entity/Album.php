@@ -75,6 +75,10 @@ class Album
     #[ORM\JoinColumn(name: 'location_id', nullable: true, onDelete: 'SET NULL')]
     private ?Location $location = null;
 
+    /** When set, admin has finished reviewing people tags for this album. */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $reviewedAt = null;
+
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
@@ -266,6 +270,18 @@ class Album
     public function setLocation(?Location $location): static
     {
         $this->location = $location;
+
+        return $this;
+    }
+
+    public function getReviewedAt(): ?\DateTimeImmutable
+    {
+        return $this->reviewedAt;
+    }
+
+    public function setReviewedAt(?\DateTimeImmutable $reviewedAt): static
+    {
+        $this->reviewedAt = $reviewedAt;
 
         return $this;
     }

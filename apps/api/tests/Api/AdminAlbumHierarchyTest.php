@@ -4,6 +4,8 @@ namespace App\Tests\Api;
 
 use App\Entity\AdminUser;
 use App\Entity\Album;
+use App\Entity\Face;
+use App\Entity\Person;
 use App\Entity\Photo;
 use App\Enum\AlbumVisibility;
 use Doctrine\ORM\EntityManagerInterface;
@@ -40,6 +42,16 @@ final class AdminAlbumHierarchyTest extends WebTestCase
 
     private function clearFixtures(): void
     {
+        foreach ($this->em->getRepository(Face::class)->findAll() as $face) {
+            $this->em->remove($face);
+        }
+        foreach ($this->em->getRepository(Person::class)->findAll() as $person) {
+            $person->setAvatarFace(null);
+        }
+        $this->em->flush();
+        foreach ($this->em->getRepository(Person::class)->findAll() as $person) {
+            $this->em->remove($person);
+        }
         foreach ($this->em->getRepository(Photo::class)->findAll() as $photo) {
             $this->em->remove($photo);
         }
@@ -269,6 +281,36 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $this->assertSame((string) $this->childPhoto->getId(), $body['data'][0]['id']);
     }
 
+    public function testAlbumPhotosIncludePeopleWhenRequested(): void
+    {
+        $person = new Person();
+        $person->setName('Ana');
+        $person->setIsNamed(true);
+        $this->em->persist($person);
+        $face = new Face($this->childPhoto);
+        $face->setPerson($person);
+        $this->em->persist($face);
+        $this->em->flush();
+
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/albums/'.$this->child->getId().'/photos?page=1&perPage=10');
+        $this->assertResponseIsSuccessful();
+        $without = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertArrayNotHasKey('people', $without[0]);
+
+        $this->client->request(
+            'GET',
+            '/api/admin/albums/'.$this->child->getId().'/photos?page=1&perPage=10&include=people',
+        );
+        $this->assertResponseIsSuccessful();
+        $with = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertArrayHasKey('people', $with[0]);
+        $this->assertCount(1, $with[0]['people']);
+        $this->assertSame((string) $person->getId(), $with[0]['people'][0]['id']);
+        $this->assertSame('Ana', $with[0]['people'][0]['name']);
+    }
+
     public function testCreateDefaultsPhotosPerPageToFortyEight(): void
     {
         $this->loginAsAdmin();
@@ -311,6 +353,36 @@ final class AdminAlbumHierarchyTest extends WebTestCase
         $album = $this->em->getRepository(Album::class)->find($this->parent->getId());
         $this->assertNotNull($album);
         $this->assertSame(30, $album->getPhotosPerPage());
+    }
+
+    public function testMarkAndUnmarkAlbumReviewed(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->client->request('GET', '/api/admin/albums/'.$this->parent->getId());
+        $this->assertResponseIsSuccessful();
+        $show = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNull($show['reviewedAt']);
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'reviewed' => true,
+        ]);
+        $this->assertResponseIsSuccessful();
+        $marked = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNotNull($marked['reviewedAt']);
+        $this->assertIsString($marked['reviewedAt']);
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'reviewed' => false,
+        ]);
+        $this->assertResponseIsSuccessful();
+        $cleared = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
+        $this->assertNull($cleared['reviewedAt']);
+
+        $this->client->jsonRequest('PATCH', '/api/admin/albums/'.$this->parent->getId(), [
+            'reviewed' => 'yes',
+        ]);
+        $this->assertResponseStatusCodeSame(400);
     }
 
     public function testClearingDescriptionPersistsNull(): void

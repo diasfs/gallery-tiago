@@ -316,6 +316,13 @@ class AlbumController
         if (\array_key_exists('locationId', $payload)) {
             $album->setLocation($this->resolveLocation($payload['locationId']));
         }
+
+        if (\array_key_exists('reviewed', $payload)) {
+            if (!\is_bool($payload['reviewed'])) {
+                throw new BadRequestHttpException('reviewed must be a boolean.');
+            }
+            $album->setReviewedAt($payload['reviewed'] ? new \DateTimeImmutable() : null);
+        }
     }
 
     private function assertValidParent(Album $album): void
@@ -517,6 +524,7 @@ class AlbumController
             'takenAt' => $album->getTakenAt()?->format(\DATE_ATOM),
             'takenAtEnd' => $album->getTakenAtEnd()?->format(\DATE_ATOM),
             'location' => $this->normalizeLocation($album->getLocation()),
+            'reviewedAt' => $album->getReviewedAt()?->format(\DATE_ATOM),
             'createdAt' => $album->getCreatedAt()->format(\DATE_ATOM),
             'updatedAt' => $album->getUpdatedAt()->format(\DATE_ATOM),
         ];
