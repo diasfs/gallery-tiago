@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { RefreshCw, RotateCw } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -15,9 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ApiError, adminApi, mediaUrl, photoDisplayUrl } from '../../api/client'
-import type { AdminPerson, AdminPhotoDetail, AdminPhotoFace, PersonSummary, ReprocessScope, Tag } from '../../api/types'
-import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
+import { ApiError, adminApi, photoDisplayUrl } from '../../api/client'
+import type { AdminPhotoDetail, AdminPhotoFace, ReprocessScope, Tag } from '../../api/types'
+import PhotoPeopleEditor from '../../components/admin/PhotoPeopleEditor.vue'
 
 const props = defineProps<{ id: string }>()
 
@@ -155,127 +155,8 @@ function selectTagResult(value: unknown) {
   }
 }
 
-// --- People --------------------------------------------------------------
-
-const {
-  query: peopleQuery,
-  results: peopleResults,
-  loading: peopleSearchLoading,
-  search: searchPeople,
-  clear: clearPeopleSearch,
-} = useAdminPersonSearch()
-const peopleBusy = ref(false)
-let peopleSearchTimer: ReturnType<typeof setTimeout> | null = null
-const peopleSearchOpen = ref(false)
-const peopleSearchRoot = ref<HTMLElement | null>(null)
-
-function onPeopleSearchInput(event: Event) {
-  peopleQuery.value = (event.target as HTMLInputElement).value
-  peopleSearchOpen.value = true
-  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
-  peopleSearchTimer = setTimeout(() => void searchPeople(), 200)
-}
-
-function onPeopleSearchFocus() {
-  peopleSearchOpen.value = true
-  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
-  void searchPeople()
-}
-
-function closePeopleSearch() {
-  peopleSearchOpen.value = false
-}
-
-function onDocumentPointerDown(event: Event) {
-  const root = peopleSearchRoot.value
-  if (root && !root.contains(event.target as Node)) closePeopleSearch()
-}
-
-onMounted(() => {
-  document.addEventListener('pointerdown', onDocumentPointerDown)
-})
-onUnmounted(() => {
-  if (peopleSearchTimer) clearTimeout(peopleSearchTimer)
-  document.removeEventListener('pointerdown', onDocumentPointerDown)
-})
-
-async function addPerson(person: AdminPerson) {
-  if (!photo.value) {
-    return
-  }
-  peopleBusy.value = true
-  try {
-    await adminApi.addPersonToPhoto(photo.value.id, { personId: person.id })
-    if (!photo.value.people.some((p) => p.id === person.id)) {
-      photo.value.people.push({
-        id: person.id,
-        name: person.name,
-        avatarCropPath: person.avatarCropPath ?? null,
-      })
-    }
-    clearPeopleSearch()
-    closePeopleSearch()
-  } catch (err) {
-    error.value = err instanceof ApiError ? `Falha ao adicionar pessoa: ${err.message}` : 'Falha ao adicionar pessoa.'
-  } finally {
-    peopleBusy.value = false
-  }
-}
-
-async function createAndAddPerson() {
-  const name = peopleQuery.value.trim()
-  if (name === '' || !photo.value) {
-    return
-  }
-
-  peopleBusy.value = true
-  error.value = null
-  try {
-    const face = await adminApi.addPersonToPhoto(photo.value.id, { name })
-    const personId = face.personId
-    if (!personId) {
-      throw new Error('missing personId')
-    }
-    if (!photo.value.people.some((p) => p.id === personId)) {
-      photo.value.people.push({
-        id: personId,
-        name,
-        avatarCropPath: null,
-      })
-    }
-    clearPeopleSearch()
-    closePeopleSearch()
-  } catch (err) {
-    error.value =
-      err instanceof ApiError
-        ? `Falha ao criar/adicionar pessoa: ${err.message}`
-        : 'Falha ao criar/adicionar pessoa.'
-  } finally {
-    peopleBusy.value = false
-  }
-}
-
-async function removePerson(personId: string) {
-  if (!photo.value) {
-    return
-  }
-  peopleBusy.value = true
-  try {
-    await adminApi.removePersonFromPhoto(photo.value.id, personId)
-    photo.value.people = photo.value.people.filter((p) => p.id !== personId)
-  } catch (err) {
-    error.value = err instanceof ApiError ? `Falha ao remover pessoa: ${err.message}` : 'Falha ao remover pessoa.'
-  } finally {
-    peopleBusy.value = false
-  }
-}
-
-function selectPersonResult(person: AdminPerson) {
-  void addPerson(person)
-}
-
-function personAvatarSrc(person: PersonSummary): string | null {
-  return mediaUrl(person.avatarCropPath)
+function onPeopleError(message: string) {
+  error.value = message
 }
 
 async function reprocess() {
@@ -480,91 +361,11 @@ async function rotate() {
           <CardDescription>Gerencie as pessoas nomeadas marcadas nesta foto.</CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
-          <ul v-if="photo.people.length > 0" class="admin-people-list">
-            <li v-for="person in photo.people" :key="person.id" data-testid="photo-person-row">
-              <div class="flex min-w-0 items-center gap-3">
-                <img
-                  v-if="personAvatarSrc(person)"
-                  :src="personAvatarSrc(person)!"
-                  alt=""
-                  class="size-10 shrink-0 rounded-md object-cover bg-muted"
-                  data-testid="photo-person-avatar"
-                />
-                <div
-                  v-else
-                  class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
-                  data-testid="photo-person-avatar-empty"
-                >
-                  —
-                </div>
-                <RouterLink
-                  :to="{ name: 'admin-person-edit', params: { id: person.id } }"
-                  class="truncate font-medium text-foreground hover:underline"
-                >
-                  {{ person.name ?? 'Sem nome' }}
-                </RouterLink>
-              </div>
-              <button
-                type="button"
-                class="admin-action-link admin-action-link--danger"
-                :disabled="peopleBusy"
-                @click="removePerson(person.id)"
-              >
-                Remover
-              </button>
-            </li>
-          </ul>
-          <p v-else class="text-sm text-muted-foreground">Nenhuma pessoa marcada.</p>
-
-          <div
-            class="grid gap-2"
-            :class="photo.people.length > 0 ? 'border-t border-border pt-4' : undefined"
-          >
-            <Label for="people-search" class="admin-label-sentence">Adicionar pessoa</Label>
-            <div class="flex flex-col gap-2 sm:flex-row">
-              <div ref="peopleSearchRoot" class="relative min-w-0 flex-1">
-                <Input
-                  id="people-search"
-                  v-model="peopleQuery"
-                  type="search"
-                  placeholder="Buscar ou criar pelo nome…"
-                  autocomplete="off"
-                  data-testid="people-search"
-                  :disabled="peopleBusy"
-                  @focus="onPeopleSearchFocus"
-                  @input="onPeopleSearchInput"
-                  @keydown.esc="closePeopleSearch"
-                />
-                <ul
-                  v-if="peopleSearchOpen && peopleResults.length > 0"
-                  class="admin-suggestions"
-                  data-testid="people-suggestions"
-                >
-                  <li v-for="person in peopleResults" :key="person.id">
-                    <button
-                      type="button"
-                      class="admin-suggestion"
-                      data-testid="people-suggestion"
-                      :disabled="peopleBusy"
-                      @click="selectPersonResult(person)"
-                    >
-                      {{ person.name }}
-                    </button>
-                  </li>
-                </ul>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                :disabled="peopleBusy || peopleQuery.trim() === ''"
-                data-testid="people-create-add"
-                @click="createAndAddPerson"
-              >
-                Adicionar / criar
-              </Button>
-            </div>
-            <p v-if="peopleSearchLoading" class="text-xs text-muted-foreground">Buscando…</p>
-          </div>
+          <PhotoPeopleEditor
+            :photo-id="photo.id"
+            v-model:people="photo.people"
+            @error="onPeopleError"
+          />
         </CardContent>
       </Card>
     </template>
