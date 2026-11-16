@@ -12,7 +12,7 @@ import ViewCount from '../components/ViewCount.vue'
 import { useSiteConfig } from '../composables/useSiteConfig'
 import { usePageMeta } from '../composables/usePageMeta'
 import { absoluteMediaUrl, photoDisplayUrl } from '../api/client'
-import { formatAlbumDateRangeLabel } from '../lib/utils'
+import { albumMetaDescription, formatAlbumDateRangeLabel } from '../lib/utils'
 
 const props = defineProps<{ slug: string }>()
 const emit = defineEmits<{
@@ -149,10 +149,9 @@ const hasCoordinates = computed(
 usePageMeta(
   computed(() => {
     if (!album.value) return null
-    const description = album.value.description?.trim() || takenAtLabel.value || album.value.title
     return {
-      title: `${album.value.title} · Gallery`,
-      description,
+      title: album.value.title,
+      description: albumMetaDescription(album.value.title, album.value.takenAt, album.value.takenAtEnd),
       image: album.value.coverPhoto ? absoluteMediaUrl(photoDisplayUrl(album.value.coverPhoto)) : null,
     }
   }),

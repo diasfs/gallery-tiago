@@ -32,6 +32,23 @@ export function formatAlbumDateRangeLabel(
   return `${start} – ${formatDateLabel(takenAtEnd, locale)}`
 }
 
+/** Public album `<title>` / description meta. */
+export function albumMetaDescription(
+  title: string,
+  takenAt: string | null | undefined,
+  takenAtEnd?: string | null,
+  locale = 'pt-BR',
+): string {
+  if (!takenAt) {
+    return `Fotos do álbum ${title}`
+  }
+  const start = formatDateLabel(takenAt, locale)
+  if (!takenAtEnd || takenAtEnd.slice(0, 10) === takenAt.slice(0, 10)) {
+    return `Fotos do álbum ${title} no dia ${start}`
+  }
+  return `Fotos do álbum ${title} de ${start} a ${formatDateLabel(takenAtEnd, locale)}`
+}
+
 /** Month heading for the public timeline (e.g. "abril de 2024"). */
 export function formatTimelineMonthLabel(
   year: number,

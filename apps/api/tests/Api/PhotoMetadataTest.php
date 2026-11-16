@@ -535,7 +535,10 @@ final class PhotoMetadataTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $this->assertStringContainsString('image/jpeg', (string) $this->client->getResponse()->headers->get('Content-Type'));
-        $this->assertStringContainsString('attachment', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
-        $this->assertNotEmpty($this->client->getResponse()->getContent());
+        $disposition = (string) $this->client->getResponse()->headers->get('Content-Disposition');
+        $this->assertStringContainsString('inline', $disposition);
+        $this->assertStringContainsString('.jpg', $disposition);
+        // BinaryFileResponse may not populate getContent() in the test client.
+        $this->assertGreaterThan(0, (int) $this->client->getResponse()->headers->get('Content-Length'));
     }
 }

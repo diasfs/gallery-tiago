@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAlbumDateRangeLabel, formatDateLabel, formatOnThisDayHeading, formatTimelineMonthLabel, formatYearsAgo } from './utils'
+import { albumMetaDescription, formatAlbumDateRangeLabel, formatDateLabel, formatOnThisDayHeading, formatTimelineMonthLabel, formatYearsAgo } from './utils'
 
 describe('formatDateLabel', () => {
   it('preserves the API calendar day in timezones behind UTC', () => {
@@ -32,6 +32,24 @@ describe('formatAlbumDateRangeLabel', () => {
       '2024-06-01T23:00:00.000Z',
     )
     expect(label).not.toContain('–')
+  })
+})
+
+describe('albumMetaDescription', () => {
+  it('uses album title when there is no date', () => {
+    expect(albumMetaDescription('Beach', null)).toBe('Fotos do álbum Beach')
+  })
+
+  it('includes the album date', () => {
+    expect(albumMetaDescription('Beach', '2024-06-01T00:00:00.000Z')).toBe(
+      'Fotos do álbum Beach no dia 1 de junho de 2024',
+    )
+  })
+
+  it('uses de/a for a date range', () => {
+    expect(
+      albumMetaDescription('Beach', '2024-06-01T00:00:00.000Z', '2024-06-05T00:00:00.000Z'),
+    ).toBe('Fotos do álbum Beach de 1 de junho de 2024 a 5 de junho de 2024')
   })
 })
 

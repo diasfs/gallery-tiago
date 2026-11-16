@@ -131,6 +131,19 @@ describe('AlbumView', () => {
     document.body.innerHTML = ''
   })
 
+  it('sets document title and description from album title and date', async () => {
+    const { wrapper } = await mountView(
+      makeAlbum({ title: 'Summer', takenAt: '2024-06-01T00:00:00.000Z' }),
+    )
+
+    expect(document.title).toBe('Summer')
+    expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(
+      'Fotos do álbum Summer no dia 1 de junho de 2024',
+    )
+
+    wrapper.unmount()
+  })
+
   it('shows album title and view count', async () => {
     const { wrapper } = await mountView(makeAlbum({ viewCount: 0 }))
 

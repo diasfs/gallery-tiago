@@ -10,7 +10,6 @@ use App\Repository\LocationRepository;
 use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
-use App\Service\PublicPhotoDisplay;
 use App\Service\PublicSiteUrlBuilder;
 use App\Service\SharePreview;
 use App\Service\SharePreviewRenderer;
@@ -33,7 +32,6 @@ final class SharePreviewController
         private readonly PersonRepository $people,
         private readonly TagRepository $tags,
         private readonly LocationRepository $locations,
-        private readonly PublicPhotoDisplay $photoDisplay,
         private readonly PublicSiteUrlBuilder $siteUrls,
         private readonly SharePreviewRenderer $renderer,
     ) {
@@ -295,17 +293,12 @@ final class SharePreviewController
 
     private function previewForAlbum(Album $album, Request $request): SharePreview
     {
-        $description = trim((string) $album->getDescription());
-        if ('' === $description) {
-            $description = $album->getTitle();
-        }
-
         $cover = $album->getCoverPhoto();
         $image = null !== $cover ? $this->previewImageMeta($cover, $request) : null;
 
         return new SharePreview(
-            title: sprintf('%s · Gallery', $album->getTitle()),
-            description: $description,
+            title: $album->getTitle(),
+            description: $this->albumShareDescription($album),
             canonicalUrl: $this->siteUrls->page($album->getSlug(), $request),
             imageUrl: $image['imageUrl'] ?? null,
             imageType: $image['imageType'] ?? null,
@@ -314,26 +307,85 @@ final class SharePreviewController
         );
     }
 
+    private function albumShareDescription(Album $album): string
+    {
+        $title = $album->getTitle();
+        $takenAt = $album->getTakenAt();
+        if (null === $takenAt) {
+            return sprintf('Fotos do álbum %s', $title);
+        }
+
+        $start = $this->formatAlbumShareDate($takenAt);
+        $end = $album->getTakenAtEnd();
+        if (null !== $end && $end->format('Y-m-d') !== $takenAt->format('Y-m-d')) {
+            return sprintf('Fotos do álbum %s de %s a %s', $title, $start, $this->formatAlbumShareDate($end));
+        }
+
+        return sprintf('Fotos do álbum %s no dia %s', $title, $start);
+    }
+
+    private function formatAlbumShareDate(\DateTimeImmutable $date): string
+    {
+        static $months = [
+            1 => 'janeiro',
+            2 => 'fevereiro',
+            3 => 'março',
+            4 => 'abril',
+            5 => 'maio',
+            6 => 'junho',
+            7 => 'julho',
+            8 => 'agosto',
+            9 => 'setembro',
+            10 => 'outubro',
+            11 => 'novembro',
+            12 => 'dezembro',
+        ];
+
+        $utc = $date->setTimezone(new \DateTimeZone('UTC'));
+
+        return sprintf(
+            '%d de %s de %d',
+            (int) $utc->format('j'),
+            $months[(int) $utc->format('n')],
+            (int) $utc->format('Y'),
+        );
+    }
+
     /** @return array{imageUrl: ?string, imageType: ?string, imageWidth: ?int, imageHeight: ?int} */
     private function previewImageMeta(Photo $photo, Request $request): array
     {
-        $relative = $this->photoDisplay->relativePath($photo);
+        // WhatsApp/Meta reject AVIF for link previews — prefer JPEG/PNG only.
+        $original = $photo->getOriginalPath();
+        if (null !== $original && '' !== $original && $this->isShareFriendlyImage($original)) {
+            return [
+                'imageUrl' => $this->siteUrls->media($original, $request),
+                'imageType' => $this->mimeTypeForPath($original),
+                'imageWidth' => $photo->getWidth(),
+                'imageHeight' => $photo->getHeight(),
+            ];
+        }
 
         return [
-            'imageUrl' => $this->siteUrls->media($relative, $request),
-            'imageType' => null !== $relative ? $this->mimeTypeForPath($relative) : null,
+            'imageUrl' => $this->siteUrls->page(
+                'api/photos/'.$photo->getId()->toRfc4122().'/download.jpg',
+                $request,
+            ),
+            'imageType' => 'image/jpeg',
             'imageWidth' => $photo->getWidth(),
             'imageHeight' => $photo->getHeight(),
         ];
     }
 
+    private function isShareFriendlyImage(string $path): bool
+    {
+        return \in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png'], true);
+    }
+
     private function mimeTypeForPath(string $path): ?string
     {
         return match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
-            'avif' => 'image/avif',
             'jpg', 'jpeg' => 'image/jpeg',
             'png' => 'image/png',
-            'webp' => 'image/webp',
             default => null,
         };
     }

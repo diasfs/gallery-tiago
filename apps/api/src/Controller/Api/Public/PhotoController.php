@@ -49,8 +49,9 @@ class PhotoController
         $path = $this->jpegExporter->export($photo);
         $response = new BinaryFileResponse($path);
         $response->headers->set('Content-Type', 'image/jpeg');
+        // inline: WhatsApp/Meta og:image fetch; <a download> / navigator.share still work
         $response->setContentDisposition(
-            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            ResponseHeaderBag::DISPOSITION_INLINE,
             $this->jpegExporter->suggestFilename($photo),
         );
         $response->deleteFileAfterSend(true);

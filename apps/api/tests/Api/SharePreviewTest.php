@@ -78,9 +78,42 @@ final class SharePreviewTest extends WebTestCase
         $this->assertStringContainsString('Sunset · Gallery', $html);
         $this->assertStringContainsString('og:image', $html);
         $this->assertStringContainsString('og:image:type', $html);
-        $this->assertStringContainsString('image/avif', $html);
-        $this->assertStringContainsString('/converted/ab/thumb.avif', $html);
-        $this->assertStringContainsString('http://localhost:5173/trip-share/share.jpg', $html);
+        $this->assertStringContainsString('image/jpeg', $html);
+        $this->assertStringContainsString('/originals/aa/share.jpg', $html);
+        $this->assertStringNotContainsString('.avif', $html);
+        $this->assertStringContainsString('/trip-share/share.jpg', $html);
+    }
+
+    public function testPhotoSharePreviewUsesJpegDownloadWhenOnlyAvifExists(): void
+    {
+        $album = new Album('Trip', 'trip-avif-only');
+        $album->setVisibility(AlbumVisibility::Public);
+        $this->em->persist($album);
+        $photo = new Photo($album, 'originals/aa/gone.jpg');
+        $photo->setFilename('gone.jpg');
+        $photo->setTitle('Converted');
+        $photo->setOriginalPath(null);
+        $photo->setAvifPath('converted/ab/master.avif');
+        $photo->setThumbPaths(['1280' => 'converted/ab/thumb.avif']);
+        $photo->setWidth(1280);
+        $photo->setHeight(960);
+        $this->em->persist($photo);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/photos/'.$photo->getId()->toRfc4122(),
+            server: ['HTTP_USER_AGENT' => 'WhatsApp/2.23.20.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('image/jpeg', $html);
+        $this->assertStringContainsString(
+            '/api/photos/'.$photo->getId()->toRfc4122().'/download.jpg',
+            $html,
+        );
+        $this->assertStringNotContainsString('.avif', $html);
     }
 
     public function testRootPhotoSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
@@ -104,7 +137,7 @@ final class SharePreviewTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
         $this->assertStringContainsString('Root shot · Gallery', $html);
-        $this->assertStringContainsString('http://localhost:5173/trip-root/root-shot.jpg', $html);
+        $this->assertStringContainsString('/trip-root/root-shot.jpg', $html);
     }
 
     public function testRootAlbumSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
@@ -123,8 +156,66 @@ final class SharePreviewTest extends WebTestCase
 
         $this->assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
-        $this->assertStringContainsString('Beach · Gallery', $html);
-        $this->assertStringContainsString('http://localhost:5173/beach-root', $html);
+        $this->assertStringContainsString('<title>Beach</title>', $html);
+        $this->assertStringContainsString('Fotos do álbum Beach', $html);
+        $this->assertStringNotContainsString('Sandy days', $html);
+        $this->assertStringContainsString('/beach-root', $html);
+    }
+
+    public function testRootAlbumSharePreviewIncludesTakenAtInDescription(): void
+    {
+        $album = new Album('Beach', 'beach-dated');
+        $album->setVisibility(AlbumVisibility::Public);
+        $album->setTakenAt(new \DateTimeImmutable('2024-06-01T00:00:00Z'));
+        $this->em->persist($album);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/beach-dated',
+            server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('<title>Beach</title>', $html);
+        $this->assertStringContainsString('Fotos do álbum Beach no dia 1 de junho de 2024', $html);
+    }
+
+    public function testRootAlbumSharePreviewUsesRangePreposition(): void
+    {
+        $album = new Album('Beach', 'beach-range');
+        $album->setVisibility(AlbumVisibility::Public);
+        $album->setTakenAt(new \DateTimeImmutable('2024-06-01T00:00:00Z'));
+        $album->setTakenAtEnd(new \DateTimeImmutable('2024-06-05T00:00:00Z'));
+        $this->em->persist($album);
+        $this->em->flush();
+
+        $this->client->request(
+            'GET',
+            '/beach-range',
+            server: ['HTTP_USER_AGENT' => 'Twitterbot/1.0'],
+        );
+
+        $this->assertResponseIsSuccessful();
+        $html = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString(
+            'Fotos do álbum Beach de 1 de junho de 2024 a 5 de junho de 2024',
+            $html,
+        );
+    }
+
+    public function testRobotsTxtIsPlainText(): void
+    {
+        $this->client->request('GET', '/robots.txt', server: ['HTTP_USER_AGENT' => 'Googlebot']);
+
+        $this->assertResponseIsSuccessful();
+        $this->assertSame('text/plain; charset=UTF-8', $this->client->getResponse()->headers->get('Content-Type'));
+        $body = (string) $this->client->getResponse()->getContent();
+        $this->assertStringContainsString('User-agent: *', $body);
+        $this->assertStringContainsString('Disallow: /admin', $body);
+        $this->assertStringContainsString('Disallow: /api/', $body);
+        $this->assertStringNotContainsString('<html', $body);
     }
 
     public function testPhotoSharePreviewUsesForwardedPublicHost(): void
@@ -153,9 +244,10 @@ final class SharePreviewTest extends WebTestCase
         $html = (string) $this->client->getResponse()->getContent();
         $this->assertStringContainsString('https://vite.dias.poa.br/trip-share-host/share.jpg', $html);
         $this->assertStringContainsString(
-            'https://vite.dias.poa.br/converted/ab/thumb.avif',
+            'https://vite.dias.poa.br/originals/aa/share.jpg',
             $html,
         );
+        $this->assertStringNotContainsString('.avif', $html);
     }
 
     public function testPhotoSharePreviewRedirectsBrowsersToCanonicalRootUrl(): void
@@ -170,7 +262,9 @@ final class SharePreviewTest extends WebTestCase
 
         $this->client->request('GET', '/photos/'.$photo->getId()->toRfc4122());
 
-        $this->assertResponseRedirects('http://localhost:5173/trip-share-redirect/share.jpg');
+        $this->assertResponseStatusCodeSame(302);
+        $location = (string) $this->client->getResponse()->headers->get('Location');
+        $this->assertStringEndsWith('/trip-share-redirect/share.jpg', $location);
     }
 
     public function testAlbumSharePreviewHidesPrivateAlbums(): void
@@ -212,7 +306,7 @@ final class SharePreviewTest extends WebTestCase
         $html = (string) $this->client->getResponse()->getContent();
         $this->assertStringContainsString('og:title', $html);
         $this->assertStringContainsString('Gallery', $html);
-        $this->assertStringContainsString('http://localhost:5173/', $html);
+        $this->assertMatchesRegularExpression('#og:url" content="https?://[^"]+/"#', $html);
     }
 
     public function testStaticPageSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
@@ -226,14 +320,15 @@ final class SharePreviewTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $html = (string) $this->client->getResponse()->getContent();
         $this->assertStringContainsString('Busca · Gallery', $html);
-        $this->assertStringContainsString('http://localhost:5173/search', $html);
+        $this->assertStringContainsString('/search', $html);
     }
 
     public function testStaticPageSharePreviewRedirectsBrowsers(): void
     {
         $this->client->request('GET', '/map');
 
-        $this->assertResponseRedirects('http://localhost:5173/map');
+        $this->assertResponseStatusCodeSame(302);
+        $this->assertStringEndsWith('/map', (string) $this->client->getResponse()->headers->get('Location'));
     }
 
     public function testPersonSharePreviewReturnsOpenGraphHtmlForCrawlers(): void
@@ -269,7 +364,8 @@ final class SharePreviewTest extends WebTestCase
         $html = (string) $this->client->getResponse()->getContent();
         $this->assertStringContainsString('Ana Costa · Gallery', $html);
         $this->assertStringContainsString('og:image', $html);
-        $this->assertStringContainsString('/converted/ab/person.avif', $html);
+        $this->assertStringContainsString('/originals/aa/person.jpg', $html);
+        $this->assertStringNotContainsString('.avif', $html);
     }
 
     public function testPersonSharePreviewHidesPersonWithoutVisiblePhotos(): void
