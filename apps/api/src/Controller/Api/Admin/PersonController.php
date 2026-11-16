@@ -8,6 +8,7 @@ use App\Http\Pagination;
 use App\Repository\FaceRepository;
 use App\Repository\PersonRepository;
 use App\Repository\PhotoRepository;
+use App\Service\FaceDeleter;
 use App\Service\FaceEmbeddingClientInterface;
 use App\Service\FaceSimilarityService;
 use App\Service\MediaStorage;
@@ -37,6 +38,7 @@ class PersonController
         private readonly FaceRepository $faces,
         private readonly PersonMerger $merger,
         private readonly PersonDeleter $personDeleter,
+        private readonly FaceDeleter $faceDeleter,
         private readonly FaceSimilarityService $similarity,
         private readonly FaceEmbeddingClientInterface $embeddingClient,
         private readonly MediaStorage $storage,
@@ -308,21 +310,34 @@ class PersonController
         ]);
     }
 
-    #[Route('/api/admin/people/{id}/faces/{faceId}', name: 'admin_people_faces_delete', methods: ['DELETE'])]
-    public function deleteFace(string $id, string $faceId): JsonResponse
+    #[Route('/api/admin/people/{id}/faces/{faceId}', name: 'admin_people_faces_reassign', methods: ['PATCH'])]
+    public function reassignPersonFace(string $id, string $faceId, Request $request): JsonResponse
     {
         $person = $this->findPersonOrFail($id);
         $face = $this->findFaceOrFail($faceId);
         if ($face->getPerson()?->getId()?->equals($person->getId()) !== true) {
             throw new NotFoundHttpException('Face not found.');
         }
-
-        if ($person->getAvatarFace()?->getId()?->equals($face->getId()) === true) {
-            $person->setAvatarFace(null);
+        if ($face->isDeleted()) {
+            throw new NotFoundHttpException('Face not found.');
         }
-        $this->storage->deleteRelative($face->getCropPath());
-        $this->em->remove($face);
-        $this->em->flush();
+
+        return $this->applyFaceReassignment($face, $request);
+    }
+
+    #[Route('/api/admin/people/{id}/faces/{faceId}', name: 'admin_people_faces_delete', methods: ['DELETE'])]
+    public function deleteFace(string $id, string $faceId): JsonResponse
+    {
+        $person = $this->findPersonForReadOrFail($id);
+        $face = $this->findFaceOrFail($faceId);
+        if ($face->getPerson()?->getId()?->equals($person->getId()) !== true) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+        if ($face->isDeleted()) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+
+        $this->faceDeleter->softDelete($face);
         $this->em->refresh($person);
 
         return new JsonResponse(['data' => $this->normalizePersonDetail($person)]);
@@ -428,6 +443,13 @@ class PersonController
             return new JsonResponse(['data' => $this->normalizeFace($existing)], Response::HTTP_OK);
         }
 
+        $softDeleted = $this->faces->findOneSoftDeletedByPhotoAndPerson($photo, $person);
+        if (null !== $softDeleted) {
+            $this->faceDeleter->restore($softDeleted);
+
+            return new JsonResponse(['data' => $this->normalizeFace($softDeleted)], Response::HTTP_OK);
+        }
+
         $face = new Face($photo);
         $face->setPerson($person);
         $this->em->persist($face);
@@ -465,6 +487,40 @@ class PersonController
         throw new BadRequestHttpException('personId or name is required.');
     }
 
+    private function applyFaceReassignment(Face $face, Request $request): JsonResponse
+    {
+        $payload = $this->decode($request);
+        $target = $this->resolvePersonForPhotoAttach($payload);
+        $source = $face->getPerson();
+        if ($source?->getId()?->equals($target->getId()) === true) {
+            return new JsonResponse(['data' => $this->normalizeFace($face)]);
+        }
+
+        if (null !== $source && $source->getAvatarFace()?->getId()?->equals($face->getId()) === true) {
+            $source->setAvatarFace(null);
+        }
+
+        $face->setPerson($target);
+        $this->em->flush();
+
+        return new JsonResponse(['data' => $this->normalizeFace($face)]);
+    }
+
+    #[Route('/api/admin/photos/{photoId}/faces/{faceId}', name: 'admin_photos_faces_reassign', methods: ['PATCH'])]
+    public function reassignFace(string $photoId, string $faceId, Request $request): JsonResponse
+    {
+        $photo = $this->findPhotoOrFail($photoId);
+        $face = $this->findFaceOrFail($faceId);
+        if ($face->getPhoto()?->getId()?->equals($photo->getId()) !== true) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+        if ($face->isDeleted()) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+
+        return $this->applyFaceReassignment($face, $request);
+    }
+
     #[Route('/api/admin/photos/{photoId}/people/{personId}', name: 'admin_photos_people_remove', methods: ['DELETE'])]
     public function removeFromPhoto(string $photoId, string $personId): Response
     {
@@ -472,9 +528,8 @@ class PersonController
         $person = $this->findPersonOrFail($personId);
 
         foreach ($this->faces->findByPhotoAndPerson($photo, $person) as $face) {
-            $this->em->remove($face);
+            $this->faceDeleter->softDelete($face);
         }
-        $this->em->flush();
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }
@@ -586,6 +641,9 @@ class PersonController
     {
         $refs = [];
         foreach ($person->getFaces() as $face) {
+            if ($face->isDeleted()) {
+                continue;
+            }
             $embedding = $face->getEmbedding();
             if ($face->hasEmbedding() && \is_array($embedding) && [] !== $embedding) {
                 $refs[] = $embedding;
@@ -605,16 +663,26 @@ class PersonController
         }
     }
 
+    /** @return Face[] */
+    private function activeFaces(Person $person): array
+    {
+        return array_values(array_filter(
+            $person->getFaces()->toArray(),
+            static fn (Face $face): bool => !$face->isDeleted(),
+        ));
+    }
+
     /** @return array<string, mixed> */
     private function normalizeCluster(Person $person): array
     {
         $avatar = $person->getAvatarFace();
+        $faces = $this->activeFaces($person);
 
         return [
             'id' => (string) $person->getId(),
-            'faceCount' => \count($person->getFaces()),
-            'faces' => array_map($this->normalizeFace(...), $person->getFaces()->toArray()),
-            'avatarFaceId' => $avatar ? (string) $avatar->getId() : null,
+            'faceCount' => \count($faces),
+            'faces' => array_map($this->normalizeFace(...), $faces),
+            'avatarFaceId' => $avatar && !$avatar->isDeleted() ? (string) $avatar->getId() : null,
             'avatarCropPath' => $person->getEffectiveAvatarPath(),
         ];
     }
@@ -627,13 +695,16 @@ class PersonController
     private function normalizePerson(Person $person, ?array $faceSummary = null): array
     {
         $avatar = $person->getAvatarFace();
+        if (null !== $avatar && $avatar->isDeleted()) {
+            $avatar = null;
+        }
         if (null !== $faceSummary) {
             $faceCount = $faceSummary['faceCount'];
             $avatarCropPath = $person->getAvatarPath()
                 ?? $avatar?->getCropPath()
                 ?? $faceSummary['fallbackCropPath'];
         } else {
-            $faceCount = \count($person->getFaces());
+            $faceCount = \count($this->activeFaces($person));
             $avatarCropPath = $person->getEffectiveAvatarPath();
         }
 
@@ -653,7 +724,7 @@ class PersonController
     {
         return [
             ...$this->normalizePerson($person),
-            'faces' => array_map($this->normalizeFace(...), $person->getFaces()->toArray()),
+            'faces' => array_map($this->normalizeFace(...), $this->activeFaces($person)),
             'hasCustomAvatar' => null !== $person->getAvatarPath() && '' !== $person->getAvatarPath(),
         ];
     }

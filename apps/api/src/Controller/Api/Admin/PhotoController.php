@@ -2,12 +2,18 @@
 
 namespace App\Controller\Api\Admin;
 
+use App\Entity\Album;
+use App\Entity\Face;
 use App\Entity\Photo;
 use App\Entity\Tag;
+use App\Repository\AlbumRepository;
+use App\Repository\FaceRepository;
 use App\Repository\PhotoRepository;
 use App\Repository\TagRepository;
 use App\Exception\ProcessingStageDisabledException;
+use App\Service\FaceDeleter;
 use App\Service\PhotoDeleter;
+use App\Service\PhotoMover;
 use App\Service\PhotoReprocessor;
 use App\Service\PhotoRotator;
 use Doctrine\ORM\EntityManagerInterface;
@@ -27,9 +33,13 @@ class PhotoController
 {
     public function __construct(
         private readonly PhotoRepository $photos,
+        private readonly AlbumRepository $albums,
         private readonly TagRepository $tags,
+        private readonly FaceRepository $faces,
         private readonly EntityManagerInterface $em,
         private readonly PhotoDeleter $photoDeleter,
+        private readonly PhotoMover $photoMover,
+        private readonly FaceDeleter $faceDeleter,
         private readonly PhotoReprocessor $reprocessor,
         private readonly PhotoRotator $rotator,
     ) {
@@ -53,6 +63,41 @@ class PhotoController
         }
 
         $this->photoDeleter->deleteMany($photos);
+
+        return new Response(status: Response::HTTP_NO_CONTENT);
+    }
+
+    #[Route('/bulk-move', name: 'admin_photos_bulk_move', methods: ['POST'])]
+    public function bulkMove(Request $request): Response
+    {
+        $payload = $this->decode($request);
+        $ids = $payload['ids'] ?? null;
+        if (!\is_array($ids) || [] === $ids) {
+            throw new BadRequestHttpException('ids must be a non-empty array of photo ids.');
+        }
+
+        $albumId = $payload['albumId'] ?? null;
+        if (!\is_string($albumId) || '' === $albumId) {
+            throw new BadRequestHttpException('albumId must be a string.');
+        }
+
+        $photos = [];
+        foreach ($ids as $id) {
+            if (!\is_string($id)) {
+                throw new BadRequestHttpException('ids must contain string ids.');
+            }
+            $photos[] = $this->findOrFail($id);
+        }
+
+        $album = $this->findAlbumOrFail($albumId);
+
+        try {
+            $this->photoMover->move($photos, $album);
+        } catch (\InvalidArgumentException $e) {
+            throw new BadRequestHttpException($e->getMessage(), $e);
+        } catch (\RuntimeException $e) {
+            throw new ConflictHttpException($e->getMessage(), $e);
+        }
 
         return new Response(status: Response::HTTP_NO_CONTENT);
     }
@@ -137,6 +182,23 @@ class PhotoController
         return new JsonResponse(['data' => $this->normalize($photo)]);
     }
 
+    #[Route('/{photoId}/faces/{faceId}/restore', name: 'admin_photos_faces_restore', methods: ['POST'])]
+    public function restoreFace(string $photoId, string $faceId): JsonResponse
+    {
+        $photo = $this->findOrFail($photoId);
+        $face = $this->findFaceOrFail($faceId);
+        if ($face->getPhoto()?->getId()?->equals($photo->getId()) !== true) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+        if (!$face->isDeleted()) {
+            throw new NotFoundHttpException('Face not found in trash.');
+        }
+
+        $this->faceDeleter->restore($face);
+
+        return new JsonResponse(['data' => $this->normalize($photo)]);
+    }
+
     private function resolveScope(Request $request): string
     {
         if ('' === $request->getContent()) {
@@ -206,6 +268,38 @@ class PhotoController
         return $photo;
     }
 
+    private function findAlbumOrFail(string $id): Album
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        $album = $this->albums->find($uuid);
+        if (null === $album) {
+            throw new NotFoundHttpException('Album not found.');
+        }
+
+        return $album;
+    }
+
+    private function findFaceOrFail(string $id): Face
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (\InvalidArgumentException) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+
+        $face = $this->faces->find($uuid);
+        if (null === $face) {
+            throw new NotFoundHttpException('Face not found.');
+        }
+
+        return $face;
+    }
+
     /** @return array<string, mixed> */
     private function decode(Request $request): array
     {
@@ -235,6 +329,7 @@ class PhotoController
             'tags' => array_map($this->normalizeTag(...), $photo->getTags()->toArray()),
             'people' => $this->normalizePeople($photo),
             'faces' => $this->normalizeFaces($photo),
+            'excludedFaces' => $this->normalizeExcludedFaces($photo),
             'createdAt' => $photo->getCreatedAt()->format(\DATE_ATOM),
         ];
     }
@@ -245,8 +340,11 @@ class PhotoController
         $seen = [];
         $people = [];
         foreach ($photo->getFaces() as $face) {
+            if ($face->isDeleted()) {
+                continue;
+            }
             $person = $face->getPerson();
-            if (null === $person) {
+            if (null === $person || $person->isDeleted()) {
                 continue;
             }
             $personId = (string) $person->getId();
@@ -265,25 +363,65 @@ class PhotoController
     }
 
     /**
-     * Faces with bbox + person label for admin photo overlays.
+     * Active faces with person label for admin photo overlays and the people editor.
+     * Faces without a bbox (manual add) are listed with a zero-size box so overlays skip them.
      *
-     * @return list<array{id: string, personId: ?string, name: ?string, x: float, y: float, width: float, height: float}>
+     * @return list<array{id: string, personId: ?string, name: ?string, x: float, y: float, width: float, height: float, cropPath: ?string}>
      */
     private function normalizeFaces(Photo $photo): array
     {
         $faces = [];
         foreach ($photo->getFaces() as $face) {
-            $x = $face->getX();
-            $y = $face->getY();
-            $width = $face->getWidth();
-            $height = $face->getHeight();
-            if (null === $x || null === $y || null === $width || null === $height) {
-                continue;
-            }
-            if ($width <= 0.0 || $height <= 0.0) {
+            if ($face->isDeleted()) {
                 continue;
             }
             $person = $face->getPerson();
+            if (null !== $person && $person->isDeleted()) {
+                continue;
+            }
+            $faces[] = $this->faceOverlayRow($face);
+        }
+
+        return $faces;
+    }
+
+    /**
+     * Soft-deleted faces or faces whose person is in the trash.
+     *
+     * @return list<array{
+     *     id: string,
+     *     personId: ?string,
+     *     name: ?string,
+     *     x: float,
+     *     y: float,
+     *     width: float,
+     *     height: float,
+     *     avatarCropPath: ?string,
+     *     exclusionReason: 'removed'|'person_trashed',
+     *     faceDeletedAt: ?string,
+     *     personDeletedAt: ?string
+     * }>
+     */
+    private function normalizeExcludedFaces(Photo $photo): array
+    {
+        $faces = [];
+        foreach ($photo->getFaces() as $face) {
+            $person = $face->getPerson();
+            $faceDeleted = $face->isDeleted();
+            $personTrashed = null !== $person && $person->isDeleted();
+            if (!$faceDeleted && !$personTrashed) {
+                continue;
+            }
+            // Always list excluded faces (even without bbox) so the restore
+            // card is usable; overlays still require a positive-size box.
+            $x = $face->getX() ?? 0.0;
+            $y = $face->getY() ?? 0.0;
+            $width = $face->getWidth() ?? 0.0;
+            $height = $face->getHeight() ?? 0.0;
+            $crop = $face->getCropPath();
+            if (null === $crop || '' === $crop) {
+                $crop = $person?->getEffectiveAvatarPath();
+            }
             $faces[] = [
                 'id' => (string) $face->getId(),
                 'personId' => null !== $person ? (string) $person->getId() : null,
@@ -292,10 +430,33 @@ class PhotoController
                 'y' => $y,
                 'width' => $width,
                 'height' => $height,
+                'avatarCropPath' => $crop,
+                'exclusionReason' => $faceDeleted ? 'removed' : 'person_trashed',
+                'faceDeletedAt' => $face->getDeletedAt()?->format(\DATE_ATOM),
+                'personDeletedAt' => $person?->getDeletedAt()?->format(\DATE_ATOM),
             ];
         }
 
         return $faces;
+    }
+
+    /**
+     * @return array{id: string, personId: ?string, name: ?string, x: float, y: float, width: float, height: float, cropPath: ?string}
+     */
+    private function faceOverlayRow(Face $face): array
+    {
+        $person = $face->getPerson();
+
+        return [
+            'id' => (string) $face->getId(),
+            'personId' => null !== $person ? (string) $person->getId() : null,
+            'name' => $person?->getName(),
+            'x' => $face->getX() ?? 0.0,
+            'y' => $face->getY() ?? 0.0,
+            'width' => $face->getWidth() ?? 0.0,
+            'height' => $face->getHeight() ?? 0.0,
+            'cropPath' => $face->getCropPath(),
+        ];
     }
 
     /** @return array<string, mixed> */

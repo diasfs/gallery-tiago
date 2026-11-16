@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPerson, PersonSummary } from '../../api/types'
+import type { AdminPerson, AdminPhotoFace, PersonSummary } from '../../api/types'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 
-const props = defineProps<{ photoId: string }>()
+const props = defineProps<{ photoId: string; faces?: AdminPhotoFace[] }>()
 const people = defineModel<PersonSummary[]>('people', { required: true })
-const emit = defineEmits<{ error: [message: string] }>()
+const emit = defineEmits<{
+  error: [message: string]
+  changed: []
+  reassign: [face: AdminPhotoFace]
+}>()
+
+const listFaces = computed(() => props.faces !== undefined)
 
 const {
   query: peopleQuery,
@@ -70,6 +76,7 @@ async function addPerson(person: AdminPerson) {
     }
     clearPeopleSearch()
     closePeopleSearch()
+    emit('changed')
   } catch (err) {
     emit(
       'error',
@@ -105,6 +112,7 @@ async function createAndAddPerson() {
     }
     clearPeopleSearch()
     closePeopleSearch()
+    emit('changed')
   } catch (err) {
     emit(
       'error',
@@ -122,10 +130,29 @@ async function removePerson(personId: string) {
   try {
     await adminApi.removePersonFromPhoto(props.photoId, personId)
     people.value = people.value.filter((p) => p.id !== personId)
+    emit('changed')
   } catch (err) {
     emit(
       'error',
       err instanceof ApiError ? `Falha ao remover pessoa: ${err.message}` : 'Falha ao remover pessoa.',
+    )
+  } finally {
+    peopleBusy.value = false
+  }
+}
+
+async function removeFace(face: AdminPhotoFace) {
+  if (!face.personId) {
+    return
+  }
+  peopleBusy.value = true
+  try {
+    await adminApi.deletePersonFace(face.personId, face.id)
+    emit('changed')
+  } catch (err) {
+    emit(
+      'error',
+      err instanceof ApiError ? `Falha ao remover rosto: ${err.message}` : 'Falha ao remover rosto.',
     )
   } finally {
     peopleBusy.value = false
@@ -139,10 +166,67 @@ function selectPersonResult(person: AdminPerson) {
 function personAvatarSrc(person: PersonSummary): string | null {
   return mediaUrl(person.avatarCropPath)
 }
+
+function faceAvatarSrc(face: AdminPhotoFace): string | null {
+  return mediaUrl(face.cropPath)
+}
+
+function faceLabel(face: AdminPhotoFace): string {
+  return face.name?.trim() || 'Sem nome'
+}
 </script>
 
 <template>
-  <ul v-if="people.length > 0" class="admin-people-list">
+  <ul v-if="listFaces && (faces ?? []).length > 0" class="admin-people-list">
+    <li v-for="face in faces" :key="face.id" data-testid="photo-person-row">
+      <div class="flex min-w-0 items-center gap-3">
+        <img
+          v-if="faceAvatarSrc(face)"
+          :src="faceAvatarSrc(face)!"
+          alt=""
+          class="size-10 shrink-0 rounded-md object-cover bg-muted"
+          data-testid="photo-person-avatar"
+        />
+        <div
+          v-else
+          class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+          data-testid="photo-person-avatar-empty"
+        >
+          —
+        </div>
+        <RouterLink
+          v-if="face.personId"
+          :to="{ name: 'admin-person-edit', params: { id: face.personId } }"
+          class="truncate font-medium text-foreground hover:underline"
+        >
+          {{ faceLabel(face) }}
+        </RouterLink>
+        <span v-else class="truncate font-medium">{{ faceLabel(face) }}</span>
+      </div>
+      <div class="flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          class="admin-action-link"
+          :disabled="peopleBusy"
+          data-testid="photo-face-reassign"
+          @click="emit('reassign', face)"
+        >
+          Vincular
+        </button>
+        <button
+          v-if="face.personId"
+          type="button"
+          class="admin-action-link admin-action-link--danger"
+          :disabled="peopleBusy"
+          data-testid="photo-face-remove"
+          @click="removeFace(face)"
+        >
+          Remover
+        </button>
+      </div>
+    </li>
+  </ul>
+  <ul v-else-if="!listFaces && people.length > 0" class="admin-people-list">
     <li v-for="person in people" :key="person.id" data-testid="photo-person-row">
       <div class="flex min-w-0 items-center gap-3">
         <img
@@ -178,7 +262,10 @@ function personAvatarSrc(person: PersonSummary): string | null {
   </ul>
   <p v-else class="text-sm text-muted-foreground">Nenhuma pessoa marcada.</p>
 
-  <div class="grid gap-2" :class="people.length > 0 ? 'border-t border-border pt-4' : undefined">
+  <div
+    class="grid gap-2"
+    :class="(listFaces ? (faces ?? []).length : people.length) > 0 ? 'border-t border-border pt-4' : undefined"
+  >
     <Label for="people-search" class="admin-label-sentence">Adicionar pessoa</Label>
     <div class="flex flex-col gap-2 sm:flex-row">
       <div ref="peopleSearchRoot" class="relative min-w-0 flex-1">

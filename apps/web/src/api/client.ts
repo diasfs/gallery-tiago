@@ -470,6 +470,8 @@ export const adminApi = {
     adminRequest<void>(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   bulkDeletePhotos: (ids: string[]) =>
     adminRequest<void>('/api/admin/photos/bulk-delete', { method: 'POST', body: { ids } }),
+  bulkMovePhotos: (ids: string[], albumId: string) =>
+    adminRequest<void>('/api/admin/photos/bulk-move', { method: 'POST', body: { ids, albumId } }),
   addPersonToPhoto: (photoId: string, payload: { personId?: string; name?: string }) =>
     adminRequest<Face>(`/api/admin/photos/${encodeURIComponent(photoId)}/people`, {
       method: 'POST',
@@ -479,6 +481,20 @@ export const adminApi = {
     adminRequest<void>(
       `/api/admin/photos/${encodeURIComponent(photoId)}/people/${encodeURIComponent(personId)}`,
       { method: 'DELETE' },
+    ),
+  restorePhotoFace: (photoId: string, faceId: string) =>
+    adminRequest<AdminPhotoDetail>(
+      `/api/admin/photos/${encodeURIComponent(photoId)}/faces/${encodeURIComponent(faceId)}/restore`,
+      { method: 'POST' },
+    ),
+  reassignPhotoFace: (
+    photoId: string,
+    faceId: string,
+    payload: { personId?: string; name?: string },
+  ) =>
+    adminRequest<Face>(
+      `/api/admin/photos/${encodeURIComponent(photoId)}/faces/${encodeURIComponent(faceId)}`,
+      { method: 'PATCH', body: payload },
     ),
 
   listUnnamedPeople: () => adminRequest<UnnamedPersonCluster[]>('/api/admin/people/unnamed'),
@@ -552,6 +568,15 @@ export const adminApi = {
     adminRequest<AdminPersonDetail>(
       `/api/admin/people/${encodeURIComponent(personId)}/faces/${encodeURIComponent(faceId)}`,
       { method: 'DELETE' },
+    ),
+  reassignPersonFace: (
+    personId: string,
+    faceId: string,
+    payload: { personId?: string; name?: string },
+  ) =>
+    adminRequest<Face>(
+      `/api/admin/people/${encodeURIComponent(personId)}/faces/${encodeURIComponent(faceId)}`,
+      { method: 'PATCH', body: payload },
     ),
   listPeople: (
     params: {

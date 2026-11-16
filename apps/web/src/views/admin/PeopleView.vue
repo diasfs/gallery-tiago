@@ -644,7 +644,7 @@ onUnmounted(() => {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead class="w-16">Avatar</TableHead>
+            <TableHead class="w-[116px]">Avatar</TableHead>
             <TableHead>Nome</TableHead>
             <TableHead class="w-28">Status</TableHead>
             <TableHead class="w-24 text-right">Rostos</TableHead>
@@ -664,12 +664,12 @@ onUnmounted(() => {
                 v-if="avatarSrc(person)"
                 :src="avatarSrc(person)!"
                 alt=""
-                class="size-10 rounded-md object-cover bg-muted"
+                class="size-[100px] rounded-md object-cover bg-muted"
                 data-testid="person-avatar"
               />
               <div
                 v-else
-                class="flex size-10 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                class="flex size-[100px] items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
                 data-testid="person-avatar-empty"
               >
                 —

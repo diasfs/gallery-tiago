@@ -34,6 +34,7 @@ import type {
   TagsStatus,
 } from '../../api/types'
 import AlbumFormDialog from '../../components/admin/AlbumFormDialog.vue'
+import PhotoMoveDialog from '../../components/admin/PhotoMoveDialog.vue'
 import PhotoPeopleEditor from '../../components/admin/PhotoPeopleEditor.vue'
 import PaginationBar from '../../components/PaginationBar.vue'
 
@@ -62,6 +63,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const selectedIds = ref<Set<string>>(new Set())
 const deleting = ref(false)
 const deleteTarget = ref<'selected' | null>(null)
+const moveOpen = ref(false)
 
 const reorderMode = ref(false)
 const reorderPhotos = ref<AdminPhotoSummary[]>([])
@@ -505,6 +507,21 @@ function requestDeleteSelected() {
   if (selectedIds.value.size > 0) {
     deleteTarget.value = 'selected'
   }
+}
+
+function requestMoveSelected() {
+  if (selectedIds.value.size > 0) {
+    moveOpen.value = true
+  }
+}
+
+function onPhotosMoved() {
+  const moved = selectedIds.value
+  photos.value = photos.value.filter((p) => !moved.has(p.id))
+  if (coverPhotoId.value && moved.has(coverPhotoId.value)) {
+    coverPhotoId.value = null
+  }
+  selectedIds.value = new Set()
 }
 
 function closeDeleteDialog() {
@@ -1071,6 +1088,19 @@ function onReviewPeopleError(message: string) {
           </Button>
           <Button
             type="button"
+            variant="outline"
+            size="sm"
+            class="max-w-full"
+            :disabled="selectedCount === 0 || deleting"
+            data-testid="move-selected"
+            @click="requestMoveSelected"
+          >
+            <span class="truncate">{{
+              selectedCount > 0 ? `Mover selecionadas (${selectedCount})` : 'Mover selecionadas'
+            }}</span>
+          </Button>
+          <Button
+            type="button"
             variant="destructive"
             size="sm"
             class="max-w-full"
@@ -1275,6 +1305,14 @@ function onReviewPeopleError(message: string) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <PhotoMoveDialog
+      :open="moveOpen"
+      :photo-ids="[...selectedIds]"
+      :exclude-album-id="props.albumId"
+      @update:open="(open) => (moveOpen = open)"
+      @moved="onPhotosMoved"
+    />
 
     <Dialog :open="deleteTarget !== null" @update:open="(open) => { if (!open) closeDeleteDialog() }">
       <DialogContent class="sm:max-w-md">

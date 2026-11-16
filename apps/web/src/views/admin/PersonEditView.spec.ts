@@ -19,6 +19,7 @@ vi.mock('../../api/client', async () => {
       discardPerson: vi.fn(),
       addPersonFaces: vi.fn(),
       deletePersonFace: vi.fn(),
+      reassignPersonFace: vi.fn(),
       listFaceScans: vi.fn(),
       listPersonMergeSuggestions: vi.fn(),
     },
@@ -35,6 +36,7 @@ const mockedApi = adminApi as unknown as {
   discardPerson: ReturnType<typeof vi.fn>
   addPersonFaces: ReturnType<typeof vi.fn>
   deletePersonFace: ReturnType<typeof vi.fn>
+  reassignPersonFace: ReturnType<typeof vi.fn>
   listFaceScans: ReturnType<typeof vi.fn>
   listPersonMergeSuggestions: ReturnType<typeof vi.fn>
 }
@@ -89,6 +91,7 @@ async function mountView(id = 'person-1') {
         props: true,
       },
       { path: '/people/:id', name: 'person', component: { template: '<div />' } },
+      { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
     ],
   })
   await router.push({ name: 'admin-person-edit', params: { id } })
@@ -149,6 +152,17 @@ describe('PersonEditView', () => {
     const link = wrapper.get('[data-testid="person-public-link"]')
     expect(link.attributes('href')).toBe('/people/person-1')
     expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('links a gallery face to the public photo page', async () => {
+    const { wrapper } = await mountView()
+
+    const links = wrapper.findAll('[data-testid="face-public-link"]')
+    expect(links).toHaveLength(2)
+    expect(links[0]!.attributes('href')).toBe('/photos/photo-1')
+    expect(links[0]!.attributes('target')).toBe('_blank')
+    expect(links[1]!.attributes('href')).toBeUndefined()
+    expect(links[1]!.attributes('disabled')).toBeDefined()
   })
 
   it('lists merge candidates and merges into the named survivor', async () => {
@@ -362,6 +376,7 @@ describe('PersonEditView', () => {
     const { wrapper } = await mountView()
 
     expect(wrapper.findAll('[data-testid="face-delete"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="face-reassign"]')).toHaveLength(0)
     expect(wrapper.find('[data-testid="face-tile"]').attributes('disabled')).toBeDefined()
 
     await wrapper.findAll('[data-testid="face-delete"]')[0]!.trigger('click')
@@ -387,5 +402,57 @@ describe('PersonEditView', () => {
 
     expect(mockedApi.deletePersonAvatar).toHaveBeenCalledWith('person-1')
     expect(wrapper.find('[data-testid="remove-custom-avatar"]').exists()).toBe(false)
+  })
+
+  it('opens the reassign dialog from a face tile', async () => {
+    const { wrapper } = await mountView()
+
+    await wrapper.findAll('[data-testid="face-reassign"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="face-reassign-dialog"]')).toBeTruthy()
+  })
+
+  it('reassigns a face to another person and drops it from this list', async () => {
+    mockedApi.reassignPersonFace.mockResolvedValue({
+      id: 'face-1',
+      photoId: 'photo-1',
+      personId: 'person-named',
+      cropPath: 'faces/aa/face-1.jpg',
+      hasEmbedding: true,
+    })
+    const { wrapper } = await mountView()
+    mockedApi.listPeople.mockResolvedValue({
+      data: [makeNamed()],
+      meta: { page: 1, perPage: 20, total: 1 },
+    })
+    mockedApi.getPerson.mockResolvedValue(
+      makeDetail({
+        faces: [
+          { id: 'face-2', photoId: null, personId: 'person-1', cropPath: 'faces/bb/face-2.jpg', hasEmbedding: true },
+        ],
+        faceCount: 1,
+      }),
+    )
+
+    await wrapper.findAll('[data-testid="face-reassign"]')[0]!.trigger('click')
+    await flushPromises()
+
+    vi.useFakeTimers()
+    const input = document.querySelector('[data-testid="face-reassign-search"]') as HTMLInputElement
+    input.value = 'Ada'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    const suggestion = document.querySelector('[data-testid="face-reassign-suggestion"]') as HTMLButtonElement
+    suggestion.click()
+    await flushPromises()
+    vi.useRealTimers()
+
+    expect(mockedApi.reassignPersonFace).toHaveBeenCalledWith('person-1', 'face-1', {
+      personId: 'person-named',
+    })
+    expect(wrapper.findAll('[data-testid="face-tile"]')).toHaveLength(1)
   })
 })

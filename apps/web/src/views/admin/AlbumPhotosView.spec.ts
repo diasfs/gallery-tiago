@@ -23,6 +23,7 @@ vi.mock('../../api/client', async () => {
       reprocessAlbum: vi.fn(),
       deletePhoto: vi.fn(),
       bulkDeletePhotos: vi.fn(),
+      bulkMovePhotos: vi.fn(),
       deleteAlbum: vi.fn(),
       searchLocations: vi.fn(),
       createLocation: vi.fn(),
@@ -47,6 +48,7 @@ const mockedApi = adminApi as unknown as {
   reprocessAlbum: ReturnType<typeof vi.fn>
   deletePhoto: ReturnType<typeof vi.fn>
   bulkDeletePhotos: ReturnType<typeof vi.fn>
+  bulkMovePhotos: ReturnType<typeof vi.fn>
   deleteAlbum: ReturnType<typeof vi.fn>
   searchLocations: ReturnType<typeof vi.fn>
   createLocation: ReturnType<typeof vi.fn>
@@ -203,6 +205,7 @@ describe('AlbumPhotosView', () => {
     )
     mockedApi.deletePhoto.mockResolvedValue(undefined)
     mockedApi.bulkDeletePhotos.mockResolvedValue(undefined)
+    mockedApi.bulkMovePhotos.mockResolvedValue(undefined)
     mockedApi.deleteAlbum.mockResolvedValue(undefined)
     mockedApi.reorderAlbumPhotos.mockResolvedValue([])
     mockedApi.updateAlbum.mockImplementation(async (_id: string, payload: { coverPhotoId?: string | null }) =>
@@ -271,6 +274,36 @@ describe('AlbumPhotosView', () => {
 
     expect(mockedApi.bulkDeletePhotos).toHaveBeenCalledWith(['photo-1', 'photo-2'])
     expect(wrapper.findAll('[data-testid="photo-row"]')).toHaveLength(0)
+
+    wrapper.unmount()
+  })
+
+  it('moves selected photos to another album and clears cover if it left', async () => {
+    mockedApi.getAlbum.mockResolvedValue(makeAlbumDetail({ coverPhotoId: 'photo-1' }))
+    const { wrapper } = await mountView()
+    const checkboxes = wrapper.findAll('[data-slot="checkbox"]')
+
+    await checkboxes[1]!.trigger('click')
+    await checkboxes[2]!.trigger('click')
+    await flushPromises()
+    await button('Mover selecionadas (2)')!.click()
+    await flushPromises()
+
+    const input = document.querySelector('[data-testid="photo-move-search"]') as HTMLInputElement
+    input.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    const suggestion = [...document.querySelectorAll<HTMLButtonElement>('[data-testid="photo-move-suggestion"]')].find(
+      (el) => el.textContent?.trim() === 'Other',
+    )
+    suggestion!.click()
+    await flushPromises()
+    ;(document.querySelector('[data-testid="photo-move-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mockedApi.bulkMovePhotos).toHaveBeenCalledWith(['photo-1', 'photo-2'], 'album-2')
+    expect(wrapper.findAll('[data-testid="photo-row"]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="clear-cover"]').exists()).toBe(false)
 
     wrapper.unmount()
   })

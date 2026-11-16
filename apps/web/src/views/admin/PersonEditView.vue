@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { ExternalLink } from '@lucide/vue'
+import { ExternalLink, Link2, Trash2 } from '@lucide/vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError, adminApi, mediaUrl } from '../../api/client'
-import type { AdminPerson, AdminPersonDetail, PersonMergeCandidate } from '../../api/types'
+import type { AdminPerson, AdminPersonDetail, Face, PersonMergeCandidate } from '../../api/types'
 import FaceGalleryScanPanel from '../../components/admin/FaceGalleryScanPanel.vue'
+import FaceReassignDialog from '../../components/admin/FaceReassignDialog.vue'
 import { useAdminPersonSearch } from '../../composables/useAdminPersonSearch'
 import { pickMergeSurvivor } from '../../lib/personMerge'
 
@@ -30,6 +31,7 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const deleteOpen = ref(false)
+const reassignFace = ref<Face | null>(null)
 const mergeCandidates = ref<PersonMergeCandidate[]>([])
 const mergeCandidatesLoading = ref(false)
 const mergeCandidatesError = ref<string | null>(null)
@@ -279,6 +281,29 @@ async function onReferenceFacesChange(event: Event) {
       err instanceof ApiError ? `Falha ao adicionar rostos: ${err.message}` : 'Falha ao adicionar rostos.'
   } finally {
     saving.value = false
+  }
+}
+
+function openReassign(face: Face) {
+  reassignFace.value = face
+}
+
+function onReassignOpen(open: boolean) {
+  if (!open) {
+    reassignFace.value = null
+  }
+}
+
+function onReassignError(message: string) {
+  error.value = message
+}
+
+async function onFaceReassigned() {
+  if (!person.value) return
+  try {
+    person.value = await adminApi.getPerson(person.value.id)
+  } catch {
+    error.value = 'Falha ao atualizar pessoa.'
   }
 }
 
@@ -712,7 +737,7 @@ async function purgePerson() {
           <div
             v-for="face in person.faces"
             :key="face.id"
-            class="group relative overflow-hidden rounded-lg border bg-muted"
+            class="relative overflow-hidden rounded-lg border bg-muted"
             :class="
               person.avatarFaceId === face.id
                 ? 'border-foreground ring-2 ring-foreground'
@@ -723,6 +748,8 @@ async function purgePerson() {
               type="button"
               class="block w-full text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :disabled="saving || !face.cropPath || isTrashed"
+              :title="person.avatarFaceId === face.id ? 'Foto principal' : 'Definir como principal'"
+              :aria-label="person.avatarFaceId === face.id ? 'Foto principal' : 'Definir como principal'"
               data-testid="face-tile"
               @click="setPrimaryFace(face.id)"
             >
@@ -742,26 +769,79 @@ async function purgePerson() {
               >
                 Principal
               </span>
-              <span
-                v-else
-                class="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] text-muted-foreground opacity-0 transition group-hover:opacity-100"
+            </button>
+            <div class="absolute inset-x-1.5 top-1.5 flex items-start justify-between gap-1">
+              <div class="flex gap-1">
+                <Button
+                  v-if="face.photoId"
+                  as-child
+                  size="icon-xs"
+                  variant="secondary"
+                >
+                  <RouterLink
+                    :to="{ name: 'photo-legacy', params: { id: face.photoId } }"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Ver foto no site público"
+                    aria-label="Ver foto no site público"
+                    data-testid="face-public-link"
+                  >
+                    <ExternalLink />
+                  </RouterLink>
+                </Button>
+                <Button
+                  v-else
+                  type="button"
+                  size="icon-xs"
+                  variant="secondary"
+                  disabled
+                  title="Este recorte não veio de uma foto da galeria"
+                  aria-label="Este recorte não veio de uma foto da galeria"
+                  data-testid="face-public-link"
+                >
+                  <ExternalLink />
+                </Button>
+                <Button
+                  v-if="!isTrashed"
+                  type="button"
+                  size="icon-xs"
+                  variant="secondary"
+                  :disabled="saving"
+                  title="Vincular a outra pessoa"
+                  aria-label="Vincular a outra pessoa"
+                  data-testid="face-reassign"
+                  @click="openReassign(face)"
+                >
+                  <Link2 />
+                </Button>
+              </div>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="destructive"
+                :disabled="saving"
+                title="Remover rosto"
+                aria-label="Remover rosto"
+                data-testid="face-delete"
+                @click="deleteFace(face.id)"
               >
-                Definir como principal
-              </span>
-            </button>
-            <button
-              type="button"
-              class="absolute top-1.5 right-1.5 rounded bg-background/90 px-1.5 py-0.5 text-[10px] text-destructive opacity-0 transition group-hover:opacity-100"
-              :disabled="saving"
-              data-testid="face-delete"
-              @click="deleteFace(face.id)"
-            >
-              Remover
-            </button>
+                <Trash2 />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
     </template>
+
+    <FaceReassignDialog
+      v-if="person"
+      :open="reassignFace !== null"
+      :person-id="person.id"
+      :face="reassignFace"
+      @update:open="onReassignOpen"
+      @changed="onFaceReassigned"
+      @error="onReassignError"
+    />
 
     <Dialog :open="deleteOpen" @update:open="(open) => { if (!open && !saving) deleteOpen = false }">
       <DialogContent class="sm:max-w-md">

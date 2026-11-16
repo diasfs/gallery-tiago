@@ -15,8 +15,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ApiError, adminApi, photoDisplayUrl } from '../../api/client'
-import type { AdminPhotoDetail, AdminPhotoFace, ReprocessScope, Tag } from '../../api/types'
+import { ApiError, adminApi, mediaUrl, photoDisplayUrl } from '../../api/client'
+import type {
+  AdminExcludedPhotoFace,
+  AdminPhotoDetail,
+  AdminPhotoFace,
+  FaceExclusionReason,
+  ReprocessScope,
+  Tag,
+} from '../../api/types'
+import FaceReassignDialog from '../../components/admin/FaceReassignDialog.vue'
+import PhotoMoveDialog from '../../components/admin/PhotoMoveDialog.vue'
 import PhotoPeopleEditor from '../../components/admin/PhotoPeopleEditor.vue'
 
 const props = defineProps<{ id: string }>()
@@ -28,6 +37,9 @@ const saving = ref(false)
 const saved = ref(false)
 const reprocessing = ref(false)
 const rotating = ref(false)
+const restoringFaceId = ref<string | null>(null)
+const reassignFace = ref<AdminPhotoFace | null>(null)
+const moveOpen = ref(false)
 const previewVersion = ref(0)
 const reprocessScope = ref<ReprocessScope>('all')
 
@@ -35,6 +47,11 @@ const SCOPE_LABEL: Record<ReprocessScope, string> = {
   all: 'Rostos + tags',
   faces: 'Apenas rostos',
   tags: 'Apenas tags',
+}
+
+const EXCLUSION_LABEL: Record<FaceExclusionReason, string> = {
+  removed: 'Removido desta foto',
+  person_trashed: 'Pessoa na lixeira',
 }
 
 const form = reactive<{ title: string }>({ title: '' })
@@ -74,6 +91,14 @@ const faceOverlays = computed(() => {
   )
 })
 
+const excludedFaceOverlays = computed(() => {
+  const detail = photo.value
+  if (!detail?.width || !detail.height || detail.width <= 0 || detail.height <= 0) {
+    return []
+  }
+  return (detail.excludedFaces ?? []).filter((face) => face.width > 0 && face.height > 0)
+})
+
 function faceOverlayStyle(face: AdminPhotoFace): Record<string, string> {
   const detail = photo.value
   if (!detail?.width || !detail.height) {
@@ -89,6 +114,14 @@ function faceOverlayStyle(face: AdminPhotoFace): Record<string, string> {
 
 function faceOverlayLabel(face: AdminPhotoFace): string {
   return face.name?.trim() || 'Sem nome'
+}
+
+function exclusionReasonLabel(face: AdminExcludedPhotoFace): string {
+  return EXCLUSION_LABEL[face.exclusionReason]
+}
+
+function excludedFaceAvatarSrc(face: AdminExcludedPhotoFace): string | null {
+  return mediaUrl(face.avatarCropPath)
 }
 
 async function save() {
@@ -159,6 +192,49 @@ function onPeopleError(message: string) {
   error.value = message
 }
 
+async function onPeopleChanged() {
+  // Reload so faces / excludedFaces stay in sync after add/remove.
+  if (!photo.value) return
+  try {
+    photo.value = await adminApi.getPhoto(photo.value.id)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao atualizar foto: ${err.message}` : 'Falha ao atualizar foto.'
+  }
+}
+
+function openReassign(face: AdminPhotoFace) {
+  reassignFace.value = face
+}
+
+function onReassignOpen(open: boolean) {
+  if (!open) {
+    reassignFace.value = null
+  }
+}
+
+async function restoreExcludedFace(face: AdminExcludedPhotoFace) {
+  if (!photo.value || restoringFaceId.value) return
+  restoringFaceId.value = face.id
+  error.value = null
+  try {
+    if (face.exclusionReason === 'person_trashed') {
+      if (!face.personId) {
+        throw new Error('missing personId')
+      }
+      await adminApi.restorePerson(face.personId)
+      await load()
+    } else {
+      photo.value = await adminApi.restorePhotoFace(photo.value.id, face.id)
+    }
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao restaurar rosto: ${err.message}` : 'Falha ao restaurar rosto.'
+  } finally {
+    restoringFaceId.value = null
+  }
+}
+
 async function reprocess() {
   if (!photo.value || reprocessing.value) return
   reprocessing.value = true
@@ -171,6 +247,17 @@ async function reprocess() {
       err instanceof ApiError ? `Falha ao reprocessar: ${err.message}` : 'Falha ao reprocessar.'
   } finally {
     reprocessing.value = false
+  }
+}
+
+async function onPhotoMoved() {
+  if (!photo.value) return
+  error.value = null
+  try {
+    photo.value = await adminApi.getPhoto(photo.value.id)
+  } catch (err) {
+    error.value =
+      err instanceof ApiError ? `Falha ao atualizar foto: ${err.message}` : 'Falha ao atualizar foto.'
   }
 }
 
@@ -246,6 +333,15 @@ async function rotate() {
           <RotateCw class="size-3.5 shrink-0" :class="{ 'animate-spin': rotating }" />
           {{ rotating ? 'Rotacionando…' : 'Rotacionar 90°' }}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="photo-move"
+          @click="moveOpen = true"
+        >
+          Mover para outro álbum
+        </Button>
       </div>
     </div>
 
@@ -279,15 +375,30 @@ async function rotate() {
                 class="block h-auto w-full"
                 data-testid="admin-photo-preview"
               />
-              <div
+              <button
                 v-for="face in faceOverlays"
                 :key="face.id"
+                type="button"
                 class="photo-face-overlay"
                 :style="faceOverlayStyle(face)"
                 :title="faceOverlayLabel(face)"
+                :aria-label="`Vincular ${faceOverlayLabel(face)}`"
                 data-testid="photo-face-overlay"
+                @click="openReassign(face)"
               >
                 <span class="photo-face-overlay__label">{{ faceOverlayLabel(face) }}</span>
+              </button>
+              <div
+                v-for="face in excludedFaceOverlays"
+                :key="`excluded-${face.id}`"
+                class="photo-face-overlay photo-face-overlay--excluded"
+                :style="faceOverlayStyle(face)"
+                :title="`${faceOverlayLabel(face)} · ${exclusionReasonLabel(face)}`"
+                data-testid="photo-face-overlay-excluded"
+              >
+                <span class="photo-face-overlay__label">
+                  {{ faceOverlayLabel(face) }} · {{ exclusionReasonLabel(face) }}
+                </span>
               </div>
             </div>
             <div v-else class="flex aspect-[4/3] items-center justify-center text-sm text-muted-foreground">
@@ -358,14 +469,98 @@ async function rotate() {
       <Card>
         <CardHeader>
           <CardTitle>Pessoas</CardTitle>
-          <CardDescription>Gerencie as pessoas nomeadas marcadas nesta foto.</CardDescription>
+          <CardDescription>
+            Vincule cada rosto à pessoa certa. Remover tira só aquele rosto desta foto.
+          </CardDescription>
         </CardHeader>
         <CardContent class="space-y-4">
           <PhotoPeopleEditor
             :photo-id="photo.id"
+            :faces="photo.faces ?? []"
             v-model:people="photo.people"
             @error="onPeopleError"
+            @changed="onPeopleChanged"
+            @reassign="openReassign"
           />
+        </CardContent>
+      </Card>
+
+      <FaceReassignDialog
+        :open="reassignFace !== null"
+        :photo-id="photo.id"
+        :face="reassignFace"
+        @update:open="onReassignOpen"
+        @changed="onPeopleChanged"
+        @error="onPeopleError"
+      />
+      <PhotoMoveDialog
+        :open="moveOpen"
+        :photo-ids="[photo.id]"
+        :exclude-album-id="photo.albumId"
+        @update:open="(open) => (moveOpen = open)"
+        @moved="onPhotoMoved"
+      />
+
+      <Card data-testid="excluded-faces-card">
+        <CardHeader>
+          <CardTitle>Rostos excluídos</CardTitle>
+          <CardDescription>
+            Removidos desta foto ou vinculados a pessoas na lixeira. Restaure para voltar a marcá-los.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-3">
+          <ul
+            v-if="(photo.excludedFaces ?? []).length > 0"
+            class="admin-people-list"
+            data-testid="excluded-faces-list"
+          >
+            <li
+              v-for="face in photo.excludedFaces"
+              :key="face.id"
+              data-testid="excluded-face-row"
+            >
+              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                <img
+                  v-if="excludedFaceAvatarSrc(face)"
+                  :src="excludedFaceAvatarSrc(face)!"
+                  alt=""
+                  class="size-10 shrink-0 rounded-md object-cover bg-muted"
+                  data-testid="excluded-face-avatar"
+                />
+                <div
+                  v-else
+                  class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground"
+                  data-testid="excluded-face-avatar-empty"
+                >
+                  —
+                </div>
+                <RouterLink
+                  v-if="face.personId"
+                  :to="{ name: 'admin-person-edit', params: { id: face.personId } }"
+                  class="truncate font-medium text-foreground hover:underline"
+                >
+                  {{ faceOverlayLabel(face) }}
+                </RouterLink>
+                <span v-else class="truncate font-medium">{{ faceOverlayLabel(face) }}</span>
+                <Badge variant="outline" data-testid="excluded-face-reason">
+                  {{ exclusionReasonLabel(face) }}
+                </Badge>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                :disabled="restoringFaceId === face.id"
+                data-testid="excluded-face-restore"
+                @click="restoreExcludedFace(face)"
+              >
+                {{ restoringFaceId === face.id ? 'Restaurando…' : 'Restaurar' }}
+              </Button>
+            </li>
+          </ul>
+          <p v-else class="text-sm text-muted-foreground" data-testid="excluded-faces-empty">
+            Nenhum rosto excluído nesta foto.
+          </p>
         </CardContent>
       </Card>
     </template>
@@ -376,10 +571,20 @@ async function rotate() {
 .photo-face-overlay {
   position: absolute;
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   border: 2px solid rgba(250, 250, 250, 0.9);
   border-radius: 4px;
+  background: transparent;
   pointer-events: auto;
-  cursor: default;
+  cursor: pointer;
+  appearance: none;
+}
+
+.photo-face-overlay--excluded {
+  border-style: dashed;
+  border-color: rgba(161, 161, 170, 0.95);
+  background: rgba(24, 24, 27, 0.18);
 }
 
 .photo-face-overlay__label {

@@ -289,6 +289,16 @@ export interface AdminPhotoFace {
   y: number
   width: number
   height: number
+  cropPath?: string | null
+}
+
+export type FaceExclusionReason = 'removed' | 'person_trashed'
+
+export interface AdminExcludedPhotoFace extends AdminPhotoFace {
+  exclusionReason: FaceExclusionReason
+  avatarCropPath?: string | null
+  faceDeletedAt?: string | null
+  personDeletedAt?: string | null
 }
 
 export interface AdminPhotoDetail {
@@ -307,6 +317,7 @@ export interface AdminPhotoDetail {
   tags: Tag[]
   people: PersonSummary[]
   faces?: AdminPhotoFace[]
+  excludedFaces?: AdminExcludedPhotoFace[]
   createdAt: string
 }
 
