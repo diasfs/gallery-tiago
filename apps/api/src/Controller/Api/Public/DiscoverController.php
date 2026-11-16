@@ -18,6 +18,8 @@ class DiscoverController
 {
     private const DEFAULT_PER_PAGE = 48;
 
+    private const GALLERY_TIMEZONE = 'America/Sao_Paulo';
+
     public function __construct(
         private readonly AlbumRepository $albums,
         private readonly ProcessingSettingsReader $settings,
@@ -66,7 +68,8 @@ class DiscoverController
     /** @return array{0: int, 1: int, 2: int} */
     private function resolveOnThisDayParams(Request $request): array
     {
-        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        // Gallery calendar TZ — not UTC (evening Sao Paulo would otherwise be tomorrow).
+        $now = new \DateTimeImmutable('now', new \DateTimeZone(self::GALLERY_TIMEZONE));
         $month = (int) $request->query->get('month', $now->format('n'));
         $day = (int) $request->query->get('day', $now->format('j'));
         $beforeYear = (int) $request->query->get('beforeYear', $now->format('Y'));
@@ -90,7 +93,7 @@ class DiscoverController
         return [
             ...$this->normalizeAlbum($album),
             'timelineAt' => $timelineAt->format(\DATE_ATOM),
-            'yearsAgo' => max(0, (int) (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y') - (int) $timelineAt->format('Y')),
+            'yearsAgo' => max(0, (int) (new \DateTimeImmutable('now', new \DateTimeZone(self::GALLERY_TIMEZONE)))->format('Y') - (int) $timelineAt->format('Y')),
         ];
     }
 
