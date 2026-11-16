@@ -76,6 +76,23 @@ describe('PhotoGrid', () => {
     expect(link.attributes('href')).toBe('/summer/DSC_0001.jpg')
   })
 
+  it('appends linkQuery to each photo href', () => {
+    const photos = [
+      makePhoto({
+        id: 'photo-42',
+        albumSlug: 'summer',
+        filename: 'DSC_0001.jpg',
+      }),
+    ]
+
+    const wrapper = mount(PhotoGrid, {
+      props: { photos, linkQuery: { nav: 'search' } },
+      global: { plugins: [router] },
+    })
+
+    expect(wrapper.find('a').attributes('href')).toBe('/summer/DSC_0001.jpg?nav=search')
+  })
+
   it('falls back to legacy uuid route when filename is missing', () => {
     const photos = [makePhoto({ id: 'photo-42' })]
 

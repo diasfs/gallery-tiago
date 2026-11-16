@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createWebHistory } from 'vue-router'
 import SearchView from './SearchView.vue'
 import { api } from '../api/client'
+import { getPhotoNav, writeSearchPage } from '../lib/photoNavContext'
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
@@ -26,6 +27,7 @@ const mockedApi = api as unknown as {
 describe('SearchView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     mockedApi.searchTags.mockResolvedValue([])
   })
 
@@ -40,6 +42,7 @@ describe('SearchView', () => {
         { path: '/', name: 'home', component: { template: '<div />' } },
         { path: '/search', name: 'search', component: SearchView },
         { path: '/albums/:slug', name: 'album', component: { template: '<div />' } },
+        { path: '/:albumSlug/:filename', name: 'photo', component: { template: '<div />' } },
         { path: '/photos/:id', name: 'photo-legacy', component: { template: '<div />' } },
       ],
     })
@@ -82,6 +85,8 @@ describe('SearchView', () => {
         photos: [
           {
             id: 'ph1',
+            albumSlug: 'summer',
+            filename: 'sunset.jpg',
             title: 'Sunset',
             avifPath: 'x.avif',
             thumbPaths: { '320': 't.avif' },
@@ -95,7 +100,7 @@ describe('SearchView', () => {
       },
     })
 
-    const { wrapper } = await mountAt({ q: 'Summer', year: '2024' })
+    const { wrapper } = await mountAt({ q: 'Summer', year: '2024', scope: 'both' })
     await flushPromises()
 
     expect(mockedApi.search).toHaveBeenCalledWith(
@@ -105,6 +110,25 @@ describe('SearchView', () => {
     expect(wrapper.find('[data-testid="search-albums"]').text()).toContain('11')
     expect(wrapper.find('[data-testid="search-photos"]').text()).toContain('8')
     expect(wrapper.find('[data-testid="search-photos"]').text()).not.toContain('Sunset')
+    expect(wrapper.find('[data-testid="search-photos"] a').attributes('href')).toBe(
+      '/summer/sunset.jpg?nav=search',
+    )
+    expect(getPhotoNav()).toMatchObject({
+      kind: 'search',
+      params: { q: 'Summer', year: '2024', scope: 'both' },
+      perPage: 48,
+      total: 1,
+      pages: {
+        1: [{ id: 'ph1', albumSlug: 'summer', filename: 'sunset.jpg' }],
+      },
+    })
+    wrapper.unmount()
+  })
+
+  it('clears search photo nav when there are no criteria', async () => {
+    writeSearchPage({ q: 'Summer' }, 1, [{ id: 'ph1' }], 1)
+    const { wrapper } = await mountAt()
+    expect(getPhotoNav()).toBeNull()
     wrapper.unmount()
   })
 

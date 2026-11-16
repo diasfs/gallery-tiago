@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
-import { RouterLink } from 'vue-router'
+import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import type { AlbumPhotoLayout, PhotoSummary } from '../api/types'
 import { photoDisplayUrl } from '../api/client'
-import { photoPath } from '../lib/publicPaths'
 import { computeJustifiedPhotoLayout } from '../lib/justifiedPhotoLayout'
 import ViewCount from './ViewCount.vue'
 
@@ -13,6 +12,7 @@ const props = withDefaults(
     photos: PhotoSummary[]
     lightbox?: boolean
     layout?: AlbumPhotoLayout
+    linkQuery?: Record<string, string>
   }>(),
   {
     layout: 'grid',
@@ -66,12 +66,21 @@ const gridClass = computed(() => {
   }
 })
 
-function photoLink(photo: PhotoSummary) {
+function photoLink(photo: PhotoSummary): RouteLocationRaw {
+  const query = props.linkQuery
   if (photo.albumSlug && photo.filename) {
-    return photoPath({ albumSlug: photo.albumSlug, filename: photo.filename })
+    return {
+      name: 'photo',
+      params: { albumSlug: photo.albumSlug, filename: photo.filename },
+      ...(query ? { query } : {}),
+    }
   }
 
-  return { name: 'photo-legacy', params: { id: photo.id } }
+  return {
+    name: 'photo-legacy',
+    params: { id: photo.id },
+    ...(query ? { query } : {}),
+  }
 }
 
 function onPhotoClick(photo: PhotoSummary, event: MouseEvent) {

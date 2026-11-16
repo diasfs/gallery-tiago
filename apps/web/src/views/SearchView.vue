@@ -14,6 +14,7 @@ import {
   searchRouteQuery,
   searchStateFromQuery,
 } from '../lib/publicSearch'
+import { SEARCH_NAV_QUERY, clearPhotoNav, writeSearchPage } from '../lib/photoNavContext'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +53,7 @@ async function loadFromRoute() {
     photos.value = []
     albumTotal.value = 0
     photoTotal.value = 0
+    clearPhotoNav()
     return
   }
 
@@ -69,12 +71,24 @@ async function loadFromRoute() {
     photos.value = result.data.photos
     albumTotal.value = result.meta.albums.total
     photoTotal.value = result.meta.photos.total
+    if (result.data.photos.length > 0) {
+      writeSearchPage(
+        searchParamsFromState(bar.value, { photoPage: photoPage.value }),
+        photoPage.value,
+        result.data.photos,
+        result.meta.photos.total,
+        result.meta.photos.perPage,
+      )
+    } else {
+      clearPhotoNav()
+    }
   } catch {
     error.value = 'Não foi possível realizar a busca. Tente novamente.'
     albums.value = []
     photos.value = []
     albumTotal.value = 0
     photoTotal.value = 0
+    clearPhotoNav()
   } finally {
     loading.value = false
   }
@@ -138,7 +152,7 @@ watch(
         <h2>Fotos <span class="search-page__count">({{ photoTotal }})</span></h2>
         <p v-if="photos.length === 0" class="search-page__empty">Nenhuma foto encontrada.</p>
         <template v-else>
-          <PhotoGrid :photos="photos" />
+          <PhotoGrid :photos="photos" :link-query="SEARCH_NAV_QUERY" />
           <PaginationBar
             class="pager"
             :page="photoPage"

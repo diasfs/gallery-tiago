@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { RouterLink, useRouter, type RouteLocationRaw } from 'vue-router'
+import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import {
   absoluteMediaUrl,
+  adminApi,
   api,
   mediaUrl,
   PHOTO_DETAIL_SIZES,
@@ -11,6 +12,7 @@ import {
   photoSrcSet,
 } from '../api/client'
 import type { PersonSummary, PhotoDetail, PhotoSummary } from '../api/types'
+import FaceReassignDialog from '../components/admin/FaceReassignDialog.vue'
 import Breadcrumb from '../components/Breadcrumb.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PhotoPersonDeleteDialog from '../components/PhotoPersonDeleteDialog.vue'
@@ -18,7 +20,9 @@ import PhotoPersonEditDialog from '../components/PhotoPersonEditDialog.vue'
 import ViewCount from '../components/ViewCount.vue'
 import { useAdminSession } from '../composables/useAdminSession'
 import { usePageMeta } from '../composables/usePageMeta'
+import { photoNavRoute, resolveSearchNeighbor } from '../lib/photoNavContext'
 import { photoPath } from '../lib/publicPaths'
+import { handleJpegDownloadClick } from '../lib/shareJpeg'
 import type { PersonMergedPayload } from '../lib/personMerge'
 
 const props = defineProps<{
@@ -32,6 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
 const { isAdmin } = useAdminSession()
 
 const photo = ref<PhotoDetail | null>(null)
@@ -39,6 +44,7 @@ const deleteTarget = ref<PersonSummary | null>(null)
 const deleteDialogOpen = ref(false)
 const editTarget = ref<PersonSummary | null>(null)
 const editDialogOpen = ref(false)
+const reassignFace = ref<{ id: string; personId: string | null } | null>(null)
 const similarPhotos = ref<PhotoSummary[]>([])
 const loading = ref(true)
 const similarLoading = ref(false)
@@ -60,8 +66,33 @@ function photoNavTarget(detail: PhotoDetail, direction: 'prev' | 'next'): RouteL
   return null
 }
 
-const prevTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'prev') : null))
-const nextTarget = computed(() => (photo.value ? photoNavTarget(photo.value, 'next') : null))
+const prevTarget = ref<RouteLocationRaw | null>(null)
+const nextTarget = ref<RouteLocationRaw | null>(null)
+
+async function resolveNavTargets(detail: PhotoDetail, generation: number) {
+  if (route.query.nav !== 'search') {
+    prevTarget.value = photoNavTarget(detail, 'prev')
+    nextTarget.value = photoNavTarget(detail, 'next')
+    return
+  }
+
+  const [prev, next] = await Promise.all([
+    resolveSearchNeighbor(detail.id, 'prev'),
+    resolveSearchNeighbor(detail.id, 'next'),
+  ])
+  if (generation !== loadGeneration) {
+    return
+  }
+
+  if (prev.kind === 'unknown' && next.kind === 'unknown') {
+    prevTarget.value = photoNavTarget(detail, 'prev')
+    nextTarget.value = photoNavTarget(detail, 'next')
+    return
+  }
+
+  prevTarget.value = prev.kind === 'photo' ? photoNavRoute(prev.entry) : null
+  nextTarget.value = next.kind === 'photo' ? photoNavRoute(next.entry) : null
+}
 
 async function loadSecondary(generation: number, photoId: string) {
   similarLoading.value = true
@@ -89,6 +120,8 @@ async function load() {
   loading.value = true
   notFound.value = false
   photo.value = null
+  prevTarget.value = null
+  nextTarget.value = null
   similarPhotos.value = []
   similarLoading.value = false
 
@@ -102,6 +135,11 @@ async function load() {
       return
     }
 
+    if (generation !== loadGeneration) {
+      return
+    }
+
+    await resolveNavTargets(photo.value, generation)
     if (generation !== loadGeneration) {
       return
     }
@@ -129,6 +167,16 @@ watch(
 const fullSrc = computed(() => (photo.value ? photoDisplayUrl(photo.value) : null))
 const jpegDownloadHref = computed(() => (photo.value ? photoJpegDownloadUrl(photo.value.id) : null))
 const srcSet = computed(() => (photo.value ? photoSrcSet(photo.value) : null))
+
+function onJpegDownloadClick(event: MouseEvent) {
+  const current = photo.value
+  const href = jpegDownloadHref.value
+  if (!current || !href) {
+    return
+  }
+  const title = current.title?.trim()
+  void handleJpegDownloadClick(event, href, `${title || current.id}.jpg`)
+}
 
 const breadcrumbAncestors = computed(() => {
   if (!photo.value) {
@@ -181,6 +229,32 @@ function openDeleteDialog(person: PersonSummary) {
 function openEditDialog(person: PersonSummary) {
   editTarget.value = person
   editDialogOpen.value = true
+}
+
+async function openReassign(person: PersonSummary) {
+  if (!photo.value) {
+    return
+  }
+  try {
+    const detail = await adminApi.getPhoto(photo.value.id)
+    const face = (detail.faces ?? []).find((item) => item.personId === person.id)
+    if (!face) {
+      return
+    }
+    reassignFace.value = { id: face.id, personId: face.personId }
+  } catch {
+    return
+  }
+}
+
+function onReassignOpen(open: boolean) {
+  if (!open) {
+    reassignFace.value = null
+  }
+}
+
+function onFaceReassigned() {
+  void load()
 }
 
 function onPersonDeleted() {
@@ -267,6 +341,7 @@ function onPersonMerged(payload: PersonMergedPayload) {
           class="photo-detail__download"
           data-testid="photo-jpeg-download"
           download
+          @click="onJpegDownloadClick"
         >
           Baixar Foto
         </a>
@@ -325,6 +400,16 @@ function onPersonMerged(payload: PersonMergedPayload) {
             <button
               v-if="isAdmin"
               type="button"
+              class="person-card__reassign"
+              aria-label="Vincular rosto"
+              data-testid="photo-person-reassign"
+              @click="openReassign(person)"
+            >
+              ⇄
+            </button>
+            <button
+              v-if="isAdmin"
+              type="button"
               class="person-card__delete"
               aria-label="Remover pessoa"
               data-testid="photo-person-delete"
@@ -354,6 +439,14 @@ function onPersonMerged(payload: PersonMergedPayload) {
         :person="editTarget"
         @named="onPersonNamed"
         @merged="onPersonMerged"
+      />
+      <FaceReassignDialog
+        v-if="photo"
+        :open="reassignFace !== null"
+        :photo-id="photo.id"
+        :face="reassignFace"
+        @update:open="onReassignOpen"
+        @changed="onFaceReassigned"
       />
     </template>
   </section>
@@ -479,6 +572,7 @@ function onPersonMerged(payload: PersonMergedPayload) {
 }
 
 .person-card__edit,
+.person-card__reassign,
 .person-card__delete {
   position: absolute;
   top: 0.35rem;
@@ -497,12 +591,17 @@ function onPersonMerged(payload: PersonMergedPayload) {
   left: 0.35rem;
 }
 
+.person-card__reassign {
+  left: 2rem;
+}
+
 .person-card__delete {
   right: 0.35rem;
   font-size: 1.1rem;
 }
 
-.person-card__edit:hover {
+.person-card__edit:hover,
+.person-card__reassign:hover {
   background: rgba(60, 60, 60, 0.95);
 }
 

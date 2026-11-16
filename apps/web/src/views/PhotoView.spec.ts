@@ -5,6 +5,7 @@ import PhotoView from './PhotoView.vue'
 import { adminApi, api } from '../api/client'
 import type { PhotoDetail, PhotoSummary } from '../api/types'
 import { resetAdminSessionCache } from '../composables/useAdminSession'
+import { writeSearchPage } from '../lib/photoNavContext'
 
 vi.mock('../api/client', async () => {
   const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
@@ -15,6 +16,7 @@ vi.mock('../api/client', async () => {
       getPhotoByPath: vi.fn(),
       listSimilarPhotos: vi.fn(),
       recordPhotoView: vi.fn(),
+      search: vi.fn(),
     },
     adminApi: {
       me: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock('../api/client', async () => {
       mergePerson: vi.fn(),
       listPeople: vi.fn(),
       listPersonMergeSuggestions: vi.fn(),
+      getPhoto: vi.fn(),
+      reassignPhotoFace: vi.fn(),
     },
   }
 })
@@ -34,6 +38,7 @@ const mockedApi = api as unknown as {
   getPhotoByPath: ReturnType<typeof vi.fn>
   listSimilarPhotos: ReturnType<typeof vi.fn>
   recordPhotoView: ReturnType<typeof vi.fn>
+  search: ReturnType<typeof vi.fn>
 }
 
 const mockedAdminApi = adminApi as unknown as {
@@ -45,6 +50,8 @@ const mockedAdminApi = adminApi as unknown as {
   mergePerson: ReturnType<typeof vi.fn>
   listPeople: ReturnType<typeof vi.fn>
   listPersonMergeSuggestions: ReturnType<typeof vi.fn>
+  getPhoto: ReturnType<typeof vi.fn>
+  reassignPhotoFace: ReturnType<typeof vi.fn>
 }
 
 function makePhoto(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
@@ -112,7 +119,7 @@ async function mountLegacyView(photo: PhotoDetail) {
   return wrapper
 }
 
-async function mountRootView(photo: PhotoDetail) {
+async function mountRootView(photo: PhotoDetail, query: Record<string, string> = {}) {
   document.body.innerHTML = '<div id="admin-portal-root" class="admin-root"></div>'
   mockedApi.getPhotoByPath.mockResolvedValue(photo)
   mockedApi.listSimilarPhotos.mockResolvedValue([])
@@ -125,6 +132,7 @@ async function mountRootView(photo: PhotoDetail) {
   await router.push({
     name: 'photo',
     params: { albumSlug: photo.albumSlug, filename: photo.filename ?? 'beach.jpg' },
+    query,
   })
   await router.isReady()
 
@@ -145,6 +153,7 @@ function testId(id: string): HTMLElement {
 describe('PhotoView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     resetAdminSessionCache()
     mockedAdminApi.me.mockRejectedValue(new Error('unauthorized'))
     mockedAdminApi.listPeople.mockResolvedValue({
@@ -157,6 +166,7 @@ describe('PhotoView', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     resetAdminSessionCache()
+    vi.unstubAllGlobals()
   })
 
   it('shows person face crop beside the name', async () => {
@@ -290,6 +300,96 @@ describe('PhotoView', () => {
     wrapper.unmount()
   })
 
+  it('navigates search results when opened with nav=search', async () => {
+    writeSearchPage({ q: 'sun' }, 1, [
+      { id: 'photo-prev-search', albumSlug: 'other', filename: 'prev-search.jpg' },
+      { id: 'photo-1', albumSlug: 'summer', filename: 'beach.jpg' },
+      { id: 'photo-next-search', albumSlug: 'other', filename: 'next-search.jpg' },
+    ], 3)
+
+    const { wrapper, router } = await mountRootView(
+      makePhoto({
+        prevFilename: 'album-prev.jpg',
+        nextFilename: 'album-next.jpg',
+      }),
+      { nav: 'search' },
+    )
+    const pushSpy = vi.spyOn(router, 'push')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'photo',
+      params: { albumSlug: 'other', filename: 'next-search.jpg' },
+      query: { nav: 'search' },
+    })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'photo',
+      params: { albumSlug: 'other', filename: 'prev-search.jpg' },
+      query: { nav: 'search' },
+    })
+
+    wrapper.unmount()
+  })
+
+  it('hides search prev on the first result and fetches the next search page at the page edge', async () => {
+    writeSearchPage({ q: 'sun' }, 1, [
+      { id: 'photo-1', albumSlug: 'summer', filename: 'beach.jpg' },
+      { id: 'photo-2', albumSlug: 'summer', filename: 'second.jpg' },
+    ], 80)
+    mockedApi.search.mockResolvedValue({
+      data: {
+        albums: [],
+        photos: [{ id: 'photo-3', albumSlug: 'winter', filename: 'third.jpg', title: 'Third', avifPath: null, thumbPaths: {}, viewCount: 0 }],
+      },
+      meta: {
+        albums: { page: 1, perPage: 24, total: 0 },
+        photos: { page: 2, perPage: 48, total: 80 },
+      },
+    })
+
+    const first = await mountRootView(makePhoto({ id: 'photo-1', filename: 'beach.jpg' }), { nav: 'search' })
+    expect(first.wrapper.find('.photo-detail__nav').text()).not.toContain('Anterior')
+    expect(first.wrapper.find('.photo-detail__nav').text()).toContain('Próxima')
+    first.wrapper.unmount()
+
+    const lastOnPage = await mountRootView(
+      makePhoto({ id: 'photo-2', filename: 'second.jpg' }),
+      { nav: 'search' },
+    )
+    const pushSpy = vi.spyOn(lastOnPage.router, 'push')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(mockedApi.search).toHaveBeenCalledWith(
+      expect.objectContaining({ q: 'sun', photoPage: 2, photoPerPage: 48 }),
+    )
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'photo',
+      params: { albumSlug: 'winter', filename: 'third.jpg' },
+      query: { nav: 'search' },
+    })
+    lastOnPage.wrapper.unmount()
+  })
+
+  it('falls back to album neighbors when search nav context is missing', async () => {
+    const { wrapper, router } = await mountRootView(
+      makePhoto({
+        prevFilename: 'prev.jpg',
+        nextFilename: 'next.jpg',
+      }),
+      { nav: 'search' },
+    )
+    const pushSpy = vi.spyOn(router, 'push')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: 'photo',
+      params: { albumSlug: 'summer', filename: 'next.jpg' },
+    })
+
+    wrapper.unmount()
+  })
+
   it('hides person delete controls when admin is not logged in', async () => {
     const wrapper = await mountLegacyView(
       makePhoto({
@@ -299,6 +399,7 @@ describe('PhotoView', () => {
 
     expect(wrapper.find('[data-testid="photo-person-delete"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="photo-person-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="photo-person-reassign"]').exists()).toBe(false)
 
     wrapper.unmount()
   })
@@ -314,6 +415,92 @@ describe('PhotoView', () => {
 
     expect(wrapper.findAll('[data-testid="photo-person-delete"]')).toHaveLength(1)
     expect(wrapper.findAll('[data-testid="photo-person-edit"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="photo-person-reassign"]')).toHaveLength(1)
+
+    wrapper.unmount()
+  })
+
+  it('opens the face reassign dialog for admins', async () => {
+    mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
+    mockedAdminApi.getPhoto.mockResolvedValue({
+      id: 'photo-1',
+      faces: [{ id: 'face-1', personId: 'person-1', name: 'Ana', x: 0, y: 0, width: 10, height: 10 }],
+    })
+
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [{ id: 'person-1', name: 'Ana', avatarCropPath: null }],
+      }),
+    )
+
+    await wrapper.find('[data-testid="photo-person-reassign"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedAdminApi.getPhoto).toHaveBeenCalledWith('photo-1')
+    expect(document.querySelector('[data-testid="face-reassign-dialog"]')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('reloads the public photo after reassigning a face', async () => {
+    mockedAdminApi.me.mockResolvedValue({ id: 'admin-1', email: 'a@b.c' })
+    mockedAdminApi.getPhoto.mockResolvedValue({
+      id: 'photo-1',
+      faces: [{ id: 'face-1', personId: 'person-1', name: 'Ana', x: 0, y: 0, width: 10, height: 10 }],
+    })
+    mockedAdminApi.reassignPhotoFace.mockResolvedValue({
+      id: 'face-1',
+      photoId: 'photo-1',
+      personId: 'person-2',
+      cropPath: null,
+      hasEmbedding: true,
+    })
+    mockedAdminApi.listPeople.mockResolvedValue({
+      data: [
+        {
+          id: 'person-2',
+          name: 'Bruno',
+          isNamed: true,
+          faceCount: 1,
+          avatarFaceId: null,
+          avatarCropPath: null,
+        },
+      ],
+      meta: { page: 1, perPage: 20, total: 1 },
+    })
+
+    const wrapper = await mountLegacyView(
+      makePhoto({
+        people: [{ id: 'person-1', name: 'Ana', avatarCropPath: null }],
+      }),
+    )
+
+    await wrapper.find('[data-testid="photo-person-reassign"]').trigger('click')
+    await flushPromises()
+
+    mockedApi.getPhoto.mockResolvedValue(
+      makePhoto({
+        people: [{ id: 'person-2', name: 'Bruno', avatarCropPath: null }],
+      }),
+    )
+    mockedApi.getPhoto.mockClear()
+
+    vi.useFakeTimers()
+    const input = document.querySelector('[data-testid="face-reassign-search"]') as HTMLInputElement
+    input.value = 'Bruno'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(200)
+    await flushPromises()
+
+    const suggestion = document.querySelector('[data-testid="face-reassign-suggestion"]') as HTMLButtonElement
+    suggestion.click()
+    await flushPromises()
+    vi.useRealTimers()
+
+    expect(mockedAdminApi.reassignPhotoFace).toHaveBeenCalledWith('photo-1', 'face-1', { personId: 'person-2' })
+    expect(mockedApi.getPhoto).toHaveBeenCalledWith('photo-1')
+    expect(wrapper.text()).toContain('Bruno')
+    expect(wrapper.text()).not.toContain('Ana')
 
     wrapper.unmount()
   })
@@ -456,6 +643,41 @@ describe('PhotoView', () => {
 
     expect(mockedAdminApi.discardPerson).toHaveBeenCalledWith('person-1')
     expect(wrapper.findAll('[data-testid="photo-person-row"]')).toHaveLength(0)
+
+    wrapper.unmount()
+  })
+
+  it('keeps a native JPEG download link', async () => {
+    const wrapper = await mountLegacyView(makePhoto())
+
+    const link = wrapper.find('[data-testid="photo-jpeg-download"]')
+    expect(link.attributes('href')).toContain('/api/photos/photo-1/download.jpg')
+    expect(link.attributes('download')).toBeDefined()
+
+    wrapper.unmount()
+  })
+
+  it('shares the JPEG on download click when the browser can share files', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        blob: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+      }),
+    )
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      canShare: vi.fn((data?: ShareData) => Boolean(data?.files?.length)),
+      share: vi.fn().mockResolvedValue(undefined),
+    })
+
+    const wrapper = await mountLegacyView(makePhoto())
+    await wrapper.find('[data-testid="photo-jpeg-download"]').trigger('click')
+    await flushPromises()
+
+    expect(navigator.share).toHaveBeenCalledOnce()
+    const shared = vi.mocked(navigator.share).mock.calls[0][0]
+    expect(shared.files?.[0]).toMatchObject({ name: 'Beach.jpg', type: 'image/jpeg' })
 
     wrapper.unmount()
   })
