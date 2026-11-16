@@ -127,21 +127,31 @@ def nearest_neighbors(
     conn: psycopg.Connection,
     embedding: Sequence[float],
     limit: int = 5,
+    *,
+    trashed_only: bool = False,
 ) -> list[tuple[str, bool, float]]:
     """Nearest Face embeddings by cosine distance, joined to their Person.
 
     Returns (person_id, is_named, distance) tuples, closest first. Manually
     added faces (has_embedding = false) are excluded since they carry no
     vector to compare against.
+
+    By default only active (non-trashed) people are considered. Pass
+    trashed_only=True to match people in the trash instead (for soft-deleted
+    markings on reprocess).
     """
+    deleted_clause = (
+        "person.deleted_at IS NOT NULL" if trashed_only else "person.deleted_at IS NULL"
+    )
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT person.id::text, person.is_named, face.embedding <=> %s::vector AS dist
             FROM face
             JOIN person ON person.id = face.person_id
             WHERE face.has_embedding = true
-              AND person.deleted_at IS NULL
+              AND face.deleted_at IS NULL
+              AND {deleted_clause}
             ORDER BY dist
             LIMIT %s
             """,
@@ -161,6 +171,26 @@ def create_person(conn: psycopg.Connection) -> str:
         return row[0]
 
 
+def photo_has_face_for_person(
+    conn: psycopg.Connection,
+    photo_id: str,
+    person_id: str,
+) -> bool:
+    """True if this photo already has any face row for the person (active or soft-deleted)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM face
+            WHERE photo_id = %s
+              AND person_id = %s
+            LIMIT 1
+            """,
+            (photo_id, person_id),
+        )
+        return cur.fetchone() is not None
+
+
 def insert_face(
     conn: psycopg.Connection,
     face_id: str,
@@ -170,6 +200,8 @@ def insert_face(
     confidence: float,
     embedding: Sequence[float],
     crop_path: Optional[str],
+    *,
+    soft_deleted: bool = False,
 ) -> None:
     x, y, width, height = bbox
     with conn.cursor() as cur:
@@ -177,9 +209,10 @@ def insert_face(
             """
             INSERT INTO face (
                 id, photo_id, person_id, x, y, width, height,
-                crop_path, confidence, embedding, has_embedding
+                crop_path, confidence, embedding, has_embedding, deleted_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, true)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, true,
+                    CASE WHEN %s THEN NOW() ELSE NULL END)
             """,
             (
                 face_id,
@@ -192,12 +225,17 @@ def insert_face(
                 crop_path,
                 confidence,
                 _vector_literal(embedding),
+                soft_deleted,
             ),
         )
 
 
 def list_face_bboxes(conn: psycopg.Connection, photo_id: str) -> list[tuple[float, float, float, float]]:
-    """Existing face boxes on a photo (x, y, width, height). Null boxes skipped."""
+    """Existing face boxes on a photo (x, y, width, height), including soft-deleted.
+
+    Soft-deleted markings still occupy bbox space so reprocess does not stack
+    another detection on the same spot (restore is the path back to active).
+    """
     with conn.cursor() as cur:
         cur.execute(
             """

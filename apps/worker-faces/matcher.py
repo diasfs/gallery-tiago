@@ -75,3 +75,33 @@ def assign_person(
             return closest_unnamed[0], ASSIGN_CLUSTER
 
     return None, CREATE_CLUSTER
+
+
+def resolve_person_for_detection(
+    active_neighbors: list[Neighbor],
+    trashed_neighbors: list[Neighbor],
+    match_threshold: float,
+    cluster_threshold: float,
+) -> tuple[Optional[str], str, bool]:
+    """Pick an active person, else a trashed person (soft-delete marking).
+
+    Returns (person_id, action, soft_delete). soft_delete is True when the
+    match is a person in the trash — caller should insert Face with deleted_at
+    set so admin can restore from the photo's excluded-faces UI.
+
+    Priority: active named > trashed named > active unnamed > trashed unnamed
+    > create. Trashed named beats an active unnamed cluster so a trashed
+    identity is not lost to a new/random cluster on reprocess.
+    """
+    active_id, active_action = assign_person([], active_neighbors, match_threshold, cluster_threshold)
+    trashed_id, trashed_action = assign_person([], trashed_neighbors, match_threshold, cluster_threshold)
+
+    if active_action == ASSIGN_NAMED:
+        return active_id, active_action, False
+    if trashed_action == ASSIGN_NAMED:
+        return trashed_id, trashed_action, True
+    if active_action == ASSIGN_CLUSTER:
+        return active_id, active_action, False
+    if trashed_action == ASSIGN_CLUSTER:
+        return trashed_id, trashed_action, True
+    return None, CREATE_CLUSTER, False

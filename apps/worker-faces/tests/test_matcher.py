@@ -10,6 +10,7 @@ from matcher import (
     assign_person,
     bbox_iou,
     overlaps_existing,
+    resolve_person_for_detection,
 )
 
 MATCH_THRESHOLD = 0.35
@@ -97,3 +98,60 @@ def test_overlaps_existing_skips_near_duplicate_bbox():
 
     assert overlaps_existing(almost_same, existing) is True
     assert overlaps_existing(far_away, existing) is False
+
+
+def test_resolve_prefers_active_person_over_trashed():
+    active = [("active-named", True, 0.10)]
+    trashed = [("trashed-named", True, 0.05)]
+
+    person_id, action, soft_delete = resolve_person_for_detection(
+        active, trashed, MATCH_THRESHOLD, CLUSTER_THRESHOLD
+    )
+
+    assert (person_id, action, soft_delete) == ("active-named", ASSIGN_NAMED, False)
+
+
+def test_resolve_prefers_trashed_named_over_active_unnamed_cluster():
+    active = [("active-unnamed", False, 0.20)]
+    trashed = [("trashed-named", True, 0.15)]
+
+    person_id, action, soft_delete = resolve_person_for_detection(
+        active, trashed, MATCH_THRESHOLD, CLUSTER_THRESHOLD
+    )
+
+    assert (person_id, action, soft_delete) == ("trashed-named", ASSIGN_NAMED, True)
+
+
+def test_resolve_falls_back_to_trashed_person_as_soft_delete():
+    active = [("active-far", True, 0.90)]
+    trashed = [("trashed-named", True, 0.12)]
+
+    person_id, action, soft_delete = resolve_person_for_detection(
+        active, trashed, MATCH_THRESHOLD, CLUSTER_THRESHOLD
+    )
+
+    assert (person_id, action, soft_delete) == ("trashed-named", ASSIGN_NAMED, True)
+
+
+def test_resolve_trashed_unnamed_cluster_within_cluster_threshold():
+    active: list = []
+    trashed = [("trashed-unnamed", False, 0.38)]
+
+    person_id, action, soft_delete = resolve_person_for_detection(
+        active, trashed, MATCH_THRESHOLD, CLUSTER_THRESHOLD
+    )
+
+    assert (person_id, action, soft_delete) == ("trashed-unnamed", ASSIGN_CLUSTER, True)
+
+
+def test_resolve_creates_cluster_when_neither_active_nor_trashed_match():
+    person_id, action, soft_delete = resolve_person_for_detection(
+        [("far", True, 0.9)],
+        [("far-trash", True, 0.85)],
+        MATCH_THRESHOLD,
+        CLUSTER_THRESHOLD,
+    )
+
+    assert person_id is None
+    assert action == CREATE_CLUSTER
+    assert soft_delete is False

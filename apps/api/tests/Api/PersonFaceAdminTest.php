@@ -102,7 +102,7 @@ final class PersonFaceAdminTest extends WebTestCase
         $this->assertCount(1, $payload['data']['faces']);
     }
 
-    public function testDeleteFaceRemovesCropAndClearsAvatar(): void
+    public function testDeleteFaceSoftDeletesAndClearsAvatar(): void
     {
         $storage = static::getContainer()->get(MediaStorage::class);
         $person = new Person();
@@ -127,7 +127,12 @@ final class PersonFaceAdminTest extends WebTestCase
         $payload = json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertSame([], $payload['data']['faces']);
         $this->assertNull($payload['data']['avatarFaceId']);
-        $this->assertFileDoesNotExist($storage->absolutePath($crop));
+        $this->assertFileExists($storage->absolutePath($crop));
+
+        $this->em->clear();
+        $softDeleted = $this->em->getRepository(Face::class)->find($faceId);
+        $this->assertNotNull($softDeleted);
+        $this->assertNotNull($softDeleted->getDeletedAt());
     }
 
     private function clearFixtures(): void

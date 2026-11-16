@@ -89,7 +89,7 @@ class PersonRepository extends ServiceEntityRepository
     {
         if ('faces' === $sort) {
             $itemsQuery
-                ->addSelect('(SELECT COUNT(fcs.id) FROM App\Entity\Face fcs WHERE fcs.person = p) AS HIDDEN faceCountSort')
+                ->addSelect('(SELECT COUNT(fcs.id) FROM App\Entity\Face fcs WHERE fcs.person = p AND fcs.deletedAt IS NULL) AS HIDDEN faceCountSort')
                 ->orderBy('faceCountSort', 'DESC')
                 ->addOrderBy('p.id', 'ASC');
 
@@ -172,6 +172,7 @@ class PersonRepository extends ServiceEntityRepository
             ->addSelect('MIN(f.cropPath) AS fallbackCropPath')
             ->from(\App\Entity\Face::class, 'f')
             ->andWhere('f.person IN (:personIds)')
+            ->andWhere('f.deletedAt IS NULL')
             ->setParameter('personIds', $personIds)
             ->groupBy('f.person')
             ->getQuery()
@@ -229,7 +230,7 @@ class PersonRepository extends ServiceEntityRepository
                     SELECT 1 FROM App\Entity\Face f
                     JOIN f.photo p
                     JOIN p.album a
-                    WHERE f.person = person AND a.visibility = :visibility
+                    WHERE f.person = person AND f.deletedAt IS NULL AND a.visibility = :visibility
                 )'
             )
             ->setParameter('visibility', \App\Enum\AlbumVisibility::Public)

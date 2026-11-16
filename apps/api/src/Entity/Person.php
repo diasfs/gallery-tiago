@@ -89,13 +89,17 @@ class Person
      */
     public function getEffectiveAvatarFace(): ?Face
     {
-        if (null !== $this->avatarFace) {
+        if (null !== $this->avatarFace && !$this->avatarFace->isDeleted()) {
             return $this->avatarFace;
         }
 
-        $first = $this->faces->first();
+        foreach ($this->faces as $face) {
+            if (!$face->isDeleted()) {
+                return $face;
+            }
+        }
 
-        return false === $first ? null : $first;
+        return null;
     }
 
     public function setAvatarFace(?Face $avatarFace): static

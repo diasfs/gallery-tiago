@@ -287,11 +287,11 @@ class FaceGalleryScanController
     private function referenceFaceForScan(Person $person): ?\App\Entity\Face
     {
         $avatar = $person->getAvatarFace();
-        if (null !== $avatar && $avatar->hasEmbedding()) {
+        if (null !== $avatar && !$avatar->isDeleted() && $avatar->hasEmbedding()) {
             return $avatar;
         }
         foreach ($person->getFaces() as $face) {
-            if ($face->hasEmbedding()) {
+            if (!$face->isDeleted() && $face->hasEmbedding()) {
                 return $face;
             }
         }

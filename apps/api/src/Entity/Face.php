@@ -63,6 +63,9 @@ class Face
     #[ORM\Column]
     private bool $hasEmbedding = false;
 
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $deletedAt = null;
+
     public function __construct(?Photo $photo = null)
     {
         $this->photo = $photo;
@@ -187,5 +190,22 @@ class Face
     public function hasEmbedding(): bool
     {
         return $this->hasEmbedding;
+    }
+
+    public function getDeletedAt(): ?\DateTimeImmutable
+    {
+        return $this->deletedAt;
+    }
+
+    public function setDeletedAt(?\DateTimeImmutable $deletedAt): static
+    {
+        $this->deletedAt = $deletedAt;
+
+        return $this;
+    }
+
+    public function isDeleted(): bool
+    {
+        return null !== $this->deletedAt;
     }
 }

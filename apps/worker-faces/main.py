@@ -26,7 +26,7 @@ import redis
 import db
 import scan as face_scan
 import stream_queue
-from matcher import ASSIGN_CLUSTER, ASSIGN_NAMED, assign_person, overlaps_existing
+from matcher import CREATE_CLUSTER, overlaps_existing, resolve_person_for_detection
 from rasterize import materialize_jpeg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -77,8 +77,12 @@ def crop_path_for(face_id: str) -> str:
     return f"faces/{face_id[:2]}/{face_id}.jpg"
 
 
-def process_photo(conn, cfg: Config, photo_id: str) -> int:
-    """Detect, match, and persist all faces for one photo. Returns face count."""
+def process_photo(conn, cfg: Config, photo_id: str) -> dict[str, int]:
+    """Detect, match, and persist faces for one photo.
+
+    Returns counts: found (InsightFace), skipped_overlap, skipped_existing,
+    added (new Face rows inserted).
+    """
     import cv2
 
     avif_path, _original_path = db.get_photo_image_paths(conn, photo_id)
@@ -94,22 +98,39 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
         # Keep existing faces (and person links). Only insert detections that
         # do not overlap a face already on this photo (reprocess / re-delivery).
         existing_bboxes = db.list_face_bboxes(conn, photo_id)
+        existing_count = len(existing_bboxes)
         detected = get_face_app().get(image)
         added = 0
+        skipped_overlap = 0
+        skipped_existing = 0
 
         for face in detected:
             embedding = face.normed_embedding.tolist()
             x1, y1, x2, y2 = (float(v) for v in face.bbox.tolist())
             bbox = (x1, y1, x2 - x1, y2 - y1)
             if overlaps_existing(bbox, existing_bboxes):
+                skipped_overlap += 1
                 continue
 
             confidence = float(face.det_score)
 
-            neighbors = db.nearest_neighbors(conn, embedding, limit=5)
-            person_id, action = assign_person(embedding, neighbors, cfg.match_threshold, cfg.cluster_threshold)
+            active_neighbors = db.nearest_neighbors(conn, embedding, limit=5)
+            trashed_neighbors = db.nearest_neighbors(conn, embedding, limit=5, trashed_only=True)
+            person_id, action, soft_delete = resolve_person_for_detection(
+                active_neighbors,
+                trashed_neighbors,
+                cfg.match_threshold,
+                cfg.cluster_threshold,
+            )
 
-            if action not in (ASSIGN_NAMED, ASSIGN_CLUSTER):
+            if soft_delete:
+                assert person_id is not None
+                # Already have a marking (active or soft-deleted) for this trashed
+                # person on the photo — nothing to add for restore UI.
+                if db.photo_has_face_for_person(conn, photo_id, person_id):
+                    skipped_existing += 1
+                    continue
+            elif action == CREATE_CLUSTER:
                 person_id = db.create_person(conn)
 
             face_id = str(uuid.uuid4())
@@ -133,11 +154,25 @@ def process_photo(conn, cfg: Config, photo_id: str) -> int:
                 confidence=confidence,
                 embedding=embedding,
                 crop_path=crop_relative,
+                soft_deleted=soft_delete,
             )
             existing_bboxes.append(bbox)
             added += 1
+            if soft_delete:
+                log.info(
+                    "photo %s: soft-deleted face %s linked to trashed person %s",
+                    photo_id,
+                    face_id,
+                    person_id,
+                )
 
-        return added
+        return {
+            "found": len(detected),
+            "skipped_overlap": skipped_overlap,
+            "skipped_existing": skipped_existing,
+            "added": added,
+            "existing": existing_count,
+        }
     finally:
         image_path.unlink(missing_ok=True)
 
@@ -170,9 +205,17 @@ def handle_photo(conn, cfg: Config, photo_id: str) -> bool:
         return False
 
     try:
-        face_count = process_photo(conn, cfg, photo_id)
+        stats = process_photo(conn, cfg, photo_id)
         db.set_faces_status(conn, photo_id, "done")
-        log.info("photo %s: detected %d face(s), status=done", photo_id, face_count)
+        log.info(
+            "photo %s: found=%d existing=%d skipped_overlap=%d skipped_existing=%d added=%d status=done",
+            photo_id,
+            stats["found"],
+            stats["existing"],
+            stats["skipped_overlap"],
+            stats["skipped_existing"],
+            stats["added"],
+        )
         return True
     except Exception as e:  # noqa: BLE001 - worker must survive a single bad photo
         log.exception("detect_faces failed for photo %s", photo_id)

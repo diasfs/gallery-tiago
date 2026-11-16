@@ -589,6 +589,7 @@ class AlbumRepository extends ServiceEntityRepository
                         SELECT 1 FROM App\Entity\Face f'.$i.'
                         WHERE f'.$i.'.photo = p
                         AND f'.$i.'.person = :'.$param.'
+                        AND f'.$i.'.deletedAt IS NULL
                     )';
                     $qb->setParameter($param, $personId, 'uuid');
                 }

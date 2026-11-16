@@ -248,8 +248,11 @@ class PhotoUploadController
         $seen = [];
         $people = [];
         foreach ($photo->getFaces() as $face) {
+            if ($face->isDeleted()) {
+                continue;
+            }
             $person = $face->getPerson();
-            if (null === $person) {
+            if (null === $person || $person->isDeleted()) {
                 continue;
             }
             $personId = (string) $person->getId();

@@ -25,6 +25,20 @@ class FaceRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('f')
             ->andWhere('f.photo = :photo')
             ->andWhere('f.person = :person')
+            ->andWhere('f.deletedAt IS NULL')
+            ->setParameter('photo', $photo->getId(), 'uuid')
+            ->setParameter('person', $person->getId(), 'uuid')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    public function findOneSoftDeletedByPhotoAndPerson(Photo $photo, Person $person): ?Face
+    {
+        return $this->createQueryBuilder('f')
+            ->andWhere('f.photo = :photo')
+            ->andWhere('f.person = :person')
+            ->andWhere('f.deletedAt IS NOT NULL')
             ->setParameter('photo', $photo->getId(), 'uuid')
             ->setParameter('person', $person->getId(), 'uuid')
             ->setMaxResults(1)
@@ -38,6 +52,7 @@ class FaceRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('f')
             ->andWhere('f.photo = :photo')
             ->andWhere('f.person = :person')
+            ->andWhere('f.deletedAt IS NULL')
             ->setParameter('photo', $photo->getId(), 'uuid')
             ->setParameter('person', $person->getId(), 'uuid')
             ->getQuery()
@@ -71,6 +86,7 @@ class FaceRepository extends ServiceEntityRepository
                         SELECT f2.photo_id, (f2.embedding <=> sf.embedding) AS dist
                         FROM face f2
                         WHERE f2.has_embedding = true
+                          AND f2.deleted_at IS NULL
                           AND f2.photo_id <> sf.photo_id
                         ORDER BY f2.embedding <=> sf.embedding
                         LIMIT {$perFaceLimit}
@@ -79,6 +95,7 @@ class FaceRepository extends ServiceEntityRepository
                     INNER JOIN album a ON a.id = p.album_id
                     WHERE sf.photo_id = :photoId
                       AND sf.has_embedding = true
+                      AND sf.deleted_at IS NULL
                       AND a.visibility IN ('public', 'unlisted')
                     GROUP BY p.id
                     HAVING MIN(n.dist) <= :maxDistance
@@ -116,6 +133,7 @@ class FaceRepository extends ServiceEntityRepository
                         face.embedding <=> :embedding::vector AS dist
                     FROM face
                     WHERE face.has_embedding = true
+                      AND face.deleted_at IS NULL
                       AND face.person_id IS NOT NULL
                     ORDER BY face.person_id, dist ASC
                 ) nearest
@@ -160,6 +178,7 @@ class FaceRepository extends ServiceEntityRepository
         $face = $this->createQueryBuilder('f')
             ->andWhere('f.person = :person')
             ->andWhere('f.hasEmbedding = true')
+            ->andWhere('f.deletedAt IS NULL')
             ->setParameter('person', $personId, 'uuid')
             ->orderBy('f.confidence', 'DESC')
             ->addOrderBy('f.id', 'ASC')
@@ -188,6 +207,7 @@ class FaceRepository extends ServiceEntityRepository
                     WHERE p.id = :personId
                       AND p.deleted_at IS NULL
                       AND f.has_embedding = true
+                      AND f.deleted_at IS NULL
                     ORDER BY
                         CASE WHEN f.id = p.avatar_face_id THEN 0 ELSE 1 END,
                         f.confidence DESC NULLS LAST,
@@ -201,6 +221,7 @@ class FaceRepository extends ServiceEntityRepository
                         face.embedding <=> (SELECT embedding FROM rep) AS dist
                     FROM face
                     WHERE face.has_embedding = true
+                      AND face.deleted_at IS NULL
                       AND face.person_id IS NOT NULL
                       AND face.person_id <> :personId
                       AND EXISTS (SELECT 1 FROM rep)
@@ -216,6 +237,7 @@ class FaceRepository extends ServiceEntityRepository
                         SELECT COUNT(*)::int
                         FROM face fc
                         WHERE fc.person_id = person.id
+                          AND fc.deleted_at IS NULL
                     ) AS face_count
                 FROM nearest
                 INNER JOIN person ON person.id = nearest.person_id
@@ -250,7 +272,7 @@ class FaceRepository extends ServiceEntityRepository
             <<<SQL
                 SELECT COUNT(DISTINCT p.id)::int
                 FROM person p
-                INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true
+                INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true AND f.deleted_at IS NULL
                 WHERE p.is_named = false
                   AND p.deleted_at IS NULL
             SQL,
@@ -297,6 +319,7 @@ class FaceRepository extends ServiceEntityRepository
                     FROM face f
                     INNER JOIN person p ON p.id = f.person_id AND p.is_named = false AND p.deleted_at IS NULL
                     WHERE f.has_embedding = true
+                      AND f.deleted_at IS NULL
                     GROUP BY f.person_id
                     ORDER BY face_count DESC, f.person_id
                     LIMIT {$maxClusters}
@@ -309,7 +332,7 @@ class FaceRepository extends ServiceEntityRepository
                         rc.face_count
                     FROM ranked_clusters rc
                     INNER JOIN person p ON p.id = rc.person_id
-                    INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true
+                    INNER JOIN face f ON f.person_id = p.id AND f.has_embedding = true AND f.deleted_at IS NULL
                     LEFT JOIN face avatar_face ON avatar_face.id = p.avatar_face_id
                     ORDER BY
                         p.id,

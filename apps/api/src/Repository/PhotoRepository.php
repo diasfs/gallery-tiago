@@ -99,7 +99,7 @@ class PhotoRepository extends ServiceEntityRepository
         $base = $this->createQueryBuilder('p')
             ->join('p.album', 'a')
             ->andWhere('a.visibility IN (:visibilities)')
-            ->andWhere('EXISTS (SELECT 1 FROM App\Entity\Face f WHERE f.photo = p AND f.person = :personId)')
+            ->andWhere('EXISTS (SELECT 1 FROM App\Entity\Face f WHERE f.photo = p AND f.person = :personId AND f.deletedAt IS NULL)')
             ->setParameter('personId', $personId, 'uuid')
             ->setParameter('visibilities', [AlbumVisibility::Public, AlbumVisibility::Unlisted]);
 
@@ -547,6 +547,7 @@ class PhotoRepository extends ServiceEntityRepository
                     SELECT 1 FROM App\Entity\Face f'.$i.'
                     WHERE f'.$i.'.photo = p
                     AND f'.$i.'.person = :'.$param.'
+                    AND f'.$i.'.deletedAt IS NULL
                 )';
                 $qb->setParameter($param, $personId, 'uuid');
             }

@@ -889,14 +889,21 @@ final class PersonMergeTest extends WebTestCase
         $this->assertResponseIsSuccessful();
         $payload = json_decode((string) $this->client->getResponse()->getContent(), true)['data'];
         $this->assertArrayHasKey('faces', $payload);
-        $this->assertCount(1, $payload['faces']);
-        $this->assertSame((string) $withBox->getId(), $payload['faces'][0]['id']);
-        $this->assertSame((string) $person->getId(), $payload['faces'][0]['personId']);
-        $this->assertSame('Ana', $payload['faces'][0]['name']);
-        $this->assertEqualsWithDelta(10.0, $payload['faces'][0]['x'], 0.001);
-        $this->assertEqualsWithDelta(20.0, $payload['faces'][0]['y'], 0.001);
-        $this->assertEqualsWithDelta(30.0, $payload['faces'][0]['width'], 0.001);
-        $this->assertEqualsWithDelta(40.0, $payload['faces'][0]['height'], 0.001);
+        $byId = [];
+        foreach ($payload['faces'] as $row) {
+            $byId[$row['id']] = $row;
+        }
+        $this->assertCount(2, $payload['faces']);
+        $boxed = $byId[(string) $withBox->getId()];
+        $this->assertSame((string) $person->getId(), $boxed['personId']);
+        $this->assertSame('Ana', $boxed['name']);
+        $this->assertEqualsWithDelta(10.0, $boxed['x'], 0.001);
+        $this->assertEqualsWithDelta(20.0, $boxed['y'], 0.001);
+        $this->assertEqualsWithDelta(30.0, $boxed['width'], 0.001);
+        $this->assertEqualsWithDelta(40.0, $boxed['height'], 0.001);
+        $this->assertArrayHasKey('cropPath', $boxed);
+        $this->assertEqualsWithDelta(0.0, $byId[(string) $withoutBox->getId()]['width'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $byId[(string) $withoutBox->getId()]['height'], 0.001);
     }
 
     public function testDeletingPhotoKeepsFaceRowsAndCropPaths(): void
@@ -1040,9 +1047,11 @@ final class PersonMergeTest extends WebTestCase
     {
         $person = new Person();
         $this->em->persist($person);
-        $this->detectedFace($this->publicPhoto, $person);
-        $this->manualFace($this->publicPhoto, $person);
+        $detected = $this->detectedFace($this->publicPhoto, $person);
+        $manual = $this->manualFace($this->publicPhoto, $person);
         $this->em->flush();
+        $detectedId = (string) $detected->getId();
+        $manualId = (string) $manual->getId();
 
         $this->loginAsAdmin();
 
@@ -1052,7 +1061,9 @@ final class PersonMergeTest extends WebTestCase
 
         $this->em->clear();
         $photo = $this->em->getRepository(Photo::class)->find($this->publicPhoto->getId());
-        $this->assertCount(0, $photo->getFaces());
+        $this->assertCount(2, $photo->getFaces());
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($detectedId)?->getDeletedAt());
+        $this->assertNotNull($this->em->getRepository(Face::class)->find($manualId)?->getDeletedAt());
     }
 
     public function testManualPhotoPeopleEndpointsRequireAuthentication(): void
