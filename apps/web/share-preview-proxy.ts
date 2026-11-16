@@ -4,7 +4,7 @@ const CRAWLER_USER_AGENT =
   /facebookexternalhit|Facebot|Twitterbot|LinkedInBot|WhatsApp|TelegramBot|Slackbot|Discordbot|Applebot|Pinterest|Googlebot|bingbot/i
 
 const RESERVED_ALBUM_SLUGS =
-  'search|map|timeline|memories|popular|albums|photos|people|tags|locations|admin|api|converted|originals|faces|avatars'
+  'search|map|timeline|memories|popular|albums|photos|people|tags|locations|admin|api|converted|originals|faces|avatars|robots\\.txt'
 
 const SHARE_PREVIEW_PATH = new RegExp(
   `^(?:` +

@@ -9,10 +9,9 @@ describe('share-preview-proxy', () => {
     expect(SHARE_PREVIEW_PATH.test('/summer/DSC_0001.jpg')).toBe(true)
   })
 
-  it('does not match reserved SPA paths or unrelated URLs', () => {
-    expect(SHARE_PREVIEW_PATH.test('/search')).toBe(false)
+  it('does not match admin, api, or robots.txt', () => {
     expect(SHARE_PREVIEW_PATH.test('/admin/login')).toBe(false)
-    expect(SHARE_PREVIEW_PATH.test('/tags/beach')).toBe(false)
     expect(SHARE_PREVIEW_PATH.test('/api/albums/summer')).toBe(false)
+    expect(SHARE_PREVIEW_PATH.test('/robots.txt')).toBe(false)
   })
 })

@@ -20,6 +20,13 @@ map $http_user_agent $is_social_crawler {
     ~*Pinterest 1;
 }
 
+# Real robots.txt — do not fall through to index.html (invalid robots.txt)
+# or the album share-preview regex.
+location = /robots.txt {
+    try_files /robots.txt =404;
+    access_log off;
+}
+
 # Reserved SPA paths — not root album slugs (see ReservedAlbumSlugs in the API).
 set $reserved_album_slug "search|map|timeline|memories|popular|albums|photos|people|tags|locations|admin|api|converted|originals|faces|avatars";
 
